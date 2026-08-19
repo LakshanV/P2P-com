@@ -10,19 +10,19 @@
       "id": 2,
       "task": "Create CURRENT_IMPLEMENTATION_STATUS.md, MASTER_IMPLEMENTATION_CHECKLIST.md, and a module/dependency map",
       "status": "done",
-      "notes": "DOC-001 accepted after dependency-order and cross-reference corrections. Link validator reported 68 internal links across 3 Markdown files with 0 broken; complete documents were inspected."
+      "notes": "DOC-001 accepted after dependency-order and cross-reference corrections. Link validator evidence shows all internal links resolve; complete planning documents were inspected."
     },
     {
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001 remains selected. FND-001a implementation and clean verification evidence are credible, but acceptance is pending reconciliation of residual stale statements in the authority-rank-2 status document. FND-001b through FND-001d remain unstarted."
+      "notes": "FND-001 remains selected. FND-001a code and clean local verification evidence are accepted in substance, but final authority-rank-2 documentation contradictions must be corrected before formally closing the subtask. FND-001b through FND-001d remain unstarted."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "After status reconciliation, accept FND-001a and proceed to FND-001b boundary enforcement with persistent planted-violation fixtures. GitHub CI execution evidence remains required during FND-001c."
+      "notes": "After the final status-document correction, proceed to FND-001b boundary enforcement with persistent planted-violation fixtures. GitHub CI execution evidence remains required during FND-001c."
     },
     {
       "id": 5,
@@ -45,7 +45,7 @@
     "The baseline requirement count is extensive and must remain mechanically verifiable as statuses change.",
     "FND-001 boundary checks must inspect real source paths and have persistent negative fixtures; checks that merely pass an empty repository are not acceptable.",
     "GitHub currently reports no checks, so CI workflow execution evidence will be required before P0-09 can be accepted.",
-    "CURRENT_IMPLEMENTATION_STATUS.md still contains multiple stale baseline claims despite its otherwise detailed FND-001a evidence."
+    "CURRENT_IMPLEMENTATION_STATUS.md remains internally inconsistent about the now-delivered FND-001a tests, implementation, and permitted completion language."
   ],
-  "last_instruction": "Reconcile only the remaining stale baseline statements in docs/CURRENT_IMPLEMENTATION_STATUS.md with the delivered FND-001a state—specifically the FND-001 CURRENT STATE row, R-01 description/mitigation, the §7 zero-code explanation, §10 build-and-quality state, DOC-001 KNOWN LIMITATIONS claim that Node is not pinned, and the final permitted-description sentence—then run the documentation link validator and npm run verify, record any changed evidence accurately, and commit without starting FND-001b."
+  "last_instruction": "Correct only the remaining FND-001a factual contradictions in docs/CURRENT_IMPLEMENTATION_STATUS.md: update §3.3 entries for existing tests and existing implementation, change §4.1 test-framework count from 7 to 15, and replace the final §12 permitted-description sentence with the same accurate FND-001a wording used in §10; then run the documentation link validator and `npm run verify`, record changed evidence if applicable, and commit without starting FND-001b."
 }
