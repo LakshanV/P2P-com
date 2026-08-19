@@ -27,12 +27,14 @@ export type IntegrationSafetyId =
   | 'harness-only-connections'
   | 'harness-only-configuration'
   | 'guarded-lifecycle'
+  | 'seeded-cleanup'
   | 'harness-guards';
 
 export const INTEGRATION_SAFETY_IDS: readonly IntegrationSafetyId[] = [
   'harness-only-connections',
   'harness-only-configuration',
   'guarded-lifecycle',
+  'seeded-cleanup',
   'harness-guards',
 ];
 
@@ -127,6 +129,28 @@ export function checkIntegrationSafety(
         match === null ? 0 : lineOf(code, match.index),
         'applies or rolls back migrations without entering withTestDatabase, so the target is ' +
           'whatever the caller chose rather than a guarded, disposable database',
+      );
+    }
+  }
+
+  // --- anything deliberately left behind must be cleaned up unconditionally -------------------
+  // A suite that plants a leftover database has to remove it in a `finally`. Cleanup that only
+  // runs on the success path is worse than none: the leftover survives a failing assertion and
+  // the next run of the very same test can then pass for the wrong reason.
+  for (const file of files) {
+    const code = stripComments(file.source);
+    if (file.name === HARNESS_FILE) continue;
+    if (!/seedLeftoverTestDatabase\s*\(/.test(code)) continue;
+
+    const guarded = /finally\s*\{[\s\S]{0,400}?removeTestDatabase\s*\(/.test(code);
+    if (!guarded) {
+      const match = /seedLeftoverTestDatabase\s*\(/.exec(code);
+      report(
+        'seeded-cleanup',
+        file.name,
+        match === null ? 0 : lineOf(code, match.index),
+        'plants a leftover database but does not remove it in a finally block, so a failing ' +
+          'assertion would leave it on the server for the next run to inherit',
       );
     }
   }

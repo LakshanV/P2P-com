@@ -23,8 +23,12 @@ import {
   databaseExists,
   developmentDatabaseName,
   developmentSnapshot,
+  leftoverMarkerExists,
   liveTestOptions,
   maintenanceDatabase,
+  removeTestDatabase,
+  seedLeftoverTestDatabase,
+  testDatabaseConnection,
   testDatabaseName,
   withTestDatabase,
 } from './harness.ts';
@@ -105,52 +109,48 @@ test('the development database is untouched by a full test run', liveTestOptions
 });
 
 test(
-  'a leftover test database from a killed run is replaced, not reused',
+  'a leftover database at the guarded name is replaced, not reused',
   liveTestOptions,
   async () => {
     const maintenance = maintenanceDatabase();
     const name = testDatabaseName();
 
-    // Simulate an interrupted run: create the database and leave it behind, with a marker table.
-    await withTestDatabase(async ({ database }) => {
-      const client = await database.connect();
-      try {
-        await client.query('CREATE TABLE leftover_marker (id integer);');
-      } finally {
-        await client.release();
-      }
-      // Recreate outside the helper so the marker survives into the next run.
-      const outer = await maintenance.connect();
-      try {
-        await outer.query(`CREATE DATABASE "${name}_kept" TEMPLATE "${name}";`);
-      } finally {
-        await outer.release();
-      }
-    });
-
-    await withTestDatabase(async ({ database }) => {
-      const client = await database.connect();
-      try {
-        const result = await client.query<{ present: boolean }>(
-          "SELECT to_regclass('public.leftover_marker') IS NOT NULL AS present;",
-        );
-        assert.equal(
-          result.rows[0]?.present,
-          false,
-          'a new run must start from a fresh database, not from the last one',
-        );
-      } finally {
-        await client.release();
-      }
-    });
-
-    // Tidy the copy this test made.
-    const cleanup = await maintenance.connect();
+    // What a killed run actually leaves behind: a database occupying the exact name the next run
+    // will ask for, carrying objects from the run that died. Not a copy under another name — that
+    // would prove nothing, because the next run would create a fresh database either way.
+    await seedLeftoverTestDatabase();
     try {
-      await cleanup.query(`DROP DATABASE IF EXISTS "${name}_kept" WITH (FORCE);`);
+      assert.equal(
+        await databaseExists(maintenance, name),
+        true,
+        'the leftover must exist before the run under test, or this proves nothing',
+      );
+      assert.equal(
+        await leftoverMarkerExists(testDatabaseConnection()),
+        true,
+        'the marker must be present in the leftover, or its later absence is meaningless',
+      );
+
+      await withTestDatabase(async ({ database, name: innerName }) => {
+        assert.equal(innerName, name, 'the run must target the same name the leftover occupies');
+        assert.equal(
+          await leftoverMarkerExists(database),
+          false,
+          'withTestDatabase reused the leftover database instead of replacing it — a run would ' +
+            'inherit whatever state the killed one left, and its results would not be its own',
+        );
+      });
     } finally {
-      await cleanup.release();
+      // Runs even if an assertion above throws, so a failure here cannot leave a leftover that
+      // makes the next run of this very test pass for the wrong reason.
+      await removeTestDatabase();
     }
+
+    assert.equal(
+      await databaseExists(maintenance, name),
+      false,
+      'nothing may survive this test, including what it deliberately planted',
+    );
   },
 );
 

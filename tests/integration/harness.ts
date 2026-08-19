@@ -145,12 +145,79 @@ export async function databaseExists(maintenance: Database, name: string): Promi
 
 /** A maintenance connection outside `withTestDatabase`, for lifecycle assertions. */
 export function maintenanceDatabase(): Database {
+  return new PostgresDatabase(maintenanceUrl(testDatabaseUrl()));
+}
+
+/** The derived, guard-approved test database URL. Nothing is created by asking for it. */
+export function testDatabaseUrl(): string {
   const url = deriveTestDatabaseUrl(developmentUrl());
+  // deriveTestDatabaseUrl already asserts. Repeated here so a future refactor of either cannot
+  // quietly remove the guarantee from the one place callers reach for a target.
   assertSafeTestTarget(url);
-  return new PostgresDatabase(maintenanceUrl(url));
+  return url;
 }
 
 /** The derived test database name, without creating anything. */
 export function testDatabaseName(): string {
-  return databaseNameOf(deriveTestDatabaseUrl(developmentUrl()));
+  return databaseNameOf(testDatabaseUrl());
+}
+
+/**
+ * A connection to the derived test database, creating and dropping nothing.
+ *
+ * For inspecting a database the caller has arranged to exist — a leftover from a killed run, say.
+ * Any suite that wants a database to work in should use `withTestDatabase` instead.
+ */
+export function testDatabaseConnection(): Database {
+  return new PostgresDatabase(testDatabaseUrl());
+}
+
+/** Table used to tell one instance of the test database from another. */
+export const LEFTOVER_MARKER_TABLE = 'leftover_marker';
+
+/**
+ * Leave a database behind at the exact guarded `_test` name, carrying a marker object.
+ *
+ * This is what a run killed midway leaves on the server: not a copy under another name, but a
+ * database occupying the very name the next run will ask for. Proving the next run *replaces* it
+ * requires that, which is why the marker goes in here rather than inside `withTestDatabase` —
+ * anything created inside that helper is dropped by it on the way out.
+ *
+ * Creation goes through the same guarded path as everything else, so this setup cannot land on a
+ * database the guard would refuse.
+ */
+export async function seedLeftoverTestDatabase(): Promise<void> {
+  const url = testDatabaseUrl();
+  const maintenance = new PostgresDatabase(maintenanceUrl(url));
+  await createTestDatabase(maintenance, url);
+
+  const client = await new PostgresDatabase(url).connect();
+  try {
+    await client.query(`CREATE TABLE ${LEFTOVER_MARKER_TABLE} (id integer);`);
+  } finally {
+    await client.release();
+  }
+}
+
+/** Is the leftover marker present in this database? */
+export async function leftoverMarkerExists(database: Database): Promise<boolean> {
+  const client = await database.connect();
+  try {
+    const result = await client.query<{ present: boolean }>(
+      'SELECT to_regclass($1) IS NOT NULL AS present;',
+      [`public.${LEFTOVER_MARKER_TABLE}`],
+    );
+    return result.rows[0]?.present === true;
+  } finally {
+    await client.release();
+  }
+}
+
+/**
+ * Drop the derived test database, whatever state it is in. Idempotent, and guarded like every
+ * other lifecycle call, so a suite can put it in a `finally` without thinking.
+ */
+export async function removeTestDatabase(): Promise<void> {
+  const url = testDatabaseUrl();
+  await dropTestDatabase(new PostgresDatabase(maintenanceUrl(url)), url);
 }

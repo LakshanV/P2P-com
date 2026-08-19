@@ -441,6 +441,11 @@ back and re-apply, confirm a second runner is excluded, prove `status` and a ref
 create nothing on an empty database, prove rolling back 0002 leaves the ledger and the 0001 row
 intact, and measure the development database before and after to prove it was untouched.
 
+They also prove the lifecycle itself: a database is deliberately left at the exact derived `_test`
+name carrying a marker table, and the next `withTestDatabase` must find that marker gone — so a
+run inherits nothing from a run that was killed. Anything a suite plants is removed in a
+`finally`, and the contract fails the build if it is not.
+
 Without `DATABASE_URL` — from `.env` or the shell — they **skip with the reason printed**, and a
 skipped run is not evidence. It is deliberately outside `npm test`, so `npm run verify` contains only tests
 that need no live service.

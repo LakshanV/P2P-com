@@ -155,6 +155,29 @@ const PLANTED: ReadonlyArray<{
     mutate: () => weaken('migrations.integration.ts', /withTestDatabase/g, 'runDirectly'),
   },
   {
+    name: 'a suite plants a leftover database but only cleans up on success',
+    id: 'seeded-cleanup',
+    mutate: () =>
+      weaken(
+        'test-database-lifecycle.integration.ts',
+        /} finally \{\n {6}\/\/ Runs even if an assertion above throws[\s\S]*?await removeTestDatabase\(\);\n {4}}/,
+        '}\n    await removeTestDatabase();',
+      ),
+  },
+  {
+    name: 'a suite plants a leftover database and never removes it',
+    id: 'seeded-cleanup',
+    mutate: () =>
+      withExtraFile(
+        'rogue.integration.ts',
+        [
+          "import { seedLeftoverTestDatabase, withTestDatabase } from './harness.ts';",
+          'await seedLeftoverTestDatabase();',
+          'await withTestDatabase(async () => {});',
+        ].join('\n'),
+      ),
+  },
+  {
     name: 'the harness stops asserting the target is safe',
     id: 'harness-guards',
     mutate: () => weaken(HARNESS_FILE, /assertSafeTestTarget\(/g, 'noop('),
