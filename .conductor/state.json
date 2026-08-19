@@ -4,25 +4,25 @@
       "id": 1,
       "task": "Read the authoritative master guide and inspect the repository baseline",
       "status": "done",
-      "notes": "Reviewed both supplied guides. Repository contains specifications and conductor state only; no application or test infrastructure exists."
+      "notes": "Reviewed both supplied guides. Repository contains specifications and conductor state only; no application or test infrastructure existed at baseline."
     },
     {
       "id": 2,
       "task": "Create CURRENT_IMPLEMENTATION_STATUS.md, MASTER_IMPLEMENTATION_CHECKLIST.md, and a module/dependency map",
       "status": "done",
-      "notes": "DOC-001 accepted after dependency-order and cross-reference corrections. Link validator reports 68 internal links across 3 Markdown files with 0 broken; complete documents were inspected."
+      "notes": "DOC-001 accepted after dependency-order and cross-reference corrections. Link validator reported 68 internal links across 3 Markdown files with 0 broken; complete documents were inspected."
     },
     {
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001 remains selected. Its first bounded subtask is now the executable local toolchain and test harness; CI and adversarial boundary enforcement will follow separately."
+      "notes": "FND-001 remains selected. FND-001a has a working local Node/TypeScript harness with seven passing tests and recorded clean-install results, but its package manager is not exactly pinned because package.json lacks packageManager. A bounded reproducibility correction is required before FND-001a acceptance; FND-001b through FND-001d remain unstarted."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "First review target is the FND-001 local substrate, including clean-install reproducibility and actual script output. Boundary fixtures and GitHub CI evidence remain later FND-001 review targets."
+      "notes": "First review target remains FND-001. After the reproducibility correction, inspect boundary enforcement with persistent negative fixtures, then require GitHub CI execution evidence."
     },
     {
       "id": 5,
@@ -36,15 +36,17 @@
     "Begin as a bounded modular monolith, preserving module-owned data and public API/event contracts.",
     "No implementation capability may be marked complete without repository evidence and applicable test results.",
     "DOC-001 planning baseline is accepted; FND-001 is the first implementation task.",
-    "FND-001 will be delivered as separately reviewable subtasks, beginning with the local executable toolchain before CI and boundary enforcement."
+    "FND-001 will be delivered as separately reviewable subtasks, beginning with the local executable toolchain before CI and boundary enforcement.",
+    "The exact .nvmrc value is the pinned development runtime, while engines.node may remain a compatible supported-runtime range; packageManager must identify an exact npm version."
   ],
   "concerns": [
-    "There is no application, CI, database, authentication, deployment, or monitoring foundation yet.",
+    "There is no CI, database, authentication, deployment, or monitoring foundation yet.",
     "The eventual production/staging environments and external provider credentials may require later human or cloud-access escalation, but do not block local foundation work.",
     "The baseline requirement count is extensive and must remain mechanically verifiable as statuses change.",
     "FND-001 boundary checks must inspect real source paths and have persistent negative fixtures; checks that merely pass an empty repository are not acceptable.",
     "GitHub currently reports no checks, so CI workflow execution evidence will be required before P0-09 can be accepted.",
-    "The event-direction terminology in MODULE_MAP should be watched as contracts are introduced because control-plane events can flow downward even though source dependencies cannot."
+    "The current package.json does not exactly pin npm and therefore does not yet satisfy the requested pinned package-manager toolchain.",
+    "CURRENT_IMPLEMENTATION_STATUS.md contains some stale baseline wording inside the FND-001 task description, including a current-state row saying no manifest or tests exist; this should be reconciled in a later status-document review if not corrected with the current evidence update."
   ],
-  "last_instruction": "Implement and commit the first FND-001 subtask only: add a pinned Node/TypeScript package-manager toolchain, lockfile, minimal platform source/test structure, and working clean-install scripts for build, typecheck, lint, format-check, and test, including at least one real passing assertion; run every command from a clean dependency state and record the exact command results in CURRENT_IMPLEMENTATION_STATUS.md without marking FND-001 or P0-03 through P0-13 complete, and do not add CI, boundary enforcement, database, kernel, business, or UI functionality yet."
+  "last_instruction": "Correct FND-001a's reproducibility contract only: declare the exact npm version actually used via package.json packageManager, add automated assertions that the exact .nvmrc runtime satisfies engines.node and that packageManager is an exact npm version compatible with engines.npm, update the status evidence to distinguish the pinned development runtime/package manager from the supported runtime ranges, then rerun npm ci and the full verification chain from deleted node_modules and dist; commit the correction without starting FND-001b or marking FND-001 complete."
 }
