@@ -16,13 +16,13 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001 remains selected. FND-001a is accepted. FND-001b implementation and tests appear technically sufficient, but acceptance is blocked by contradictory and stale persistent documentation that must be reconciled."
+      "notes": "FND-001 remains selected. FND-001a is accepted. FND-001b implementation appears technically sufficient, but two stale documentation statements and missing fresh commit/command evidence prevent acceptance."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "After documentation reconciliation, accept FND-001b if clean verification evidence remains green, then proceed to FND-001c where GitHub CI execution evidence is mandatory."
+      "notes": "Accept FND-001b after the final bounded documentation correction and clean verification evidence, then proceed to FND-001c where GitHub CI execution evidence is mandatory."
     },
     {
       "id": 5,
@@ -47,7 +47,7 @@
     "Boundary enforcement must not be bypassable through unresolved path forms, runtime indirection, re-exports, dynamic imports, or unregistered source units.",
     "GitHub currently reports no checks, so CI workflow execution evidence will be required before P0-09 can be accepted.",
     "The provider SDK denylist is configuration-based and must be maintained whenever providers are adopted; broad provider scopes reduce but do not eliminate this maintenance risk.",
-    "Persistent status documentation currently contains contradictory pre-FND-001b statements, undermining its role as authoritative project memory."
+    "The reconciliation still contains two demonstrably stale present-tense statements, and the requested final commit SHA and clean verification output were not supplied."
   ],
-  "last_instruction": "Reconcile the repository documentation for FND-001b only: audit CURRENT_IMPLEMENTATION_STATUS.md, MASTER_IMPLEMENTATION_CHECKLIST.md, and affected root READMEs/package metadata for stale pre-FND-001b claims, then make every status, count, next-task statement, limitation, and completion-language statement agree with the delivered boundary implementation and its evidence without marking FND-001 or Phase 0 complete. At minimum correct CURRENT_IMPLEMENTATION_STATUS.md §5, §8, §10, §11 and platform/README.md; preserve P0-03 and P0-11 as complete only if their checklist evidence blocks support that status, and keep P0-10 in progress. Run the documentation link validator and a clean `npm ci && npm run verify`, record the exact current results, commit this bounded documentation correction, and report the commit and command outputs without starting FND-001c."
+  "last_instruction": "Finish the FND-001b documentation reconciliation only: correct the stale evidence-register introduction in docs/CURRENT_IMPLEMENTATION_STATUS.md §11 and the stale test-infrastructure statement in docs/MASTER_IMPLEMENTATION_CHECKLIST.md §F, then search both documents for any equivalent present-tense claims contradicted by FND-001a/b and correct only those contradictions without changing completion statuses. Run `node docs/tools/validate-doc-links.mjs` and, from a clean dependency/build state, `npm ci && npm run verify`; commit the corrections and report the commit SHA plus exact exit codes and test/link/boundary counts, without starting FND-001c."
 }
