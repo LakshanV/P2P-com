@@ -56,6 +56,15 @@ const LEDGER_0002 = {
   checksum: realChecksum('0002_create_migration_ledger.up.sql'),
 };
 
+const LEDGER_0003 = {
+  version: '0003',
+  slug: 'create_kernel_configuration_schema',
+  checksum: realChecksum('0003_create_kernel_configuration_schema.up.sql'),
+};
+
+/** Versions of the real forward migrations, so a new migration cannot make these stale. */
+const ALL_VERSIONS: readonly string[] = discover(directory).map((migration) => migration.version);
+
 /** Index of the first statement matching a pattern, for asserting ordering. */
 const indexOf = (statements: readonly string[], pattern: RegExp): number =>
   statements.findIndex((statement) => pattern.test(statement));
@@ -68,12 +77,12 @@ test('bootstraps a fresh database, then applies every migration in version order
 
   assert.deepEqual(
     report.applied.map((a) => a.version),
-    ['0001', '0002'],
+    ALL_VERSIONS,
     'migrations must apply in ascending version order',
   );
   assert.deepEqual(report.alreadyApplied, []);
   assert.equal(db.bootstrapped, true, 'the ledger must exist after the run');
-  assert.deepEqual(db.appliedVersions(), ['0001', '0002']);
+  assert.deepEqual(db.appliedVersions(), [...ALL_VERSIONS]);
 });
 
 test('on a fresh database the bootstrap shares the first migration transaction', async () => {
@@ -119,7 +128,7 @@ test('status on an empty database creates nothing', async () => {
   const report = await migrationStatus(db, { directory });
 
   assert.deepEqual(report.applied, [], 'an absent ledger means nothing has been applied');
-  assert.deepEqual(report.pending, ['0001', '0002']);
+  assert.deepEqual(report.pending, [...ALL_VERSIONS]);
   assert.equal(db.bootstrapped, false, 'status must not create the ledger');
   assert.equal(db.schemaCreated, false, 'status must not create the schema');
   assert.equal(
@@ -180,20 +189,20 @@ test('a failed bootstrap rolls back, leaving neither schema nor ledger, and rele
 // --------------------------------------------------------------- incremental and idempotent
 
 test('applies only what is pending, leaving applied migrations alone', async () => {
-  const db = new FakeDatabase({ ledger: [LEDGER_0001] });
+  const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002] });
   const report = await migrateUp(db, { directory });
 
   assert.deepEqual(
     report.applied.map((a) => a.version),
-    ['0002'],
+    ['0003'],
     'only the unapplied migration may run',
   );
-  assert.deepEqual(report.alreadyApplied, ['0001']);
-  assert.deepEqual(db.appliedVersions(), ['0001', '0002']);
+  assert.deepEqual(report.alreadyApplied, ['0001', '0002']);
+  assert.deepEqual(db.appliedVersions(), [...ALL_VERSIONS]);
 });
 
 test('a rerun on an up-to-date database applies nothing and writes nothing', async () => {
-  const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002] });
+  const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002, LEDGER_0003] });
   const report = await migrateUp(db, { directory });
 
   assert.deepEqual(report.applied, [], 'a rerun must be a no-op');
@@ -202,7 +211,7 @@ test('a rerun on an up-to-date database applies nothing and writes nothing', asy
     false,
     'no ledger row may be written when nothing is applied',
   );
-  assert.deepEqual(db.appliedVersions(), ['0001', '0002']);
+  assert.deepEqual(db.appliedVersions(), [...ALL_VERSIONS]);
 });
 
 // --------------------------------------------------------------- atomicity with the ledger
@@ -383,7 +392,7 @@ test('status reports applied and pending without changing anything', async () =>
     report.applied.map((row) => row.version),
     ['0001'],
   );
-  assert.deepEqual(report.pending, ['0002']);
+  assert.deepEqual(report.pending, ['0002', '0003']);
   assert.equal(
     db.statements.some((s) => /^INSERT INTO platform\.schema_migrations/i.test(s)),
     false,
@@ -430,7 +439,7 @@ test('rolling back 0002 leaves the ledger intact, and the earlier history with i
     ['0001'],
     'the database is still readable and its history still coherent',
   );
-  assert.deepEqual(after.pending, ['0002'], '0002 becomes pending again, not lost');
+  assert.deepEqual(after.pending, ['0002', '0003'], '0002 becomes pending again, not lost');
 });
 
 test('the ledger row is deleted before the rollback body runs', async () => {
@@ -453,7 +462,7 @@ test('the ledger row is deleted before the rollback body runs', async () => {
 });
 
 test('refuses to roll back anything other than the latest applied migration', async () => {
-  const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002] });
+  const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002, LEDGER_0003] });
 
   await assert.rejects(
     migrateDown(db, { directory, version: '0001' }),
@@ -462,7 +471,7 @@ test('refuses to roll back anything other than the latest applied migration', as
       error.code === 'rollback-not-latest' &&
       /one version at a time/.test(error.message),
   );
-  assert.deepEqual(db.appliedVersions(), ['0001', '0002'], 'nothing may change on refusal');
+  assert.deepEqual(db.appliedVersions(), ALL_VERSIONS, 'nothing may change on refusal');
 });
 
 test('refuses to roll back when nothing has been applied', async () => {
@@ -475,30 +484,30 @@ test('refuses to roll back when nothing has been applied', async () => {
 
 test('refuses to roll back on inconsistent checksum evidence', async () => {
   const db = new FakeDatabase({
-    ledger: [LEDGER_0001, { ...LEDGER_0002, checksum: 'b'.repeat(64) }],
+    ledger: [LEDGER_0001, { ...LEDGER_0002, checksum: 'b'.repeat(64) }, LEDGER_0003],
   });
 
   await assert.rejects(
     migrateDown(db, { directory, version: '0002' }),
     (error: unknown) => error instanceof MigrationError && error.code === 'checksum-drift',
   );
-  assert.deepEqual(db.appliedVersions(), ['0001', '0002'], 'a refused rollback changes nothing');
+  assert.deepEqual(db.appliedVersions(), ALL_VERSIONS, 'a refused rollback changes nothing');
 });
 
 test('a failing rollback leaves the ledger row in place', async () => {
   const db = new FakeDatabase({
-    ledger: [LEDGER_0001, LEDGER_0002],
-    failOn: /DROP INDEX IF EXISTS platform\.schema_migrations_applied_at_idx/i,
+    ledger: [LEDGER_0001, LEDGER_0002, LEDGER_0003],
+    failOn: /DROP INDEX IF EXISTS kernel_configuration\.config_version_resolution_idx/i,
   });
 
   await assert.rejects(
-    migrateDown(db, { directory, version: '0002' }),
+    migrateDown(db, { directory, version: '0003' }),
     (error: unknown) =>
       error instanceof MigrationError &&
       error.code === 'sql-failed' &&
-      /the ledger row for 0002 is untouched/.test(error.message),
+      /the ledger row for 0003 is untouched/.test(error.message),
   );
-  assert.deepEqual(db.appliedVersions(), ['0001', '0002']);
+  assert.deepEqual(db.appliedVersions(), [...ALL_VERSIONS]);
   assert.equal(db.lockHeld, false);
 });
 
@@ -544,7 +553,7 @@ test('checksums are SHA-256 of the file, and change when the file changes', () =
 
 test('discovered checksums match the files on disk', () => {
   const discovered = discover(directory);
-  assert.equal(discovered.length, 2);
+  assert.equal(discovered.length, ALL_VERSIONS.length);
   for (const migration of discovered) {
     assert.equal(migration.checksum, realChecksum(migration.upFile));
   }
@@ -623,7 +632,7 @@ test('refuses to roll back a migration whose rollback file has been removed', as
     for (const file of fs.readdirSync(directory)) {
       fs.copyFileSync(path.join(directory, file), path.join(temporary, file));
     }
-    const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002] });
+    const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002, LEDGER_0003] });
     // Discovery happens against the complete copy; the file disappears before the rollback reads
     // it, which is the race this branch exists to catch.
     fs.rmSync(path.join(temporary, '0002_create_migration_ledger.down.sql'));
@@ -635,7 +644,7 @@ test('refuses to roll back a migration whose rollback file has been removed', as
         (error.code === 'missing-rollback-file' || error.code === 'invalid-migration-set'),
       'a rollback with no rollback file must fail closed',
     );
-    assert.deepEqual(db.appliedVersions(), ['0001', '0002'], 'nothing may change on refusal');
+    assert.deepEqual(db.appliedVersions(), ALL_VERSIONS, 'nothing may change on refusal');
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

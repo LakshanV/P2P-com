@@ -4,7 +4,10 @@ The 15 kernel components defined in [`docs/MODULE_MAP.md`](../docs/MODULE_MAP.md
 directory per component, named by the `dir` slug registered in
 [`platform/architecture/manifest.ts`](../platform/architecture/manifest.ts).
 
-**Nothing here is implemented.** Build steps B-1 through B-3 populate this directory.
+**One component is implemented: K-05 Configuration** (`configuration/`, build step B-1,
+delivered by FND-003a — see [`configuration/CONTRACT.md`](./configuration/CONTRACT.md)). It has no
+API and no UI, deliberately: those wait on K-02 Authentication, K-04 Permissions and K-09 Audit.
+The remaining 14 components are unbuilt; build steps B-1 through B-3 populate them.
 
 Two rules are enforced by `npm run check:boundaries`:
 

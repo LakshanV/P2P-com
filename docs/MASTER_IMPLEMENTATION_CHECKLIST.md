@@ -99,7 +99,7 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 | P0-05 | Build pipeline (compile/bundle) | `[~]` IN PROGRESS | `npm run build` exit 0, emits `dist/`. Compilation check only — no runnable entry point exists yet. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-06 | Type checking | `[~]` IN PROGRESS | `npm run typecheck` exit 0, strict with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-07 | Lint and format configuration | `[~]` IN PROGRESS | `npm run lint` and `npm run format:check` both exit 0. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
-| P0-08 | Test framework and runner | `[~]` IN PROGRESS | `npm test` exit 0 — tests 200, pass 200, fail 0 (32 at FND-001b, 36 by the FND-001d documentation contract, 29 by the FND-002a migration contract, 41 by the FND-002b runner and its corrections, 62 by the FND-002c provisioning and integration-safety contracts). A further 12 live-PostgreSQL tests exist and are skipped, not passing. Runner proven to report failure (exit 1) on a deliberately failing assertion. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness), [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
+| P0-08 | Test framework and runner | `[~]` IN PROGRESS | `npm test` exit 0 — tests 247, pass 247, fail 0 (32 at FND-001b, 36 by the FND-001d documentation contract, 29 by the FND-002a migration contract, 41 by the FND-002b runner and its corrections, 62 by the FND-002c provisioning and integration-safety contracts, 46 by the FND-003a K-05 Configuration suites, plus one widened ownership assertion). A further 12 live-PostgreSQL tests exist and are skipped, not passing. Runner proven to report failure (exit 1) on a deliberately failing assertion. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness), [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
 | P0-09 | CI pipeline running build + typecheck + lint + tests + `node docs/tools/validate-doc-links.mjs` on every change | `[!]` BLOCKED | NONE — no CI configuration exists in the repository. FND-001c is blocked by **BL-10**: the repository credential is a fine-grained token without the **Workflows** permission, so any change touching `.github/workflows/` is rejected by the remote and never lands. The item stays incomplete until BL-10 clears; it is not deferred, and no CI-dependent gate may be marked complete meanwhile. |
 | P0-10 | Import-boundary / layering enforcement checks ([MODULE_MAP.md](./MODULE_MAP.md) §13) | `[~]` IN PROGRESS | `layer-direction` and `kernel-purity` delivered (FND-001b), wired into `npm run verify`, each proven by a committed planted-violation fixture. **Held at IN PROGRESS: §13 lists eight checks and four are built** — table ownership, policy-literal scan, contract presence and cycle detection need a schema, policy values and module contracts to exist. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
 | P0-11 | Financial-zone and AI-provider-import enforcement checks | `[x]` COMPLETE | `financial-zone-ai` (severity P0) and `provider-import` in `platform/checks/boundaries.ts`, wired into `npm run verify`, exit 1 on violation. Planted fixtures rejected, including the control proving the zone matches on path boundaries — `modules/rewards/ledger` restricted, `modules/rewards/ui` not. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
@@ -149,7 +149,7 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 | P0-35 | Event infrastructure (see K-08) | `[ ]` NOT STARTED | NONE |
 | P0-36 | Audit framework (see K-09) | `[ ]` NOT STARTED | NONE |
 | P0-37 | Feature flags (see K-07) | `[ ]` NOT STARTED | NONE |
-| P0-38 | Configuration and policy engine (see K-05, K-06) | `[ ]` NOT STARTED | NONE |
+| P0-38 | Configuration and policy engine (see K-05, K-06) | `[~]` IN PROGRESS | K-05 Configuration's core is delivered (FND-003a); K-06 Policy Engine is not started, and financial policy values are refused by K-05 precisely so they land there instead. Evidence [§11.10](./CURRENT_IMPLEMENTATION_STATUS.md#1110-evidence--fnd-003a-k-05-configuration-foundation) |
 | P0-39 | AI provider abstraction / AI Gateway (see K-13) | `[ ]` NOT STARTED | NONE |
 | P0-40 | Live AI provider credentials for at least one adapter | `[!]` BLOCKED | Blocker BL-04 |
 | P0-41 | Design system foundation (v3 §34) | `[ ]` NOT STARTED | NONE |
@@ -177,7 +177,7 @@ Each kernel component needs a contract document (v3 §10) and an implementation 
 | K-02 | Authentication (incl. MFA support, secure sessions) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-2 |
 | K-03 | Accounts (one universal JAYA Account) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-2 |
 | K-04 | Permissions (RBAC/ABAC, purpose-based staff access) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-2 |
-| K-05 | Configuration | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-1 |
+| K-05 | Configuration | `[x]` COMPLETE — [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md) | `[~]` IN PROGRESS — registry, immutable versions, draft→active lifecycle, effective-time resolution, optimistic concurrency, idempotent publication, scoped overrides, decision pinning, injected repository port with in-memory and PostgreSQL adapters, and migration 0003 under `kernel_configuration`. **No API, no UI, no events, no enforced RBAC, no audit trail** (K-02/K-04/K-08/K-09), and the migration has never been applied to a live server. Evidence [§11.10](./CURRENT_IMPLEMENTATION_STATUS.md#1110-evidence--fnd-003a-k-05-configuration-foundation) | B-1 |
 | K-06 | Policy Engine (versioned, history-preserving) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-3 |
 | K-07 | Feature Flags (OFF → internal → selected → percentage → full, kill switches) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-2 |
 | K-08 | Event Infrastructure (idempotency, retries, DLQ, replay) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-1 |
@@ -602,7 +602,7 @@ These are not owned by one phase. Each is verified per module and again at relea
 
 ## F. Test suites
 
-Testing is continuous across four levels (v3 §47): task, module, phase, release. **A test runner exists and 200 substrate tests pass** (`npm test`, exit 0 — FND-001a, FND-001b, FND-001d, FND-002a, FND-002b and FND-002c). Twelve live-PostgreSQL tests are skipped for want of a server, so T-02, T-04, T-05, T-20 and T-21 stay incomplete. None of the mandatory test types below is satisfied for a business capability, because no business capability exists yet; the statuses in §F.1 and §F.3–§F.4 are unchanged.
+Testing is continuous across four levels (v3 §47): task, module, phase, release. **A test runner exists and 247 tests pass** (`npm test`, exit 0 — FND-001a, FND-001b, FND-001d, FND-002a, FND-002b and FND-002c). Twelve live-PostgreSQL tests are skipped for want of a server, so T-02, T-04, T-05, T-20 and T-21 stay incomplete. None of the mandatory test types below is satisfied for a business capability, because no business capability exists yet; the statuses in §F.1 and §F.3–§F.4 are unchanged.
 
 ### F.1 Mandatory test types (v3 §48)
 
@@ -770,7 +770,7 @@ Severity definitions from v3 §52.
 |---|---|---|---|---|
 | — | None | — | — | **0 open** |
 
-**Interpretation:** zero open defects reflects almost no implementation, not verified quality. The substrate delivered by FND-001a, FND-001b, FND-001d, FND-002a and FND-002b carries 200 passing tests and no known defect (three FND-002c defects were found by review and corrected — [§11.9](./CURRENT_IMPLEMENTATION_STATUS.md#119-correction--fnd-002c-integration-test-targeting-env-sufficiency-and-a-vacuous-leftover-proof)) (three FND-002b defects were found by review and corrected — [§11.7](./CURRENT_IMPLEMENTATION_STATUS.md#117-correction--fnd-002b-production-readiness-and-transaction-model)); this register stays close to meaningless until business capability exists to defect. Each entry, when added, must carry: id, severity, description, owning module, reproduction, detection source, and the regression test that reproduces it (v3 §58).
+**Interpretation:** zero open defects reflects almost no implementation, not verified quality. The substrate delivered by FND-001a, FND-001b, FND-001d, FND-002a and FND-002b carries 247 passing tests and no known defect (three FND-002c defects were found by review and corrected — [§11.9](./CURRENT_IMPLEMENTATION_STATUS.md#119-correction--fnd-002c-integration-test-targeting-env-sufficiency-and-a-vacuous-leftover-proof)) (three FND-002b defects were found by review and corrected — [§11.7](./CURRENT_IMPLEMENTATION_STATUS.md#117-correction--fnd-002b-production-readiness-and-transaction-model)); this register stays close to meaningless until business capability exists to defect. Each entry, when added, must carry: id, severity, description, owning module, reproduction, detection source, and the regression test that reproduces it (v3 §58).
 
 ---
 
@@ -816,14 +816,14 @@ The v1.0 guide is subordinate to v3 (see the hierarchy decision in [CURRENT_IMPL
 
 ## K. Baseline counts
 
-**474 tracked items** carry an explicit status. Counts verified mechanically over this file after FND-002c, which moved T-21 from NOT STARTED to IN PROGRESS and no other item.
+**474 tracked items** carry an explicit status. Counts verified mechanically over this file after FND-003a, which moved the K-05 contract to COMPLETE and the K-05 implementation plus P0-38 to IN PROGRESS.
 
 | Status | Count | Notes |
 |---|---:|---|
-| `[ ]` NOT STARTED | 441 | |
-| `[~]` IN PROGRESS | 14 | X-52 (standing documentation obligation); P0-04…P0-08 (satisfied by FND-001a, held while FND-001 is unfinished); P0-10 (four of eight MODULE_MAP §13 checks built); X-44 and X-46 (the checks exist but are not yet **CI** checks); P0-14, P0-15, P0-16 and RC-06 (FND-002a delivered the migration contract, FND-002b the runner, FND-002c local provisioning); T-21 (test-database lifecycle delivered, never run). Nothing has been executed against a live PostgreSQL. |
+| `[ ]` NOT STARTED | 438 | |
+| `[~]` IN PROGRESS | 16 | X-52 (standing documentation obligation); P0-04…P0-08 (satisfied by FND-001a, held while FND-001 is unfinished); P0-10 (four of eight MODULE_MAP §13 checks built); X-44 and X-46 (the checks exist but are not yet **CI** checks); P0-14, P0-15, P0-16 and RC-06 (FND-002a delivered the migration contract, FND-002b the runner, FND-002c local provisioning); T-21 (test-database lifecycle delivered, never run); K-05 implementation and P0-38 (FND-003a delivered K-05 Configuration's core; no API, no enforced authority, no audit, no events). Nothing has been executed against a live PostgreSQL. |
 | `[?]` NEEDS REVIEW | 0 | Nothing has been submitted for review. |
-| `[x]` COMPLETE | 5 | P0-01 (DOC-001 documentation artefacts), P0-03 (all six source roots tracked and documented), P0-11 (financial-zone and provider-import checks, proven by planted fixtures), P0-12 and P0-13 (contributor documentation and git conventions, enforced by the FND-001d documentation contract). |
+| `[x]` COMPLETE | 6 | P0-01 (DOC-001 documentation artefacts), P0-03 (all six source roots tracked and documented), P0-11 (financial-zone and provider-import checks, proven by planted fixtures), P0-12 and P0-13 (contributor documentation and git conventions), and the K-05 Configuration module contract. |
 | `[!]` BLOCKED | 9 | P0-09 (CI — BL-10, the credential lacks the Workflows permission), P0-19, P0-22, P0-24, P0-26, P0-28, P0-40, P6-04, P14-04. All external credentials or legal decisions (§I). |
 | `[-]` DEFERRED WITH REASON | 3 | RC-03, RC-04, RC-05. |
 | `[o]` OUT OF SCOPE WITH REASON | 2 | RC-01, RC-02. |

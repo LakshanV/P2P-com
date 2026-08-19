@@ -18,11 +18,22 @@ import test from 'node:test';
 
 import {
   ADVISORY_LOCK_KEY,
+  discover,
   migrateDown,
   migrateUp,
   migrationStatus,
 } from '../../platform/db/runner.ts';
-import { liveTestOptions, withTestDatabase } from './harness.ts';
+import { MIGRATIONS_PATH, liveTestOptions, withTestDatabase } from './harness.ts';
+
+/**
+ * The versions actually on disk. Derived rather than written out, so adding a migration does not
+ * silently make this suite assert a stale set — which it would do only on a machine that has a
+ * database, and therefore only where it would be noticed last.
+ */
+const ALL_VERSIONS: readonly string[] = discover(MIGRATIONS_PATH).map(
+  (migration) => migration.version,
+);
+const LAST_VERSION = ALL_VERSIONS[ALL_VERSIONS.length - 1] ?? '';
 
 test(
   'a clean database receives every migration, in order, and records them',
@@ -31,19 +42,19 @@ test(
     await withTestDatabase(async ({ database, directory }) => {
       const initial = await migrationStatus(database, { directory });
       assert.deepEqual(initial.applied, [], 'a newly created database has no history');
-      assert.deepEqual(initial.pending, ['0001', '0002']);
+      assert.deepEqual(initial.pending, [...ALL_VERSIONS]);
 
       const applied = await migrateUp(database, { directory });
       assert.deepEqual(
         applied.applied.map((row) => row.version),
-        ['0001', '0002'],
+        [...ALL_VERSIONS],
         'migrations must apply in ascending version order',
       );
 
       const after = await migrationStatus(database, { directory });
       assert.deepEqual(
         after.applied.map((row) => row.version),
-        ['0001', '0002'],
+        [...ALL_VERSIONS],
         'the ledger must record what was applied',
       );
       assert.deepEqual(after.pending, [], 'nothing may remain pending');
@@ -66,21 +77,21 @@ test('a rolled-back migration becomes pending and can be re-applied', liveTestOp
   await withTestDatabase(async ({ database, directory }) => {
     await migrateUp(database, { directory });
 
-    const rolledBack = await migrateDown(database, { directory, version: '0002' });
-    assert.equal(rolledBack.rolledBack, '0002');
+    const rolledBack = await migrateDown(database, { directory, version: LAST_VERSION });
+    assert.equal(rolledBack.rolledBack, LAST_VERSION);
 
     const after = await migrationStatus(database, { directory });
     assert.deepEqual(
       after.applied.map((row) => row.version),
-      ['0001'],
+      ALL_VERSIONS.slice(0, -1),
       'the rollback must remove exactly one ledger row',
     );
-    assert.deepEqual(after.pending, ['0002'], 'the rolled-back migration becomes pending');
+    assert.deepEqual(after.pending, [LAST_VERSION], 'the rolled-back migration becomes pending');
 
     const reapplied = await migrateUp(database, { directory });
     assert.deepEqual(
       reapplied.applied.map((row) => row.version),
-      ['0002'],
+      [LAST_VERSION],
       'a rolled-back migration must be re-appliable',
     );
   });
@@ -92,10 +103,16 @@ test(
   async () => {
     await withTestDatabase(async ({ database, directory }) => {
       await migrateUp(database, { directory });
-      await migrateDown(database, { directory, version: '0002' });
 
-      // The contradiction this replaces: the original 0002 rollback dropped the ledger, so the
-      // runner's DELETE ran against a relation that no longer existed and the rollback aborted.
+      // Roll back to 0002 inclusive, in reverse order — the runner refuses anything but the
+      // latest, which is itself the behaviour under test everywhere else. 0002 is the interesting
+      // one: the original version of its rollback dropped the ledger, so the runner's DELETE ran
+      // against a relation that no longer existed and the whole rollback aborted.
+      for (const version of [...ALL_VERSIONS].reverse()) {
+        if (version < '0002') break;
+        await migrateDown(database, { directory, version });
+      }
+
       const after = await migrationStatus(database, { directory });
       assert.deepEqual(
         after.applied.map((row) => row.version),

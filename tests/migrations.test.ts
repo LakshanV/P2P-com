@@ -84,15 +84,31 @@ test('migration versions are unique and densely ordered from 0001', () => {
   });
 });
 
-test('the delivered migrations add no business-module or kernel tables', () => {
+test('every migration is owned by the platform or by a kernel component', () => {
+  // FND-002a delivered platform-owned migrations only. FND-003a added the first kernel-owned pair
+  // (K-05 Configuration), which is exactly how a unit is meant to arrive: with its own schema.
+  // What still must not exist is a business-module table — no module has been built.
   const { migrations } = validateMigrations(REAL_MIGRATIONS);
+  assert.ok(migrations.length > 0);
   for (const migration of migrations) {
-    assert.equal(
-      migration.owner,
-      PLATFORM_SCHEMA,
-      `${migration.file} is owned by ${String(migration.owner)} — FND-002a establishes the ` +
-        'migration contract only; unit tables arrive with their own modules',
+    const owner = String(migration.owner);
+    assert.ok(
+      owner === PLATFORM_SCHEMA || owner.startsWith(KERNEL_SCHEMA_PREFIX),
+      `${migration.file} is owned by ${owner}; only the platform and kernel components own ` +
+        'schemas so far',
     );
+    assert.equal(
+      owner.startsWith(MODULE_SCHEMA_PREFIX),
+      false,
+      `${migration.file} creates business-module tables, and no business module exists yet`,
+    );
+  }
+});
+
+test('the platform migrations remain platform-owned', () => {
+  const { migrations } = validateMigrations(REAL_MIGRATIONS);
+  for (const migration of migrations.filter((candidate) => candidate.version <= '0002')) {
+    assert.equal(migration.owner, PLATFORM_SCHEMA, `${migration.file} changed owner`);
   }
 });
 
