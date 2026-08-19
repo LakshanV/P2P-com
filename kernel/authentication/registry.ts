@@ -231,7 +231,8 @@ export const ASSERTED_AUTHENTICATION_FIELDS: Readonly<Record<string, string>> = 
   assurance: 'assurance is derived from what the verifier confirmed, never supplied',
   assuranceLevel: 'assurance is derived from what the verifier confirmed, never supplied',
   mfaSatisfied: 'whether the MFA policy is met is computed here from the verifier’s assertion',
-  assertion: 'the assertion comes from the verifier, not through the caller — passing one would ' +
+  assertion:
+    'the assertion comes from the verifier, not through the caller — passing one would ' +
     'let a caller forge the answer it wants',
   assertionId: 'the assertion identifier comes from the verifier',
   verifiedAt: 'the verifier reports when it verified',
@@ -267,7 +268,8 @@ export const FOREIGN_FIELDS: Readonly<Record<string, string>> = Object.freeze({
   accountId: 'K-03 Accounts owns the universal account; authentication is about the subject',
   account: 'K-03 Accounts owns the universal account',
   roles: 'K-04 Permissions owns roles and grants',
-  permissions: 'K-04 Permissions owns permission evaluation, and authentication is not authorisation',
+  permissions:
+    'K-04 Permissions owns permission evaluation, and authentication is not authorisation',
   capabilities: 'the Capability & Verification module owns capability activation',
   subjectKind: 'K-01 Identity owns what kind of party a subject is',
   email: 'a profile field, and personal data. Use an opaque provider reference',

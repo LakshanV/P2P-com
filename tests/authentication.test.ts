@@ -75,7 +75,10 @@ test('a request that asserts an authentication outcome is refused by name', asyn
     await service.bind(bindRequest());
 
     await assert.rejects(
-      service.authenticate({ ...authenticateRequest(), [field]: value } as AuthenticateRequest),
+      // No cast: a computed key is not excess-property-checked, so the forbidden field reaches the
+      // service exactly as a caller's would. The refusal has to come from the service, not the
+      // compiler — that is the whole claim.
+      service.authenticate({ ...authenticateRequest(), [field]: value }),
       (error: unknown) => {
         assert.equal(
           codeOf(error),
@@ -113,7 +116,7 @@ test('a raw credential in a request is refused, and never reaches storage or an 
       service.authenticate({
         ...authenticateRequest(),
         [field]: 'hunter2-the-actual-secret',
-      } as AuthenticateRequest),
+      }),
       (error: unknown) => {
         assert.equal(codeOf(error), 'foreign-concern', field);
         assert.ok(
@@ -143,7 +146,7 @@ test('a caller cannot choose a session secret', async () => {
       service.authenticate({
         ...authenticateRequest(),
         [field]: 'a'.repeat(43),
-      } as AuthenticateRequest),
+      }),
       (error: unknown) => codeOf(error) === 'foreign-concern',
       `"${field}" must not be accepted`,
     );
@@ -176,7 +179,7 @@ test('fields owned by other components are refused with the owner named', async 
     const { service } = build();
     await service.bind(bindRequest());
     await assert.rejects(
-      service.authenticate({ ...authenticateRequest(), [field]: 'x' } as AuthenticateRequest),
+      service.authenticate({ ...authenticateRequest(), [field]: 'x' }),
       (error: unknown) => {
         assert.equal(codeOf(error), 'foreign-concern', field);
         assert.match((error as AuthenticationError).message, expected);
@@ -245,25 +248,25 @@ test('an assertion past its own expiry is refused, judged by this platform’s c
   const harness = build({ verifier });
   await harness.service.bind(bindRequest());
 
-  await assert.rejects(
-    harness.service.authenticate(authenticateRequest()),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'assertion-expired');
-      assert.match((error as AuthenticationError).message, /captured in transit/i);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.authenticate(authenticateRequest()), (error: unknown) => {
+    assert.equal(codeOf(error), 'assertion-expired');
+    assert.match((error as AuthenticationError).message, /captured in transit/i);
+    return true;
+  });
 });
 
 test('a nonsensical assertion is refused rather than interpreted', async () => {
   const cases: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
-    ['expiry before verification', { verifiedAt: '2026-04-01T12:00:00Z', expiresAt: '2026-04-01T11:00:00Z' }],
+    [
+      'expiry before verification',
+      { verifiedAt: '2026-04-01T12:00:00Z', expiresAt: '2026-04-01T11:00:00Z' },
+    ],
     ['a non-string verifiedAt', { verifiedAt: 12345 }],
     ['a null expiresAt', { expiresAt: null }],
   ];
 
   for (const [why, override] of cases) {
-    const harness = build({ verifier: new StubVerifier({ override: override as never }) });
+    const harness = build({ verifier: new StubVerifier({ override }) });
     await harness.service.bind(bindRequest());
     await assert.rejects(
       harness.service.authenticate(authenticateRequest()),
@@ -326,7 +329,7 @@ test('the refusing verifier is what a missing provider adapter actually means', 
   );
 });
 
-test('an unregistered provider is refused, and says nothing is registered when nothing is', async () => {
+test('an unregistered provider is refused, and says nothing is registered when nothing is', () => {
   const empty = new ProviderRegistry([]);
   assert.throws(
     () => empty.requireProvider('passkey'),
@@ -366,7 +369,10 @@ test('an authentication that does not meet the provider policy is refused', asyn
   await assert.rejects(harness.service.authenticate(authenticateRequest()), (error: unknown) => {
     assert.equal(codeOf(error), 'insufficient-factors');
     assert.match((error as AuthenticationError).message, /requires at least 2 factor categories/);
-    assert.match((error as AuthenticationError).message, /confirmed 1 \(knowledge\) at single-factor/);
+    assert.match(
+      (error as AuthenticationError).message,
+      /confirmed 1 \(knowledge\) at single-factor/,
+    );
     return true;
   });
   assert.equal(harness.repository.sessions().length, 0, 'and no session was issued');
@@ -407,7 +413,10 @@ test('a provider may raise the platform floor and may never lower it', () => {
 
   for (const [why, policy] of [
     ['fewer categories', { minimumFactorCategories: 1, minimumAssurance: 'multi-factor' as const }],
-    ['weaker assurance', { minimumFactorCategories: 2, minimumAssurance: 'single-factor' as const }],
+    [
+      'weaker assurance',
+      { minimumFactorCategories: 2, minimumAssurance: 'single-factor' as const },
+    ],
   ] as const) {
     assert.throws(
       () =>
@@ -463,14 +472,11 @@ test('the registries are closed and documented', () => {
 
 test('a binding for a subject K-01 does not know is refused before anything is written', async () => {
   const harness = build({ known: [] });
-  await assert.rejects(
-    harness.service.bind(bindRequest()),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'unknown-subject');
-      assert.match((error as AuthenticationError).message, /invent a party to authenticate/i);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.bind(bindRequest()), (error: unknown) => {
+    assert.equal(codeOf(error), 'unknown-subject');
+    assert.match((error as AuthenticationError).message, /invent a party to authenticate/i);
+    return true;
+  });
   assert.equal(harness.repository.bindings().length, 0);
   assert.equal(harness.repository.transactionsCommitted, 0);
 });

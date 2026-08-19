@@ -33,6 +33,27 @@ import {
 const codeOf = (error: unknown): string | undefined =>
   error instanceof AuthenticationError ? error.code : undefined;
 
+/**
+ * A template literal, applied to a value the checker has been told nothing about.
+ *
+ * `restrict-template-expressions` exists to stop `${someObject}` reaching a log by accident, which
+ * is exactly the accident these tests reproduce **on purpose**. The interpolation stays a real
+ * template literal — `String(token)` is a different expression, and the whole claim is that both
+ * spellings redact — with the cast localised here and nothing suppressed at the call site.
+ */
+function interpolated(value: unknown): string {
+  return `${value as string}`;
+}
+
+/**
+ * An object as its well-known-symbol hooks, so a test can ask whether one is actually installed.
+ *
+ * Node calls the inspection hook as a method and does nothing if it is absent, so "is it there"
+ * and "what does it return" are two separate claims and this view lets both be made.
+ */
+const asHooks = (value: object): Record<symbol, (() => string) | undefined> =>
+  value as unknown as Record<symbol, (() => string) | undefined>;
+
 // ---------------------------------------------------------------------------
 // The secret exists once
 // ---------------------------------------------------------------------------
@@ -63,15 +84,18 @@ test('a session secret cannot reach a log, a template or a JSON body by accident
   const token = new SessionToken('S'.repeat(43));
 
   assert.equal(String(token), REDACTED);
-  assert.equal(`${token}`, REDACTED);
+  assert.equal(interpolated(token), REDACTED);
   assert.equal(token.toJSON(), REDACTED);
   assert.equal(JSON.stringify({ token }), `{"token":"${REDACTED}"}`);
   assert.equal(JSON.stringify(token), `"${REDACTED}"`);
 
-  const inspected = (
-    token as unknown as Record<symbol, () => string>
-  )[Symbol.for('nodejs.util.inspect.custom')]();
-  assert.equal(inspected, REDACTED, 'console.log and assertion diffs redact too');
+  const inspect = asHooks(token)[Symbol.for('nodejs.util.inspect.custom')];
+  assert.equal(
+    typeof inspect,
+    'function',
+    'without the hook, console.log prints the object itself — which is where the secret would be',
+  );
+  assert.equal(inspect?.call(token), REDACTED, 'console.log and assertion diffs redact too');
 
   assert.ok(!JSON.stringify({ token }).includes('SSS'), 'no fragment of the secret survives');
 });
@@ -105,13 +129,16 @@ test('a refusal never echoes a presented secret', async () => {
 
   await assert.rejects(harness.service.validate(wrong), (error: unknown) => {
     assert.equal(codeOf(error), 'invalid-token');
-    assert.ok(!(error as Error).message.includes(wrong), 'the refusal repeated the presented value');
+    assert.ok(
+      !(error as Error).message.includes(wrong),
+      'the refusal repeated the presented value',
+    );
     assert.ok(!(error as Error).message.includes(secret));
     return true;
   });
 });
 
-test('an entropy source that degrades is refused rather than issuing a guessable session', async () => {
+test('an entropy source that degrades is refused rather than issuing a guessable session', () => {
   for (const bad of ['short', '', 'has spaces in it and is long enough to be forty three chars']) {
     assert.throws(
       () => new SessionToken(bad),
@@ -129,14 +156,11 @@ test('an entropy source that repeats itself cannot issue a second session', asyn
   await harness.service.authenticate(authenticateRequest());
 
   harness.verifier.answerWith({});
-  await assert.rejects(
-    harness.service.authenticate(authenticateRequest()),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'insufficient-entropy');
-      assert.match((error as AuthenticationError).message, /repeating itself/i);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.authenticate(authenticateRequest()), (error: unknown) => {
+    assert.equal(codeOf(error), 'insufficient-entropy');
+    assert.match((error as AuthenticationError).message, /repeating itself/i);
+    return true;
+  });
   assert.equal(harness.repository.sessions().length, 1);
 });
 
@@ -184,7 +208,9 @@ test('a secret that matches nothing is refused without saying which part was wro
 });
 
 test('a session stops validating at its idle expiry', async () => {
-  const harness = build({ sessionPolicy: { absoluteLifetimeSeconds: 3600, idleTimeoutSeconds: 60 } });
+  const harness = build({
+    sessionPolicy: { absoluteLifetimeSeconds: 3600, idleTimeoutSeconds: 60 },
+  });
   const { secret } = await signIn(harness);
 
   harness.clock.set('2026-04-01T12:00:59Z');
@@ -200,7 +226,9 @@ test('a session stops validating at its idle expiry', async () => {
 
 test('a session stops validating at its absolute expiry however often it is rotated', async () => {
   // The hard stop is what stops a session living for ever by being used.
-  const harness = build({ sessionPolicy: { absoluteLifetimeSeconds: 120, idleTimeoutSeconds: 60 } });
+  const harness = build({
+    sessionPolicy: { absoluteLifetimeSeconds: 120, idleTimeoutSeconds: 60 },
+  });
   const { sessionId, secret: issued } = await signIn(harness);
   let secret = issued;
 
@@ -229,7 +257,9 @@ test('a session stops validating at its absolute expiry however often it is rota
 test('validation is read-only: it does not extend the idle window', async () => {
   // "Idle" here means "not rotated", not "not read". A validation that wrote would make every
   // read a write, and the component says which operation keeps a session alive by naming it.
-  const harness = build({ sessionPolicy: { absoluteLifetimeSeconds: 3600, idleTimeoutSeconds: 60 } });
+  const harness = build({
+    sessionPolicy: { absoluteLifetimeSeconds: 3600, idleTimeoutSeconds: 60 },
+  });
   const { sessionId, secret } = await signIn(harness);
   const before = await harness.service.findSession(sessionId);
 
@@ -393,12 +423,10 @@ test('an unknown revocation reason is refused', async () => {
     harness.service.revoke({ sessionId, reason: 'because-i-said-so' as never }),
     (error: unknown) => codeOf(error) === 'malformed-record',
   );
-  assert.deepEqual([...REVOCATION_REASONS], [
-    'signed-out',
-    'rotated-out',
-    'operator-revoked',
-    'security-event',
-  ]);
+  assert.deepEqual(
+    [...REVOCATION_REASONS],
+    ['signed-out', 'rotated-out', 'operator-revoked', 'security-event'],
+  );
 });
 
 test('revoking a session that does not exist is refused', async () => {

@@ -313,7 +313,10 @@ class InMemoryAuthenticationTransaction implements AuthenticationTransaction {
   }
 
   findBindingById(bindingId: string): Promise<AuthenticationBinding | null> {
-    return one(this.#state.bindings.find((entry) => entry.bindingId === bindingId), sealBinding);
+    return one(
+      this.#state.bindings.find((entry) => entry.bindingId === bindingId),
+      sealBinding,
+    );
   }
 
   findBindingByReference(
@@ -422,11 +425,17 @@ class InMemoryAuthenticationTransaction implements AuthenticationTransaction {
   }
 
   findSessionById(sessionId: string): Promise<AuthenticationSession | null> {
-    return one(this.#state.sessions.find((entry) => entry.sessionId === sessionId), sealSession);
+    return one(
+      this.#state.sessions.find((entry) => entry.sessionId === sessionId),
+      sealSession,
+    );
   }
 
   findSessionByTokenHash(tokenHash: string): Promise<AuthenticationSession | null> {
-    return one(this.#state.sessions.find((entry) => entry.tokenHash === tokenHash), sealSession);
+    return one(
+      this.#state.sessions.find((entry) => entry.tokenHash === tokenHash),
+      sealSession,
+    );
   }
 
   findSessionByIdempotencyKey(idempotencyKey: string): Promise<AuthenticationSession | null> {
@@ -460,9 +469,7 @@ class InMemoryAuthenticationTransaction implements AuthenticationTransaction {
   }
 
   rotateSession(command: RotationCommand): Promise<boolean> {
-    const index = this.#state.sessions.findIndex(
-      (entry) => entry.sessionId === command.sessionId,
-    );
+    const index = this.#state.sessions.findIndex((entry) => entry.sessionId === command.sessionId);
     const current = index === -1 ? undefined : this.#state.sessions[index];
     if (
       current === undefined ||
@@ -487,9 +494,7 @@ class InMemoryAuthenticationTransaction implements AuthenticationTransaction {
   }
 
   revokeSession(command: RevocationCommand): Promise<boolean> {
-    const index = this.#state.sessions.findIndex(
-      (entry) => entry.sessionId === command.sessionId,
-    );
+    const index = this.#state.sessions.findIndex((entry) => entry.sessionId === command.sessionId);
     const current = index === -1 ? undefined : this.#state.sessions[index];
     if (current === undefined || current.revokedAt !== null) return Promise.resolve(false);
 

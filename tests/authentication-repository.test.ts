@@ -32,11 +32,7 @@ import {
   toSession,
 } from '../kernel/authentication/index.ts';
 
-import {
-  bindingRow,
-  evidenceRow,
-  sessionRow,
-} from './helpers/authentication-fixtures.ts';
+import { bindingRow, evidenceRow, sessionRow } from './helpers/authentication-fixtures.ts';
 import { RecordingDatabase, sqlstateError } from './helpers/recording-database.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +54,16 @@ const MIGRATION_DOWN = readFileSync(
 
 const codeOf = (error: unknown): string | undefined =>
   error instanceof AuthenticationError ? error.code : undefined;
+
+/**
+ * A decoded record as a bag of properties, for asserting about the ones its type does not declare.
+ *
+ * Half of what a decoder must get right is what it *does not* produce, and a typed value cannot be
+ * asked about a property the type has never heard of. Reading through this view keeps those probes
+ * runtime probes rather than compile-time tautologies.
+ */
+const asRecord = (value: object): Record<string, unknown> =>
+  value as unknown as Record<string, unknown>;
 
 const stripComments = (source: string): string =>
   source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/[^\n]*/g, ' ');
@@ -380,7 +386,10 @@ test('well-formed rows decode, sealed', () => {
 
   assert.equal(binding.bindingId, 'bind_01HQZXTESTROW');
   assert.equal(evidence.assurance, 'single-factor');
-  assert.equal(session.createdAt as unknown, undefined);
+  // A runtime probe for a property the type does not declare, so it is read through a record view
+  // rather than off the typed value: a decoder that copied the row wholesale would carry
+  // `created_at` across as `createdAt`, and the type would never have mentioned it.
+  assert.equal(asRecord(session).createdAt, undefined);
   assert.equal(session.issuedAt, '2026-04-01T12:00:00Z');
   assert.ok(Object.isFrozen(session) && Object.isFrozen(session.factors));
   assert.ok(Object.isFrozen(evidence.factors));
@@ -533,7 +542,10 @@ test('no source file in this component can delete a record', () => {
 });
 
 test('the migration enforces the session contract in the database, not only in the service', () => {
-  assert.match(MIGRATION_UP, /CONSTRAINT authentication_session_token_unique UNIQUE \(token_hash\)/);
+  assert.match(
+    MIGRATION_UP,
+    /CONSTRAINT authentication_session_token_unique UNIQUE \(token_hash\)/,
+  );
   assert.match(
     MIGRATION_UP,
     /CONSTRAINT authentication_evidence_assertion_unique UNIQUE \(provider, assertion_id\)/,
@@ -553,7 +565,10 @@ test('the migration enforces the session contract in the database, not only in t
 
 test('the database permits only rotation and revocation on a session', () => {
   // The trigger is what stops a hand-written UPDATE lengthening a session or repointing it.
-  assert.match(MIGRATION_UP, /CREATE OR REPLACE FUNCTION kernel_authentication\.refuse_session_rewrite/);
+  assert.match(
+    MIGRATION_UP,
+    /CREATE OR REPLACE FUNCTION kernel_authentication\.refuse_session_rewrite/,
+  );
   for (const immutable of [
     'session_id',
     'binding_id',

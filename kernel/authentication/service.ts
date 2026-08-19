@@ -35,20 +35,14 @@
 
 import { addSeconds, compareInstants } from '../../platform/time/instant.ts';
 
-import {
-  sealBinding,
-  sealBindings,
-  sealEvidence,
-  sealFactors,
-  sealSession,
-} from './immutable.ts';
+import { sealBinding, sealBindings, sealEvidence, sealFactors, sealSession } from './immutable.ts';
 import type { Clock, EntropySource, SubjectLookup, Verifier, VerifierAssertion } from './ports.ts';
 import {
   ASSERTED_AUTHENTICATION_FIELDS,
   FOREIGN_FIELDS,
-  ProviderRegistry,
   assertAuthIdentifier,
   satisfiesPolicy,
+  type ProviderRegistry,
 } from './registry.ts';
 import type { AuthenticationRepository, AuthenticationTransaction } from './repository.ts';
 import { SessionToken, hashToken, hashesEqual } from './tokens.ts';
@@ -191,7 +185,9 @@ export class AuthenticationService {
    * No secret is involved, and none is accepted. The binding is what lets a later assertion be
    * attributed to a subject; it proves nothing on its own.
    */
-  async bind(request: BindRequest): Promise<{ binding: AuthenticationBinding; deduplicated: boolean }> {
+  async bind(
+    request: BindRequest,
+  ): Promise<{ binding: AuthenticationBinding; deduplicated: boolean }> {
     assertPermittedKeys(request, BIND_KEYS, 'a bind request');
     this.#providers.requireProvider((request as { provider?: unknown }).provider);
 
@@ -228,10 +224,13 @@ export class AuthenticationService {
         return { binding, deduplicated: false };
       });
     } catch (error) {
-      const converged = await this.#converge(error, ['duplicate-binding', 'idempotency-key-reuse'], () =>
-        this.#repository.withTransaction((tx) =>
-          tx.findBindingByIdempotencyKey(binding.idempotencyKey),
-        ),
+      const converged = await this.#converge(
+        error,
+        ['duplicate-binding', 'idempotency-key-reuse'],
+        () =>
+          this.#repository.withTransaction((tx) =>
+            tx.findBindingByIdempotencyKey(binding.idempotencyKey),
+          ),
       );
       if (converged === null) throw error;
       if (differencesBetweenBindings(converged, binding).length > 0) throw error;
@@ -457,7 +456,10 @@ export class AuthenticationService {
 
     const next = await this.#repository.withTransaction((tx) => tx.findSessionById(sessionId));
     if (next === null) {
-      throw new AuthenticationError('no-such-session', `session ${sessionId} vanished mid-rotation`);
+      throw new AuthenticationError(
+        'no-such-session',
+        `session ${sessionId} vanished mid-rotation`,
+      );
     }
     return { session: sealSession(next), token };
   }
@@ -856,11 +858,7 @@ function hashOfPresented(presented: unknown): string {
  * The first half is the security check. The second is the tidiness one. Both refuse rather than
  * ignore, because a silently dropped `assurance` would leave the caller believing it had set one.
  */
-function assertPermittedKeys(
-  request: unknown,
-  permitted: readonly string[],
-  what: string,
-): void {
+function assertPermittedKeys(request: unknown, permitted: readonly string[], what: string): void {
   if (request === null || typeof request !== 'object') {
     throw new AuthenticationError(
       'malformed-record',
@@ -985,10 +983,7 @@ function differencesBetweenBindings(
   return differences;
 }
 
-function assertSameBinding(
-  existing: AuthenticationBinding,
-  incoming: AuthenticationBinding,
-): void {
+function assertSameBinding(existing: AuthenticationBinding, incoming: AuthenticationBinding): void {
   const differences = differencesBetweenBindings(existing, incoming);
   if (differences.length === 0) return;
   throw new AuthenticationError(

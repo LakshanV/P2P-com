@@ -66,5 +66,7 @@ export function sealSessions(
  * hoping that attempt was representative of the rest.
  */
 export function isSealed(record: { readonly factors?: readonly unknown[] }): boolean {
-  return Object.isFrozen(record) && (record.factors === undefined || Object.isFrozen(record.factors));
+  return (
+    Object.isFrozen(record) && (record.factors === undefined || Object.isFrozen(record.factors))
+  );
 }
