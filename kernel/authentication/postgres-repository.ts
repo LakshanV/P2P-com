@@ -43,7 +43,7 @@ import {
   type AuthenticationErrorCode,
   type AuthenticationSession,
 } from './types.ts';
-import { validateBinding, validateEvidence, validateSession } from './validate.ts';
+import { inStoredRow, validateBinding, validateEvidence, validateSession } from './validate.ts';
 
 export const AUTH_SCHEMA = 'kernel_authentication';
 export const BINDING_TABLE = `${AUTH_SCHEMA}.authentication_binding`;
@@ -234,61 +234,67 @@ function factorArray(value: unknown, column: string): readonly unknown[] {
 }
 
 export function toBinding(row: Record<string, unknown>): AuthenticationBinding {
-  return sealBinding(
-    validateBinding(
-      {
-        bindingId: text(row.binding_id, 'binding_id'),
-        subjectId: text(row.subject_id, 'subject_id'),
-        provider: text(row.provider, 'provider'),
-        providerReference: text(row.provider_reference, 'provider_reference'),
-        createdAt: instant(row.created_at, 'created_at'),
-        idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
-      },
-      'stored row',
+  return inStoredRow(() =>
+    sealBinding(
+      validateBinding(
+        {
+          bindingId: text(row.binding_id, 'binding_id'),
+          subjectId: text(row.subject_id, 'subject_id'),
+          provider: text(row.provider, 'provider'),
+          providerReference: text(row.provider_reference, 'provider_reference'),
+          createdAt: instant(row.created_at, 'created_at'),
+          idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
+        },
+        'stored row',
+      ),
     ),
   );
 }
 
 export function toEvidence(row: Record<string, unknown>): AuthenticationEvidence {
-  return sealEvidence(
-    validateEvidence(
-      {
-        evidenceId: text(row.evidence_id, 'evidence_id'),
-        bindingId: text(row.binding_id, 'binding_id'),
-        subjectId: text(row.subject_id, 'subject_id'),
-        provider: text(row.provider, 'provider'),
-        assertionId: text(row.assertion_id, 'assertion_id'),
-        factors: factorArray(row.factors, 'factors'),
-        assurance: text(row.assurance, 'assurance'),
-        verifiedAt: instant(row.verified_at, 'verified_at'),
-        recordedAt: instant(row.recorded_at, 'recorded_at'),
-        idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
-      },
-      'stored row',
+  return inStoredRow(() =>
+    sealEvidence(
+      validateEvidence(
+        {
+          evidenceId: text(row.evidence_id, 'evidence_id'),
+          bindingId: text(row.binding_id, 'binding_id'),
+          subjectId: text(row.subject_id, 'subject_id'),
+          provider: text(row.provider, 'provider'),
+          assertionId: text(row.assertion_id, 'assertion_id'),
+          factors: factorArray(row.factors, 'factors'),
+          assurance: text(row.assurance, 'assurance'),
+          verifiedAt: instant(row.verified_at, 'verified_at'),
+          recordedAt: instant(row.recorded_at, 'recorded_at'),
+          idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
+        },
+        'stored row',
+      ),
     ),
   );
 }
 
 export function toSession(row: Record<string, unknown>): AuthenticationSession {
-  return sealSession(
-    validateSession(
-      {
-        sessionId: text(row.session_id, 'session_id'),
-        bindingId: text(row.binding_id, 'binding_id'),
-        subjectId: text(row.subject_id, 'subject_id'),
-        evidenceId: text(row.evidence_id, 'evidence_id'),
-        assurance: text(row.assurance, 'assurance'),
-        factors: factorArray(row.factors, 'factors'),
-        tokenHash: text(row.token_hash, 'token_hash'),
-        issuedAt: instant(row.issued_at, 'issued_at'),
-        absoluteExpiresAt: instant(row.absolute_expires_at, 'absolute_expires_at'),
-        idleExpiresAt: instant(row.idle_expires_at, 'idle_expires_at'),
-        rotationCount: Number(row.rotation_count),
-        revokedAt: optionalInstant(row.revoked_at, 'revoked_at'),
-        revocationReason: row.revocation_reason ?? null,
-        idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
-      },
-      'stored row',
+  return inStoredRow(() =>
+    sealSession(
+      validateSession(
+        {
+          sessionId: text(row.session_id, 'session_id'),
+          bindingId: text(row.binding_id, 'binding_id'),
+          subjectId: text(row.subject_id, 'subject_id'),
+          evidenceId: text(row.evidence_id, 'evidence_id'),
+          assurance: text(row.assurance, 'assurance'),
+          factors: factorArray(row.factors, 'factors'),
+          tokenHash: text(row.token_hash, 'token_hash'),
+          issuedAt: instant(row.issued_at, 'issued_at'),
+          absoluteExpiresAt: instant(row.absolute_expires_at, 'absolute_expires_at'),
+          idleExpiresAt: instant(row.idle_expires_at, 'idle_expires_at'),
+          rotationCount: Number(row.rotation_count),
+          revokedAt: optionalInstant(row.revoked_at, 'revoked_at'),
+          revocationReason: row.revocation_reason ?? null,
+          idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
+        },
+        'stored row',
+      ),
     ),
   );
 }

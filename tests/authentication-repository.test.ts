@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,7 @@ const ADAPTER_SOURCE = readFileSync(path.join(MODULE_DIR, 'postgres-repository.t
 const PORT_SOURCE = readFileSync(path.join(MODULE_DIR, 'repository.ts'), 'utf8');
 const SERVICE_SOURCE = readFileSync(path.join(MODULE_DIR, 'service.ts'), 'utf8');
 const CONTRACT = readFileSync(path.join(MODULE_DIR, 'CONTRACT.md'), 'utf8');
+const TYPES_SOURCE = readFileSync(path.join(MODULE_DIR, 'types.ts'), 'utf8');
 const MIGRATIONS = path.join(HERE, '..', 'db', 'migrations');
 const MIGRATION_UP = readFileSync(
   path.join(MIGRATIONS, '0008_create_kernel_authentication_schema.up.sql'),
@@ -653,4 +654,161 @@ test('CONTRACT.md records the refusals the code raises and the integrations it l
   assert.match(CONTRACT, /no verifier/i, 'the absence of any provider must be stated');
   assert.match(CONTRACT, /threat/i, 'the threat assumptions must be recorded');
   assert.match(CONTRACT, /once/i, 'the one-time presentation of the secret must be recorded');
+});
+
+/** Every member of the `AuthenticationErrorCode` union, read out of the source that declares it. */
+function declaredErrorCodes(): readonly string[] {
+  const start = TYPES_SOURCE.indexOf('export type AuthenticationErrorCode =');
+  assert.ok(start !== -1, 'the error-code union moved; this extraction needs updating');
+  const block = TYPES_SOURCE.slice(start, TYPES_SOURCE.indexOf(';', start));
+  const codes = [...block.matchAll(/\|\s*'([a-z-]+)'/g)].map((match) => match[1] as string);
+  assert.ok(
+    codes.length >= 20,
+    `expected the union to yield every code, extracted ${codes.length} — the extraction is broken`,
+  );
+  return codes;
+}
+
+test('CONTRACT.md documents every refusal the union declares, not a chosen subset', () => {
+  // The test above lists codes by hand, so a code added later is documented only if somebody
+  // remembers to extend that list. This one derives the set from `types.ts`: a new refusal that
+  // reaches callers without reaching the contract fails here, which is the direction that matters.
+  const undocumented = declaredErrorCodes().filter((code) => !CONTRACT.includes(`\`${code}\``));
+  assert.deepEqual(
+    undocumented,
+    [],
+    `CONTRACT.md does not document ${undocumented.join(', ')} — a refusal a caller can receive ` +
+      'and cannot look up is a refusal it will guess at',
+  );
+});
+
+/**
+ * A phrase, matched across the line breaks Markdown puts in it.
+ *
+ * A regex with a literal space in it passes until somebody reflows the paragraph, and then fails
+ * for a reason that has nothing to do with what it was checking.
+ */
+function phrase(words: string): RegExp {
+  const parts = words.trim().split(/\s+/);
+  return new RegExp(parts.join(String.raw`\s+`), 'i');
+}
+
+test('CONTRACT.md records the security claims the code actually makes', () => {
+  // Each is a property this component's value rests on, is enforced somewhere in the source, and
+  // is not covered by the code-list assertion above. Matched on the claim rather than on wording,
+  // so the contract can be rewritten without these becoming a prose lock.
+  const claims: ReadonlyArray<readonly [string, RegExp]> = [
+    [
+      'the verifier decides and the caller never states the outcome',
+      phrase('caller never states the outcome'),
+    ],
+    ['the stored representation is a SHA-256', /SHA-256/],
+    ['the secret is presented once and never stored', phrase('never written, logged or echoed')],
+    ['no secret is ever a SQL parameter', phrase('no secret is ever a SQL parameter')],
+    ['rotation never extends the absolute expiry', phrase('absolute expiry is never extended')],
+    ['a stale rotation or revocation loses rather than clobbering', /`stale-session-state`/],
+    ['a retry receives a spent token', phrase('spent token')],
+    ['exactly one usable token is issued', phrase('exactly one usable token')],
+    ['convergence compares the assurance', phrase('Assurance, and the canonical factor set')],
+    ['convergence compares the chronology', phrase('Chronology')],
+    ['the MFA floor may be raised and never lowered', phrase('can only be raised')],
+    ['the K-01 dependency is a port, not a foreign key', phrase('no foreign key')],
+    ['enlisted writes may not control the transaction', /`nested-transaction`/],
+    ['the identity lookup fails closed', phrase('fail-closed default')],
+  ];
+
+  for (const [claim, pattern] of claims) {
+    assert.match(CONTRACT, pattern, `CONTRACT.md does not record that ${claim}`);
+  }
+});
+
+test('CONTRACT.md names every deferred integration, and does not over-claim', () => {
+  // The contract is the document a consumer reads before depending on this component. Under-stating
+  // what is missing is the failure that matters here: a reader who believes a verifier ships will
+  // wire a login to something that refuses everything.
+  const deferred: ReadonlyArray<readonly [string, RegExp]> = [
+    ['no verifier ships', phrase('no verifier ships')],
+    ['no recovery flow', phrase('no recovery')],
+    ['no registration', phrase('no registration')],
+    ['no permissions, which K-04 owns', /\bK-04\b/],
+    ['no audit trail, which K-09 owns', /\bK-09\b/],
+    ['no events, which K-08 owns', /\bK-08\b/],
+    ['no API and no UI', phrase('no API and no UI')],
+    ['no rate limiting or lockout', phrase('no rate limiting')],
+    [
+      'nothing has run against a live PostgreSQL server',
+      phrase('Nothing has run against a live PostgreSQL server'),
+    ],
+    ['the enlisted path has no caller', phrase('No unit uses it')],
+  ];
+
+  for (const [claim, pattern] of deferred) {
+    assert.match(CONTRACT, pattern, `CONTRACT.md does not record that ${claim}`);
+  }
+
+  // Every mention of authenticating a real person must be a denial. Checked this way rather than
+  // by banning the phrase, because the contract has to *say* it cannot, and a naive ban would fire
+  // on the sentence that says so.
+  // The window runs back to the previous full stop rather than to the previous line break, because
+  // Markdown wraps mid-sentence and the negation is often on the line above.
+  for (const mention of CONTRACT.matchAll(/[^.]{0,90}authenticate\s+a\s+real\s+person/gi)) {
+    assert.match(
+      mention[0],
+      /\b(no|not|nothing|cannot|never)\b/i,
+      `CONTRACT.md claims "${mention[0].trim()}" — no verifier ships, so nothing here can`,
+    );
+  }
+
+  for (const overclaim of [
+    /\bK-02\b[^.]{0,40}\bis complete\b/i,
+    /\bfully implemented\b/i,
+    /\bproduction[- ]ready\b/i,
+  ]) {
+    assert.ok(
+      !overclaim.test(CONTRACT),
+      `CONTRACT.md over-claims via ${String(overclaim)} — this is a foundation, not a component ` +
+        'anybody can sign in through',
+    );
+  }
+});
+
+test('every file CONTRACT.md links to exists', () => {
+  // docs/tools/validate-doc-links.mjs walks /docs and never sees this file, so a contract that
+  // points at a migration or a suite that has been renamed would rot silently — and the links are
+  // how a reader checks the document against the code.
+  const targets = [...CONTRACT.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)]
+    .map((match) => (match[1] ?? '').split('#')[0] ?? '')
+    .filter((target) => target !== '' && !/^[a-z][a-z0-9+.-]*:/i.test(target));
+
+  assert.ok(targets.length > 0, 'expected the contract to link to the schema it declares');
+  for (const target of targets) {
+    assert.ok(
+      existsSync(path.resolve(MODULE_DIR, target)),
+      `CONTRACT.md links ${target}, which does not exist`,
+    );
+  }
+});
+
+test('the suites CONTRACT.md tells a reader to run are the suites that exist', () => {
+  // §10 is the "check this yourself" section. A command naming a suite that has been renamed sends
+  // a reader to an error message instead of to evidence.
+  const suites = [...CONTRACT.matchAll(/node --test (tests\/[\w.-]+\.ts)/g)].map(
+    (match) => match[1] as string,
+  );
+  assert.ok(
+    suites.length >= 4,
+    `expected the verification section to name the suites, found ${suites.length}`,
+  );
+
+  const repoRoot = path.join(MODULE_DIR, '..', '..');
+  for (const suite of suites) {
+    assert.ok(
+      existsSync(path.join(repoRoot, suite)),
+      `CONTRACT.md tells a reader to run ${suite}, which does not exist`,
+    );
+  }
+  assert.ok(
+    suites.includes('tests/authentication-repository.test.ts'),
+    'including this one, which is what checks the contract itself',
+  );
 });

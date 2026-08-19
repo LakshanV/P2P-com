@@ -86,8 +86,26 @@ function inSource<T>(source: RecordSource, body: () => T): T {
     return body();
   } catch (error) {
     if (source === 'request' || !(error instanceof AuthenticationError)) throw error;
+    // Idempotent, because a decode may be wrapped twice: once around the row-shape checks the
+    // adapter runs before this file sees anything, and once here. Two copies of the note would be
+    // noise in the one message somebody reads while a login is failing.
+    if (error.message.includes(STORED_ROW_NOTE)) throw error;
     throw new AuthenticationError(error.code, `${error.message}. ${STORED_ROW_NOTE}`);
   }
+}
+
+/**
+ * Run a decode so that whatever it refuses says where the row came from.
+ *
+ * The adapter checks the *shape* of a row — is this column text, is `factors` an array, is the
+ * timestamp the projected form — before it can hand anything to the validators here, so those
+ * refusals were escaping without the note that tells a reader the row came out of the database
+ * rather than out of a request. That is the whole difference between "your call was wrong" and
+ * "something wrote a row this component never would", and it is the second one that matters at
+ * three in the morning.
+ */
+export function inStoredRow<T>(body: () => T): T {
+  return inSource('stored row', body);
 }
 
 export function validateBinding(candidate: unknown, source: RecordSource): AuthenticationBinding {
