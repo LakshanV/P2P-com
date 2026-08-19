@@ -43,7 +43,7 @@ import type {
   CreateDraftRequest,
   PublishRequest,
 } from '../kernel/configuration/index.ts';
-import { RecordingDatabase, row, sqlstateError } from './helpers/recording-database.ts';
+import { RecordingDatabase, sqlstateError } from './helpers/recording-database.ts';
 
 const KEYS: readonly ConfigurationKey[] = [
   {
@@ -748,44 +748,6 @@ test('the platform client exposes SQLSTATE and the constraint, and nothing else'
   assert.deepEqual(databaseErrorDetail({ code: 42 }), {}, 'a non-string code is not a SQLSTATE');
   assert.deepEqual(databaseErrorDetail({ constraint: 'only_this' }), { constraint: 'only_this' });
 });
-
-test('the adapter preserves microsecond precision it reads back', async () => {
-  const database = new RecordingDatabase({
-    selects: [
-      {
-        match: /WHERE version_id = \$1/,
-        rows: [row({ effective_from: '2026-01-01 00:00:00.000500+00', status: 'draft' })],
-      },
-    ],
-  });
-  const repository = new PostgresConfigurationRepository(database);
-
-  const version = await repository.withTransaction((tx) => tx.findVersionById('ver-1'));
-  assert.equal(
-    version?.effectiveFrom,
-    '2026-01-01T00:00:00.0005Z',
-    'truncating to milliseconds here would merge two instants that publication kept apart',
-  );
-  assert.equal(
-    compareInstants(version?.effectiveFrom ?? '', '2026-01-01T00:00:00Z'),
-    1,
-    'and it still orders after the whole second',
-  );
-});
-
-test('the adapter renders one moment one way', async () => {
-  const cases = [
-    ['2026-01-01 00:00:00+00', '2026-01-01T00:00:00Z'],
-    ['2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00Z'],
-    ['2026-01-01 00:00:00.120000+00:00', '2026-01-01T00:00:00.12Z'],
-  ] as const;
-
-  for (const [stored, expected] of cases) {
-    const database = new RecordingDatabase({
-      selects: [{ match: /WHERE version_id = \$1/, rows: [row({ effective_from: stored })] }],
-    });
-    const repository = new PostgresConfigurationRepository(database);
-    const version = await repository.withTransaction((tx) => tx.findVersionById('ver-1'));
-    assert.equal(version?.effectiveFrom, expected, `${stored} renders as ${expected}`);
-  }
-});
+// Timestamp projection, decoding and round-trip fidelity moved to
+// tests/configuration-timestamp-projection.test.ts, where the SELECT list that produces these
+// values is asserted alongside the decoder that consumes them.

@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-003a, as corrected twice (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -53,7 +53,7 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Migrations | 3 forward + 3 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger and the `kernel_configuration` schema with K-05's version table. No business-module tables exist. |
-| Tests | 297 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 310 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -240,7 +240,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 297 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 310 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -288,7 +288,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 97 more tests, for 297 today. Seven defects were found in FND-003a by review after delivery and corrected in two passes (§11.11, §11.12); no defect was found in the earlier tasks. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests, for 310 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -1940,6 +1940,105 @@ STILL NOT VERIFIED: No PostgreSQL runtime is available here. Defect 2's translat
                     two transactions have ever raced for real. The in-memory races are real races
                     between overlapping transactions, but they are races in a model of the
                     database, not in the database. Every live-database gate stays incomplete.
+```
+
+---
+
+### 11.13 Correction — K-05 PostgreSQL temporal fidelity
+
+§11.12 closed the ambiguity that equivalent instant *spellings* created, and recorded one residue as
+a limitation: microseconds survived only if the driver happened to hand back a string. That residue
+is the defect this corrects. It was reachable on the ordinary path, not an exotic one — `pg` parses
+`timestamptz` into a JavaScript `Date` by default, so the ordinary configuration was the losing one.
+
+| Aspect | Before | After |
+|---|---|---|
+| Projection | `SELECT effective_from, …` — the driver parsed the column into a `Date`, which holds milliseconds where `timestamptz` holds microseconds | every timestamp column is projected as `to_char(<column> AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, so the server produces the text and the driver's parser never runs |
+| Coverage | — | all four: `effective_from`, `created_at`, `published_at`, `superseded_at`. Only `effective_from` decides resolution, but a truncated `published_at` misreports when a change took effect and a truncated `superseded_at` misreports when it stopped |
+| Determinism | the session's `TimeZone` and the driver's locale were both in the path | `AT TIME ZONE 'UTC'` fixes the offset from any session; the pattern names no month or day, so `lc_time` cannot reach it; `DateStyle` does not apply to `to_char` |
+| Ordering | `ORDER BY effective_from` — which, once the select list aliases a text expression to that name, binds to the **text** column and sorts lexically | `ORDER BY config_version.effective_from`, qualified so the sort is on the timestamp |
+| Decoding | accepted several shapes and ended with `new Date(value)`, approximating anything it did not recognise | accepts exactly the projected form and refuses everything else as `invalid-value`, naming the column |
+| Non-finite values | `new Date('infinity')` → `Invalid Date` → an `Invalid Date` ISO string, or a thrown `RangeError` from deep inside a decoder | refused explicitly, with the value quoted |
+
+**Why truncation could not be caught downstream.** The digits are gone before any code here runs.
+Two versions 300µs apart arrive as one instant, and two versions at one instant cannot be ordered —
+which is precisely the ambiguity `publishDraft` refuses on the way in. Publication would have
+allowed a distinction that resolution then could not see. Nothing in the service can detect that,
+because from its side the two rows genuinely are identical.
+
+**Tests added** — `tests/configuration-timestamp-projection.test.ts`, 15 cases:
+
+```text
+projection      the three SELECTs are issued; every one of the four timestamp columns is
+                projected as UTC text in every one of them, and appears bare in none; the
+                projection carries UTC, six fractional digits, and no locale-dependent field;
+                the select list contains no unresolved interpolation; ORDER BY is qualified;
+                the decoder contains no `new Date(`
+decoding        200µs and 500µs stay distinct and orderable - with the driver's own truncation
+                asserted alongside, showing both would have become the same millisecond;
+                equivalent spellings decode to one spelling and compare equal; all four columns
+                decode and the nullable two stay null; a Date in any of the four columns is
+                refused; infinity, -infinity, session-formatted, three-digit, bare-date, empty,
+                arbitrary, calendar-impossible and non-text values are all refused; a refusal
+                names the column and quotes the value
+round trips     the exact instant reaches the INSERT unreformatted; resolution at .000300 and
+                .000400 answers with different versions; a pinned version keeps .00075
+```
+
+The projection assertions read the SQL **as issued**, by driving the three read paths through the
+recording fake, rather than by scanning the adapter's source — the source says
+`SELECT ${PROJECTION}`, so a source scan would prove nothing about what reaches the server.
+
+**Both halves of the fix were planted and observed to fail:**
+
+```text
+effective_from selected bare (as before)            1 of 15 failed
+Date fallback restored in the decoder               7 of 15 failed
+```
+
+The first plant failing only one test is the point of separating the two halves: a decoder test
+suite alone would have passed while the adapter quietly went back to selecting a `Date`.
+
+Two existing suites moved with it: the fixtures in `tests/helpers/recording-database.ts` now carry
+six fractional digits, because that is what the projection returns and a fixture in another shape
+would be testing a projection the adapter does not issue; and the two loose-form decoding cases in
+`tests/configuration-temporal.test.ts` were replaced, since accepting session-formatted timestamps
+is now the opposite of the contract.
+
+```text
+STATUS AFTER CORRECTION:
+                    K-05 contract   COMPLETE (§3 gains "Timestamps are read as text, not as
+                                    values"; §5's Date-truncation limitation narrowed to what is
+                                    actually still unproven)
+                    K-05 implementation IN PROGRESS - unchanged
+                    P0-38 IN PROGRESS - unchanged
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 310, pass 310, fail 0
+                                                                (297 before; +15 new, -2 replaced)
+                    npm run check:migrations           exit 0   6 files, 0 violations
+                    node --test tests/configuration.test.ts
+                                                       exit 0   tests 28, pass 28
+                    node --test tests/configuration-lifecycle.test.ts
+                                                       exit 0   tests 21, pass 21
+                    node --test tests/configuration-repository.test.ts
+                                                       exit 0   tests 23, pass 23
+                    node --test tests/configuration-temporal.test.ts
+                                                       exit 0   tests 22, pass 22
+                    node --test tests/configuration-timestamp-projection.test.ts
+                                                       exit 0   tests 15, pass 15
+                    npm run test:integration           exit 0   tests 12, pass 0, SKIPPED 12
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: `to_char` has never run. No PostgreSQL runtime is available here, so what is
+                    demonstrated is that the adapter issues a projection the driver's parser cannot
+                    touch and decodes only what that projection emits - both proved against a
+                    recording fake. That the server renders exactly this text, and that a stored
+                    microsecond survives a real INSERT and SELECT, remains unobserved. The
+                    limitation in CONTRACT.md §5 was narrowed to that, and not removed. Every
+                    live-database gate stays incomplete.
 ```
 
 ---

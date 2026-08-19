@@ -133,6 +133,31 @@ which let the second commit overwrite the first and leave two active rows with n
 anywhere — a state the reference implementation must not be able to reach when the database it
 stands in for cannot.
 
+### Timestamps are read as text, not as values
+
+Every `timestamptz` column — `effective_from`, `created_at`, `published_at`,
+`superseded_at` — is projected as
+`to_char(<column> AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` and decoded here.
+
+The driver's default is to parse `timestamptz` into a JavaScript `Date`, which holds
+milliseconds where the column holds microseconds. That truncation happens before this component
+sees anything, so it cannot be detected, only prevented: two versions 300µs apart would arrive as
+one instant, and two versions at one instant cannot be ordered — reintroducing on the way out the
+ambiguity publication refuses on the way in.
+
+The projection is deterministic by construction. `AT TIME ZONE 'UTC'` fixes the offset whatever
+the session's `TimeZone`; the pattern names no month or day, so `lc_time` cannot reach it; and
+`DateStyle` does not apply to `to_char`. A NULL stays NULL, so an unpublished version still says
+so. Ordering is done on `config_version.effective_from` — qualified deliberately, because an
+unqualified name would bind to the *text* output column and sort lexically.
+
+Decoding is fail-closed and has no fallback. A value that is not text, not in the projected form,
+or not a date the calendar contains is refused as `invalid-value` naming the column. An earlier
+revision ended with `new Date(value)`, which turned anything unrecognised into an approximation:
+a wrong instant is worse than a failed read, because it decides which version answered a question
+and leaves no trace of having been wrong. Infinite timestamps, which PostgreSQL permits in a
+`timestamptz`, are refused on that same path.
+
 ### Constraint violations are refusals, not driver errors
 
 The adapter translates SQLSTATE 23505 on a named constraint into the refusal it actually means. A
@@ -184,13 +209,13 @@ that causes it.
 - There is no data migration path for a key whose schema changes. Narrowing a schema while old
   versions violate it is not yet handled — those versions remain readable, but re-validating
   history is future work.
-- **Sub-millisecond precision survives only when the driver returns a string.** `timestamptz`
-  holds microseconds; a JavaScript `Date` holds milliseconds. The adapter rebuilds a string result
-  directly rather than parsing it, so microseconds are preserved on that path, but a driver
-  configured to parse timestamps into `Date` objects has already discarded them before the adapter
-  sees the value, and nothing here can recover it. Two versions whose effective times differ by less
-  than a millisecond would then read back as the same instant. Untested against a live server, like
-  everything else in this section.
+- **The microsecond limitation is closed in code, and unproven against a server.** The driver no
+  longer decides the precision — see "Timestamps are read as text" above — and the projection,
+  decoding, refusals and round trips are all covered by
+  `tests/configuration-timestamp-projection.test.ts`. What has *not* happened is a real
+  `to_char` running on a real server: the SQL is unexecuted like every other statement here, so
+  the claim is "the driver's parser is bypassed by construction", not "microsecond fidelity has
+  been observed end to end".
 
 ---
 
@@ -203,6 +228,7 @@ node --test tests/configuration.test.ts              # service: lifecycle, concu
 node --test tests/configuration-repository.test.ts   # port conformance, adapter, module contract
 node --test tests/configuration-lifecycle.test.ts    # drafts, replacement ordering, idempotency
 node --test tests/configuration-temporal.test.ts     # instants, races, retries after supersession
+node --test tests/configuration-timestamp-projection.test.ts   # UTC text projection and decoding
 npm run test:integration                             # live PostgreSQL; skips without a database
 ```
 

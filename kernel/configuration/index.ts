@@ -71,6 +71,7 @@ export {
   CONFIG_SCHEMA,
   CONFIG_TABLE,
   PostgresConfigurationRepository,
+  TIMESTAMP_COLUMNS,
   decodeValue,
   encodeValue,
 } from './postgres-repository.ts';

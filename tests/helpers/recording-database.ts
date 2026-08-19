@@ -122,7 +122,13 @@ export class RecordingDatabase implements Database {
   }
 }
 
-/** A database row as the adapter expects to read it back. */
+/**
+ * A row as the adapter's SELECT projection actually returns it.
+ *
+ * The timestamps carry six fractional digits and a literal `Z`, because that is what
+ * `to_char(… AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` produces. A fixture written
+ * in some other shape would be testing a projection the adapter does not issue.
+ */
 export function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     version_id: 'ver-1',
@@ -131,10 +137,10 @@ export function row(overrides: Record<string, unknown> = {}): Record<string, unk
     scope_id: '',
     value_kind: 'integer',
     value_text: '900',
-    effective_from: '2026-01-01T00:00:00.000Z',
+    effective_from: '2026-01-01T00:00:00.000000Z',
     status: 'active',
-    created_at: '2026-01-01T00:00:00.000Z',
-    published_at: '2026-01-01T00:00:00.000Z',
+    created_at: '2026-01-01T00:00:00.000000Z',
+    published_at: '2026-01-01T00:00:00.000000Z',
     superseded_at: null,
     previous_version_id: null,
     idempotency_key: 'idem-1',

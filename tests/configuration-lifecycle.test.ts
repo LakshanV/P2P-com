@@ -420,7 +420,7 @@ const draftRow = row({
   published_at: null,
   value_text: '1800',
   // Later than the incumbent, or the service refuses it as ambiguous before the adapter is reached.
-  effective_from: '2026-02-01T00:00:00.000Z',
+  effective_from: '2026-02-01T00:00:00.000000Z',
   idempotency_key: 'idem-draft',
 });
 const activeRow = row({ version_id: 'ver-active', status: 'active' });

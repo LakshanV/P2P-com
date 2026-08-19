@@ -323,7 +323,9 @@ test('the adapter parameterises every value it writes', () => {
     `expected the adapter to issue queries, found ${statements.length}`,
   );
 
-  const permitted = new Set(['CONFIG_TABLE', 'CONFIG_SCHEMA', 'COLUMNS']);
+  // PROJECTION is the SELECT list. Like COLUMNS it is built from literal column names — see
+  // tests/configuration-timestamp-projection.test.ts, which proves it carries no caller data.
+  const permitted = new Set(['CONFIG_TABLE', 'CONFIG_SCHEMA', 'COLUMNS', 'PROJECTION']);
   for (const sql of statements) {
     for (const match of sql.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
       const name = String(match[1]);

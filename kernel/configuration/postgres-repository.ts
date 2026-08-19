@@ -13,10 +13,17 @@
  * a scalar of a declared schema; storing it as JSON would invite structure the schema does not
  * describe, and the round-trip below is total for the kinds the registry permits.
  *
+ * **Timestamps are read as text, not as values.** Every `timestamptz` column is projected through
+ * `to_char(… AT TIME ZONE 'UTC', …)` and decoded here, because the driver's default parser produces
+ * a `Date` and a `Date` cannot hold what the column holds. That is a correctness concern rather
+ * than a formatting one: effective time decides which version answers a question, and precision
+ * lost in the driver is lost before anything can notice. See `utcText` and `instant` below.
+ *
  * Owned by: K-05 Configuration.
  */
 
 import { databaseErrorDetail } from '../../platform/db/client.ts';
+import { parseInstant } from './instant.ts';
 import type { Database, DatabaseClient } from '../../platform/db/client.ts';
 import type { ConfigurationRepository, ConfigurationTransaction } from './repository.ts';
 import {
@@ -95,7 +102,7 @@ function normalizeDatabaseError(error: unknown, operation: string): unknown {
   return new ConfigurationError(meaning.code, `${operation} was refused: ${meaning.explanation}`);
 }
 
-const COLUMNS = [
+const COLUMN_NAMES = [
   'version_id',
   'config_key',
   'scope_level',
@@ -110,7 +117,46 @@ const COLUMNS = [
   'previous_version_id',
   'idempotency_key',
   'origin',
-].join(', ');
+] as const;
+
+/** The four `timestamptz` columns. Every one of them is projected as text, never as a value. */
+export const TIMESTAMP_COLUMNS = [
+  'effective_from',
+  'created_at',
+  'published_at',
+  'superseded_at',
+] as const;
+
+/** Bare column names, for the INSERT target list. */
+const COLUMNS = COLUMN_NAMES.join(', ');
+
+/**
+ * Render a `timestamptz` as deterministic UTC text, inside the database.
+ *
+ * `pg` parses `timestamptz` into a JavaScript `Date` by default, and a `Date` holds milliseconds
+ * where the column holds microseconds. Selecting the column bare therefore truncates before this
+ * process ever sees the value: two versions whose effective times differ by 300µs come back as one
+ * instant, and two versions that share an instant cannot be ordered — reintroducing on the way out
+ * the ambiguity publication refuses on the way in. Nothing downstream can detect that, because by
+ * then the digits are gone.
+ *
+ * `to_char` avoids the parser entirely by making the server produce the text. The pattern contains
+ * no locale-dependent field — no month or day name — so `lc_time` cannot change it, and `DateStyle`
+ * does not apply to `to_char` at all. `AT TIME ZONE 'UTC'` fixes the offset regardless of the
+ * session's `TimeZone`, so the same row reads identically from any session. `US` is six fractional
+ * digits, which is exactly the precision `timestamptz` stores.
+ *
+ * A NULL stays NULL: `to_char(NULL, …)` is NULL, so `published_at` and `superseded_at` keep saying
+ * "not yet" rather than acquiring a value.
+ */
+function utcText(column: string): string {
+  return `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS ${column}`;
+}
+
+/** The SELECT list: ordinary columns as themselves, timestamps as UTC text. */
+const PROJECTION = COLUMN_NAMES.map((column) =>
+  (TIMESTAMP_COLUMNS as readonly string[]).includes(column) ? utcText(column) : column,
+).join(', ');
 
 interface Row {
   readonly version_id: string;
@@ -119,48 +165,78 @@ interface Row {
   readonly scope_id: string;
   readonly value_kind: string;
   readonly value_text: string;
-  readonly effective_from: Date | string;
+  readonly effective_from: unknown;
   readonly status: string;
-  readonly created_at: Date | string;
-  readonly published_at: Date | string | null;
-  readonly superseded_at: Date | string | null;
+  readonly created_at: unknown;
+  readonly published_at: unknown;
+  readonly superseded_at: unknown;
   readonly previous_version_id: string | null;
   readonly idempotency_key: string;
   readonly origin: string;
 }
 
 /**
- * Normalise a stored instant on the way out.
+ * Exactly what `utcText` produces, and nothing else: six fractional digits, `T` and `Z` literal.
  *
- * A string from the driver is rebuilt directly rather than pushed through `new Date(…)`, because
- * `Date` holds milliseconds and the column holds microseconds. Truncating here would merge two
- * genuinely different instants into one, and two versions that appear to share an effective time
- * cannot be ordered — the precise ambiguity the service refuses at publication would reappear on
- * the way back out, after publication had already allowed it.
- *
- * Trailing zeros are trimmed so that one moment has one spelling. Comparison is canonical
- * regardless (see `instant.ts`), so this is presentation, not correctness.
+ * Deliberately narrow. This pattern is the read half of a contract whose write half is the
+ * projection a few lines above, and anything that does not match it did not come from that
+ * projection.
  */
-const STORED_INSTANT =
-  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:Z|\+00(?::00)?)?$/;
+const STORED_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6})Z$/;
 
-function instant(value: Date | string): string {
-  if (typeof value === 'string') {
-    const match = STORED_INSTANT.exec(value.trim());
-    if (match !== null) {
-      const [, year, month, day, hour, minute, second, fraction] = match;
-      const digits = (fraction ?? '').replace(/0+$/, '');
-      const suffix = digits === '' ? '' : `.${digits}`;
-      return `${year}-${month}-${day}T${hour}:${minute}:${second}${suffix}Z`;
-    }
+/**
+ * Decode a stored instant, or refuse.
+ *
+ * There is no fallback. An earlier revision ended with `new Date(value)`, which turned anything it
+ * did not recognise into an approximation — silently discarding microseconds, and reading a
+ * malformed value as *some* instant rather than as a problem. A wrong instant is worse than a
+ * failed read here, because a wrong instant decides which version answered a question and leaves no
+ * trace of having been wrong.
+ *
+ * So the three ways this can fail all raise `invalid-value`:
+ *
+ *   - not text at all — a `Date` means the projection was bypassed and precision is already lost;
+ *   - text in another shape — `infinity`, `-infinity`, a bare date, a session-formatted timestamp;
+ *   - text in the right shape that the calendar does not contain, which `instant.ts` catches.
+ *
+ * Trailing zeros are trimmed afterwards so one moment has one spelling. Comparison is canonical
+ * regardless (see `instant.ts`), so that part is presentation rather than correctness.
+ */
+function instant(value: unknown, column: string): string {
+  if (typeof value !== 'string') {
+    throw new ConfigurationError(
+      'invalid-value',
+      `${column} came back as ${value instanceof Date ? 'a Date' : typeof value} rather than ` +
+        'text. Timestamps are projected through to_char precisely so the driver never parses ' +
+        'them into a Date, which holds milliseconds where the column holds microseconds — a ' +
+        'value that arrived as a Date has already lost precision this adapter cannot recover',
+    );
   }
-  // A driver that parses `timestamptz` into a `Date` has already discarded anything finer than a
-  // millisecond; nothing here can recover it. Recorded as a limitation in CONTRACT.md §5.
-  return (value instanceof Date ? value : new Date(value)).toISOString().replace(/\.000Z$/, 'Z');
+
+  const match = STORED_INSTANT.exec(value);
+  if (match === null) {
+    throw new ConfigurationError(
+      'invalid-value',
+      `${column} holds "${value}", which is not a finite UTC timestamp in the projected form ` +
+        'YYYY-MM-DDTHH:MM:SS.ffffffZ. Infinite and malformed stored timestamps are refused rather ' +
+        'than approximated',
+    );
+  }
+
+  // The calendar check as well as the shape check: `to_char` cannot emit 30 February, but this
+  // decoder is the last point at which a stored value is trusted, and it does not assume the
+  // value reached the column through this component.
+  const [, year, month, day, hour, minute, second, fraction = ''] = match;
+  parseInstant(value, column);
+
+  const digits = fraction.replace(/0+$/, '');
+  const suffix = digits === '' ? '' : `.${digits}`;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${suffix}Z`;
 }
 
-function optionalInstant(value: Date | string | null): string | null {
-  return value === null ? null : instant(value);
+/** A nullable timestamp column. NULL means "not yet", and stays NULL. */
+function optionalInstant(value: unknown, column: string): string | null {
+  return value === null || value === undefined ? null : instant(value, column);
 }
 
 /** Store the kind alongside the text so the value survives the round trip unambiguously. */
@@ -191,11 +267,11 @@ function toVersion(row: Row): ConfigurationVersion {
     key: row.config_key,
     scope: { level: row.scope_level as ScopeLevel, id: row.scope_id },
     value: decodeValue(row.value_kind, row.value_text),
-    effectiveFrom: instant(row.effective_from),
+    effectiveFrom: instant(row.effective_from, 'effective_from'),
     status: row.status as VersionStatus,
-    createdAt: instant(row.created_at),
-    publishedAt: optionalInstant(row.published_at),
-    supersededAt: optionalInstant(row.superseded_at),
+    createdAt: instant(row.created_at, 'created_at'),
+    publishedAt: optionalInstant(row.published_at, 'published_at'),
+    supersededAt: optionalInstant(row.superseded_at, 'superseded_at'),
     previousVersionId: row.previous_version_id,
     idempotencyKey: row.idempotency_key,
     origin: row.origin as PublicationOrigin,
@@ -250,7 +326,7 @@ class PostgresTransaction implements ConfigurationTransaction {
 
   async findVersionById(versionId: string): Promise<ConfigurationVersion | null> {
     const result = await this.#client.query<Row>(
-      `SELECT ${COLUMNS} FROM ${CONFIG_TABLE} WHERE version_id = $1;`,
+      `SELECT ${PROJECTION} FROM ${CONFIG_TABLE} WHERE version_id = $1;`,
       [versionId],
     );
     const row = result.rows[0];
@@ -259,7 +335,7 @@ class PostgresTransaction implements ConfigurationTransaction {
 
   async findByIdempotencyKey(idempotencyKey: string): Promise<ConfigurationVersion | null> {
     const result = await this.#client.query<Row>(
-      `SELECT ${COLUMNS} FROM ${CONFIG_TABLE} WHERE idempotency_key = $1;`,
+      `SELECT ${PROJECTION} FROM ${CONFIG_TABLE} WHERE idempotency_key = $1;`,
       [idempotencyKey],
     );
     const row = result.rows[0];
@@ -277,10 +353,10 @@ class PostgresTransaction implements ConfigurationTransaction {
     // Pairs rather than a cross-product: (level, id) must match together, or a tenant id could
     // be matched against the region level.
     const result = await this.#client.query<Row>(
-      `SELECT ${COLUMNS} FROM ${CONFIG_TABLE}
+      `SELECT ${PROJECTION} FROM ${CONFIG_TABLE}
         WHERE config_key = $1
           AND (scope_level, scope_id) IN (SELECT * FROM unnest($2::text[], $3::text[]))
-        ORDER BY effective_from ASC, version_id ASC;`,
+        ORDER BY config_version.effective_from ASC, version_id ASC;`,
       [key, levels, ids],
     );
     return result.rows.map(toVersion);
