@@ -341,7 +341,10 @@ commit rows its caller had not finished writing.
   path it exists for is undelivered.
 - **Nothing has run against a live PostgreSQL server.** No runtime is available to this repository,
   so the schema, every `CHECK`, both write-once triggers and the session-rewrite guard are declared
-  and **unproven**.
+  and **unproven**. `tests/integration/authentication.integration.ts` is the opt-in suite that would
+  prove them — the secret-free columns, the `WHERE`-clause guards under a real rotation race, the
+  triggers, the transaction rollback and the enlisted path — and it **skips** with a stated reason
+  wherever no database is configured, which is everywhere so far. A skipped run is not evidence.
 
 ---
 
