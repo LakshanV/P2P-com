@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-002d, as corrected (seed and fixture foundation: a versioned deterministic manifest contract, an injected transactional seed runner with two target guards, and development datasets for the K-05 and K-08 foundations; then mandatory validation on every runner path, a single-transaction replacement, and recomputed payload fingerprints). Preceded by FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-002d, as corrected twice (seed and fixture foundation: a versioned deterministic manifest contract, an injected transactional seed runner with two target guards, and development datasets for the K-05 and K-08 foundations; then mandatory validation on every runner path, a single-transaction replacement, and recomputed payload fingerprints; then complete runtime shape validation for programmatic callers and required evidence on every event row). Preceded by FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -54,7 +54,7 @@
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures` and by every runner path (FND-002d, as corrected). **Never loaded into a live server.** No business-module, financial-policy or production data. |
 | Migrations | 4 forward + 4 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, and the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables. No business-module tables exist. |
-| Tests | 444 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration and K-08 Event Infrastructure. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 456 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration and K-08 Event Infrastructure. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -241,7 +241,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 444 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 456 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -289,7 +289,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 45 more (31 at delivery, 14 by its correction), for 444 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections), for 456 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -2511,6 +2511,88 @@ STILL NOT VERIFIED: No PostgreSQL runtime is available here. The single-transact
                     server rolls back a failed replacement is unobserved, as is everything else
                     about these fixtures against real constraints. P0-17 and every live-database
                     gate stay incomplete.
+```
+
+---
+
+### 11.18 Correction — FND-002d programmatic-manifest shape validation
+
+§11.17 made validation *mandatory* on every runner path. It did not make it *complete* for input
+that never came from a file. `describeShapeProblem` checked the fields a JSON parse would have
+checked and trusted the rest because TypeScript said so — and TypeScript says nothing at runtime.
+A caller in JavaScript, one that cast an `unknown`, or one deserialising a manifest off a wire had
+been through neither the parser nor the type system.
+
+| # | Gap | Failed invariant | Correction |
+|---|---|---|---|
+| 1 | **Column names were trusted.** `identity` was checked to be a non-empty array of strings; the strings themselves were not checked. `jsonColumns` was not checked at all outside the file parser. Both are interpolated into SQL — `ON CONFLICT (${identity.join(', ')})`, `WHERE ${column} = $1`, `$n::jsonb` — because identifiers cannot be parameterised, so a column name is the one place caller input reaches a statement as text. | Anything interpolated into SQL is validated, or it is an injection surface. | Every entry of `identity` and `jsonColumns` must match `COLUMN_NAME` (lower_snake_case, nothing else), must be distinct within its list, and a column may not be declared as both — a serialised document in `ON CONFLICT` would compare by key order, which is what a fingerprint exists to avoid. |
+| 2 | **Runtime shapes were trusted.** A `dependsOn` entry that was a number or an object, a `rows` entry that was an array or `null`, a `tables` entry that was an array, a `jsonColumns` that was a string — each passed the shape check. A non-string dependency is the quietest of these: it matches no dataset in `loadOrder`, so the ordering it was meant to express silently disappears and the load runs in an order nobody asked for. | A validator that trusts its caller's types is a validator for one caller. | Each is checked and named: every `dependsOn` entry a non-empty string, every row an object with at least one column, every table an object with a schema-qualified name. |
+| 3 | **Fingerprints were checked only when present.** The rule fired on rows that carried a `payload_fingerprint`, which let a row opt out by omitting the field — and the row that omits it is exactly the one nobody computed a fingerprint for. It could reach an append-only event log carrying no evidence at all. | For a table whose contract says every row carries evidence, absence is the violation. | Every row targeting `kernel_event_infrastructure.event` must carry an object `payload` and a correctly formatted matching `payload_fingerprint`. A null, array, string or numeric payload is refused, as is a fingerprint that is not 64 lower-case hex characters. |
+
+**On naming K-08's table in `platform/`.** `FINGERPRINTED_TABLES` lists
+`kernel_event_infrastructure.event` as a literal, because `platform/` sits below `kernel/` and may
+not import upward to ask. The cost is that a K-08 rename must be mirrored; the cost of not naming it
+is a fixture row reaching the event log with nothing to check it against. A test asserts the
+constant still equals K-08's own `EVENT_TABLE`, so a rename fails the build rather than silently
+disabling the rule.
+
+**Tests added** — `tests/seed-adversarial.test.ts`, 12 cases:
+
+```text
+hostile input   30 manifests cast past the type system - SQL in an identity column, an identity
+                closing the ON CONFLICT clause, quoted/spaced/upper-case/numeric/null column names,
+                duplicate declarations, a column both identity and JSON, jsonColumns as a string,
+                a JSON column carrying a cast, rows as an array/string/null/empty-object/object,
+                tables as an array/null/object, an unqualified table name, a table name carrying a
+                second statement, dependsOn as a string/object and entries that are
+                numbers/objects/null/empty - each refused by seed AND unseed AND replace, each with
+                zero connections opened and zero statements issued
+containment     a hostile manifest alongside the real ones stops the whole load, so a bad dataset
+                cannot ride in behind good ones
+property        every identifier that actually reaches SQL in a real load is plain lower_snake_case
+event rows      the fingerprinted-table constant still matches K-08's EVENT_TABLE; a row with no
+                fingerprint is refused; missing, null, array, string and numeric payloads refused;
+                six malformed fingerprints and four non-string ones refused; a correct row still
+                loads; non-event tables are not asked for fingerprints; the rule holds through
+                validateManifests as well as through the runner; the real fixtures satisfy it
+```
+
+**Both corrections were planted and the tests observed to fail:**
+
+```text
+shape checks reverted to "arrays checked, entries trusted"   2 of 12 failed (covering all 30 inputs)
+fingerprint checked only when present                        2 of 12 failed
+```
+
+```text
+STATUS AFTER CORRECTION:
+                    P0-17 IN PROGRESS - unchanged.
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 456, pass 456, fail 0
+                                                                (444 before; +12)
+                    npm run check:fixtures             exit 0   2 files, 2 datasets, 0 violations
+                    node --test tests/seed-fixtures.test.ts
+                                                       exit 0   tests 12, pass 12
+                    node --test tests/seed-runner.test.ts
+                                                       exit 0   tests 19, pass 19
+                    node --test tests/seed-hardening.test.ts
+                                                       exit 0   tests 14, pass 14
+                    node --test tests/seed-adversarial.test.ts
+                                                       exit 0   tests 12, pass 12
+                    npm run check:migrations           exit 0   8 files, 0 violations
+                    npm run test:integration           exit 0   tests 14, pass 0, SKIPPED 14
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: These are refusals, and a refusal proves that a bad manifest never reaches a
+                    database — not that a good one behaves against a real server. Nothing here has
+                    been loaded into PostgreSQL. In particular the injection surface is closed by
+                    validation rather than by escaping, which is the right way round but means the
+                    guarantee rests on the character class in `COLUMN_NAME` being correct rather
+                    than on the server rejecting anything. P0-17 and every live-database gate stay
+                    incomplete.
 ```
 
 ---

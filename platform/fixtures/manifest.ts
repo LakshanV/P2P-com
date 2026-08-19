@@ -154,6 +154,17 @@ const COLUMN_NAME = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 const QUALIFIED_TABLE = /^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)$/;
 
 /**
+ * Tables where every row must carry an object payload and a fingerprint of it.
+ *
+ * Named here rather than derived, because `platform/` sits below `kernel/` and may not import
+ * upward to ask K-08 what its tables are. The cost of naming it is that a K-08 rename would have to
+ * be mirrored here; the cost of not naming it is that a fixture row could reach an append-only
+ * event log carrying no evidence at all, which is the thing K-08's design is arranged to prevent.
+ * `tests/seed-hardening.test.ts` asserts this name still matches K-08's own `EVENT_TABLE`.
+ */
+export const FINGERPRINTED_TABLES: readonly string[] = ['kernel_event_infrastructure.event'];
+
+/**
  * Values that would make a row's content depend on when it was loaded.
  *
  * A fixture is a baseline. If loading it twice on different days produces different rows, every
@@ -347,6 +358,15 @@ function describeShapeProblem(manifest: FixtureManifest): string | null {
     return `dataset "${String(candidate.dataset)}" is not kebab-case`;
   }
   if (!Array.isArray(candidate.dependsOn)) return 'is missing a "dependsOn" array';
+  // Every entry, not merely the array. A non-string here reaches `loadOrder`, where it silently
+  // matches no dataset and the dependency it was meant to express disappears — the load then runs
+  // in an order nobody asked for and nothing reports why.
+  for (const [index, dependency] of (candidate.dependsOn as unknown[]).entries()) {
+    if (typeof dependency !== 'string' || dependency.trim() === '') {
+      return `dependsOn[${index}] is ${JSON.stringify(dependency)}; expected a dataset name`;
+    }
+  }
+
   if (!Array.isArray(candidate.tables) || candidate.tables.length === 0) {
     return 'is missing a non-empty "tables" array';
   }
@@ -358,16 +378,70 @@ function describeShapeProblem(manifest: FixtureManifest): string | null {
     if (typeof entry.table !== 'string' || !QUALIFIED_TABLE.test(entry.table)) {
       return `tables[${index}].table is ${JSON.stringify(entry.table)}; expected schema.table`;
     }
-    if (
-      !Array.isArray(entry.identity) ||
-      entry.identity.length === 0 ||
-      !(entry.identity as unknown[]).every((column) => typeof column === 'string')
-    ) {
+
+    const identity = entry.identity;
+    if (!Array.isArray(identity) || identity.length === 0) {
       return `tables[${index}].identity must be a non-empty array of column names`;
     }
+    // Identity columns are interpolated into SQL — `ON CONFLICT (a, b)` and `WHERE a = $1` — which
+    // parameters cannot protect. `COLUMN_NAME` admits lower_snake_case and nothing else, so a
+    // quote, a parenthesis, a semicolon or a space is refused here rather than reaching a server.
+    const identityProblem = describeColumnList(identity, `tables[${index}].identity`);
+    if (identityProblem !== null) return identityProblem;
+
+    if (entry.jsonColumns !== undefined) {
+      if (!Array.isArray(entry.jsonColumns)) {
+        return `tables[${index}].jsonColumns must be an array of column names`;
+      }
+      // Also interpolated, as `$n::jsonb`, and with the same consequence.
+      const jsonProblem = describeColumnList(entry.jsonColumns, `tables[${index}].jsonColumns`);
+      if (jsonProblem !== null) return jsonProblem;
+
+      // A column cannot be both. An identity column names a row; a JSON column holds a document.
+      // Declaring one as both would put a serialised document into `ON CONFLICT`, where the
+      // comparison would depend on key order — which is exactly what a fingerprint exists to avoid.
+      const overlap = (entry.jsonColumns as string[]).find((column) =>
+        (identity as string[]).includes(column),
+      );
+      if (overlap !== undefined) {
+        return `tables[${index}] declares "${overlap}" as both an identity column and a JSON column`;
+      }
+    }
+
     if (!Array.isArray(entry.rows) || entry.rows.length === 0) {
       return `tables[${index}].rows must be a non-empty array`;
     }
+    // Rows are indexed by column name to build the INSERT. An array, a scalar or a null here would
+    // produce a statement with no columns, or with numeric ones.
+    for (const [rowIndex, row] of (entry.rows as unknown[]).entries()) {
+      if (typeof row !== 'object' || row === null || Array.isArray(row)) {
+        return `tables[${index}].rows[${rowIndex}] is ${describe(row)}; expected an object`;
+      }
+      if (Object.keys(row).length === 0) {
+        return `tables[${index}].rows[${rowIndex}] has no columns, so it would insert nothing`;
+      }
+    }
+  }
+  return null;
+}
+
+/** A list of column names is well formed when every entry is a distinct lower_snake_case string. */
+function describeColumnList(columns: readonly unknown[], where: string): string | null {
+  const seen = new Set<string>();
+  for (const [index, column] of columns.entries()) {
+    if (typeof column !== 'string') {
+      return `${where}[${index}] is ${describe(column)}; expected a column name`;
+    }
+    if (!COLUMN_NAME.test(column)) {
+      return (
+        `${where}[${index}] is ${JSON.stringify(column)}; expected lower_snake_case. Column ` +
+        'names are interpolated into SQL and cannot be parameterised, so anything else is refused'
+      );
+    }
+    if (seen.has(column)) {
+      return `${where} names "${column}" twice`;
+    }
+    seen.add(column);
   }
   return null;
 }
@@ -546,7 +620,7 @@ function validateManifest(
         checkValue(where, column, value, report);
       }
 
-      checkFingerprint(where, row, report);
+      checkFingerprint(where, table.table, row, report);
 
       const identity = table.identity
         .map((column) => JSON.stringify(row[column] ?? null))
@@ -579,11 +653,27 @@ function validateManifest(
  */
 function checkFingerprint(
   where: string,
+  table: string,
   row: Readonly<Record<string, FixtureJson>>,
   report: (check: FixtureCheckId, message: string) => void,
 ): void {
+  const required = FINGERPRINTED_TABLES.includes(table);
   const declared = row.payload_fingerprint;
-  if (declared === undefined) return;
+
+  if (declared === undefined) {
+    // Checking only the fingerprints that happen to be present is a check that a row can opt out
+    // of by omitting the field — and the row that omits it is exactly the row nobody computed one
+    // for. For a table whose contract says every row carries evidence, absence is the violation.
+    if (required) {
+      report(
+        'fingerprint-mismatch',
+        `${where} is an event row with no payload_fingerprint. Every row in ${table} carries the ` +
+          'SHA-256 of its own payload as the evidence that the payload was never edited; a row ' +
+          'without one is a row nothing can check',
+      );
+    }
+    return;
+  }
 
   if (typeof declared !== 'string' || !FINGERPRINT_FORMAT.test(declared)) {
     report(
@@ -600,6 +690,14 @@ function checkFingerprint(
       'fingerprint-mismatch',
       `${where} carries a payload_fingerprint but no payload, so nothing can confirm it. A ` +
         'fingerprint of an absent payload is a claim about nothing',
+    );
+    return;
+  }
+  if (payload === null) {
+    report(
+      'fingerprint-mismatch',
+      `${where} has a null payload. An event payload is an object; null is not one, and no ` +
+        'fingerprint describes it',
     );
     return;
   }
