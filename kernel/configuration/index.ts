@@ -4,10 +4,17 @@
  * Everything another unit may depend on is re-exported here. Anything not listed is internal and
  * may change without notice; see kernel/configuration/CONTRACT.md for the contract this fixes.
  *
- * There is deliberately no API, no UI and no event publication. Those wait on K-02
- * Authentication, K-04 Permissions, K-09 Audit and K-08 Events, none of which exists — an
- * administrative surface for configuration before there is anyone to authorise it, or any record
- * of who changed what, is a hole rather than a feature.
+ * There is deliberately no API and no UI. Those wait on K-02 Authentication, K-04 Permissions and
+ * K-09 Audit, none of which exists — an administrative surface for configuration before there is
+ * anyone to authorise it, or any record of who changed what, is a hole rather than a feature.
+ *
+ * **This component publishes no events, and that is now a deferred integration rather than a
+ * missing dependency.** K-08 Event Infrastructure exists (`kernel/event-infrastructure`, FND-003b):
+ * an append-only log with at-least-once delivery, and an append path a caller can enlist in its own
+ * transaction. Wiring publication into it is separate, undelivered work — a `configuration.*` event
+ * type would have to be registered, and each publication would have to append its event inside the
+ * same transaction that activates the version, or the fact and the change could disagree. Nothing
+ * here does that yet, and no consumer is waiting for it.
  */
 
 export {

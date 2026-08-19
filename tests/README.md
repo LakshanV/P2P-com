@@ -20,6 +20,7 @@
 | `events.test.ts` | K-08 event type registry, envelope validation and publication refusals (FND-003b). |
 | `events-delivery.test.ts` | K-08 claiming, retry, dead-lettering, the crash window, and operator replay. |
 | `events-repository.test.ts` | K-08 port conformance, adapter queries and module contract. |
+| `kernel-overview.test.ts` | The kernel README and K-05's public commentary must describe the kernel that is actually on disk. |
 | `events-concurrency.test.ts` | K-08 commit-time conflict parity, convergent concurrent retries, and appending inside a caller's transaction. |
 | `helpers/recording-database.ts` | Records the SQL the PostgreSQL adapter issues. Not a test. |
 | `integration/harness.ts` | The only sanctioned route to a database. Derives and guards the `_test` database, creates it, drops it in a `finally`. Not a test. |
