@@ -16,13 +16,13 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001 remains selected. FND-001a is accepted as delivered with 15 substrate tests and clean local verification evidence. FND-001b is now in progress; FND-001c and FND-001d remain unstarted."
+      "notes": "FND-001 remains selected. FND-001a is accepted. FND-001b implementation and tests appear technically sufficient, but acceptance is blocked by contradictory and stale persistent documentation that must be reconciled."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "Review FND-001b against the manifest, executable checks, persistent planted-violation fixtures, and clean verification evidence. GitHub CI execution evidence remains required during FND-001c."
+      "notes": "After documentation reconciliation, accept FND-001b if clean verification evidence remains green, then proceed to FND-001c where GitHub CI execution evidence is mandatory."
     },
     {
       "id": 5,
@@ -44,9 +44,10 @@
     "There is no CI, database, authentication, deployment, or monitoring foundation yet.",
     "The eventual production/staging environments and external provider credentials may require later human or cloud-access escalation, but do not block local foundation work.",
     "The baseline requirement count is extensive and must remain mechanically verifiable as statuses change.",
-    "FND-001 boundary checks must inspect real source paths and have persistent negative fixtures; checks that merely pass an empty repository are not acceptable.",
+    "Boundary enforcement must not be bypassable through unresolved path forms, runtime indirection, re-exports, dynamic imports, or unregistered source units.",
     "GitHub currently reports no checks, so CI workflow execution evidence will be required before P0-09 can be accepted.",
-    "The architecture manifest must remain consistent with the authoritative module map and encode enough ownership/layer information for all four checks to make substantive decisions."
+    "The provider SDK denylist is configuration-based and must be maintained whenever providers are adopted; broad provider scopes reduce but do not eliminate this maintenance risk.",
+    "Persistent status documentation currently contains contradictory pre-FND-001b statements, undermining its role as authoritative project memory."
   ],
-  "last_instruction": "Implement FND-001b only: add the remaining tracked source roots with ownership documentation, create a machine-readable architecture manifest consistent with docs/MODULE_MAP.md, and add executable enforcement for downward/layer-safe imports, kernel purity, financial-zone exclusion of K-13, and provider-SDK imports being restricted to K-13. Integrate all four checks into `npm run verify` and add persistent negative fixtures/tests proving each rule rejects a planted violation while the real source tree passes; ensure fixtures cannot contaminate normal build/lint checks. Run a clean `npm ci`, the documentation link validator, and the full verification chain; update CURRENT_IMPLEMENTATION_STATUS.md and MASTER_IMPLEMENTATION_CHECKLIST.md with exact evidence and non-overclaimed statuses, commit the bounded subtask, and do not start CI or FND-001d."
+  "last_instruction": "Reconcile the repository documentation for FND-001b only: audit CURRENT_IMPLEMENTATION_STATUS.md, MASTER_IMPLEMENTATION_CHECKLIST.md, and affected root READMEs/package metadata for stale pre-FND-001b claims, then make every status, count, next-task statement, limitation, and completion-language statement agree with the delivered boundary implementation and its evidence without marking FND-001 or Phase 0 complete. At minimum correct CURRENT_IMPLEMENTATION_STATUS.md §5, §8, §10, §11 and platform/README.md; preserve P0-03 and P0-11 as complete only if their checklist evidence blocks support that status, and keep P0-10 in progress. Run the documentation link validator and a clean `npm ci && npm run verify`, record the exact current results, commit this bounded documentation correction, and report the commit and command outputs without starting FND-001c."
 }
