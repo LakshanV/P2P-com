@@ -21,14 +21,15 @@ Delivered by task **FND-001d** (checklist items P0-12 and P0-13).
 3. [The pinned toolchain, and why it is pinned](#3-the-pinned-toolchain-and-why-it-is-pinned)
 4. [Verification commands](#4-verification-commands)
 5. [The planted-violation fixtures](#5-the-planted-violation-fixtures)
-6. [Module ownership and dependency rules](#6-module-ownership-and-dependency-rules)
-7. [AI authority is excluded from financial code](#7-ai-authority-is-excluded-from-financial-code)
-8. [Provider SDK imports are confined to K-13](#8-provider-sdk-imports-are-confined-to-k-13)
-9. [Secrets handling](#9-secrets-handling)
-10. [Atomic changes](#10-atomic-changes)
-11. [Review](#11-review)
-12. [Branch and Git conventions](#12-branch-and-git-conventions)
-13. [Documentation duties that come with a change](#13-documentation-duties-that-come-with-a-change)
+6. [The database and the migration contract](#6-the-database-and-the-migration-contract)
+7. [Module ownership and dependency rules](#7-module-ownership-and-dependency-rules)
+8. [AI authority is excluded from financial code](#8-ai-authority-is-excluded-from-financial-code)
+9. [Provider SDK imports are confined to K-13](#9-provider-sdk-imports-are-confined-to-k-13)
+10. [Secrets handling](#10-secrets-handling)
+11. [Atomic changes](#11-atomic-changes)
+12. [Review](#12-review)
+13. [Branch and Git conventions](#13-branch-and-git-conventions)
+14. [Documentation duties that come with a change](#14-documentation-duties-that-come-with-a-change)
 
 ---
 
@@ -40,9 +41,14 @@ Delivered by task **FND-001d** (checklist items P0-12 and P0-13).
 | npm | **11.19.0** | `packageManager` in `package.json` |
 | Git | any recent version | — |
 
-Nothing else. No database, no Docker, no cloud account, no environment variables: the repository
-currently contains a platform substrate and its tests, and none of them touch a network or a
-data store. That will change at FND-002; this section changes with it.
+Nothing else is needed to run `npm run verify`. The repository contains a platform substrate,
+its tests and the database migration contract, and none of them opens a connection: the migration
+validator reads SQL as text, so every gate passes on a machine with no PostgreSQL installed.
+
+**PostgreSQL 16 or later** is the selected database (FND-002a). It is a prerequisite only for
+actually applying a migration, which nothing in this repository does yet — no runner, no
+connection string, no provisioning script. See
+[section 6](#6-the-database-and-the-migration-contract) for what exists and what does not.
 
 The **supported ranges** are wider than the pins — `engines.node >= 22.18.0` and
 `engines.npm >= 10.0.0` — and the two are not interchangeable. The range says what the project
@@ -131,15 +137,16 @@ One command decides whether a change is acceptable:
 npm run verify
 ```
 
-It chains six gates in order and stops at the first failure:
+It chains seven gates in order and stops at the first failure:
 
 | Command | What it proves |
 |---|---|
 | `npm run typecheck` | `tsc --noEmit` under strict mode, including `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. |
 | `npm run lint` | ESLint with type-aware rules across all TypeScript. |
 | `npm run format:check` | Prettier formatting, repository-wide. |
-| `npm run build` | `tsc -p tsconfig.build.json` compiles and emits `dist/`; `postbuild` re-runs the boundary checks against the emitted output. |
+| `npm run build` | `tsc -p tsconfig.build.json` compiles and emits `dist/`; `postbuild` re-runs the boundary and migration checks against the emitted output. |
 | `npm run check:boundaries` | The four architectural checks below, over the real source tree. |
+| `npm run check:migrations` | The ten migration-contract checks in [section 6](#6-the-database-and-the-migration-contract), over `db/migrations`. |
 | `npm test` | `node --test "tests/**/*.test.ts"` — the whole test suite. |
 
 Supporting commands:
@@ -184,6 +191,7 @@ without the other and `tests/manifest.test.ts` fails.
 | `violation-financial-zone-ai/` | Financial-zone code importing K-13 is rejected, at P0. |
 | `violation-provider-import/` | A provider SDK imported outside K-13 is rejected. |
 | `violation-unregistered-unit/` | A directory that is in no register is rejected rather than silently skipped. |
+| `migrations/` | One directory per migration-contract check — `valid/` plus `invalid-<check>/` — each breaking exactly one rule from [section 6](#6-the-database-and-the-migration-contract). |
 
 **These files are not broken code awaiting repair.** They are the evidence that each check can
 fail. A check that has never rejected anything is indistinguishable from a check that returns
@@ -195,13 +203,138 @@ They are excluded from TypeScript (`tsconfig.json` → `exclude`), ESLint
 deliberate violation would report the very problem it exists to demonstrate. The exclusions are
 load-bearing, not tidiness.
 
-When you add a boundary check, add its fixture in the same change.
-`tests/boundaries.test.ts` asserts that every declared check id has one, so a check without a
-fixture fails the build.
+When you add a boundary check or a migration check, add its fixture in the same change.
+`tests/boundaries.test.ts` and `tests/migrations.test.ts` each assert that every declared check id
+has one, so a check without a fixture fails the build. The migration fixtures go further: each is
+asserted to produce exactly one kind of violation, so a fixture that drifts into breaking two
+rules stops proving anything precise about either.
 
 ---
 
-## 6. Module ownership and dependency rules
+## 6. The database and the migration contract
+
+**Selected database: PostgreSQL 16 or later** (FND-002a). Chosen for the features this
+architecture already assumes: schema namespaces as a first-class ownership boundary, transactional
+DDL so a failed migration rolls itself back, and the constraint vocabulary the deterministic
+financial zone will need.
+
+### 6.1 What exists, and what does not
+
+| Capability | State |
+|---|---|
+| Database selection | **Decided** — PostgreSQL 16+ |
+| Migration file format, versioning and pairing | **Delivered and enforced** — `db/migrations/`, `npm run check:migrations` |
+| Schema-namespace ownership convention | **Delivered and enforced** — `platform/db/schema-namespaces.ts` |
+| Local provisioning (container, service, init script) | **Not delivered.** Nothing here starts a database |
+| Migration runner (applying files to a live server) | **Not delivered.** No connection is opened by any code in this repository |
+| Connection configuration, pooling, credentials | **Not delivered** |
+| Seed and fixture data | **Not delivered** |
+| Business-module or kernel tables | **None.** FND-002a establishes the contract only |
+
+The migrations in `db/migrations/` have therefore **never been executed against a live server**
+from this repository. They are validated statically. Treat "the migration contract passes" as
+exactly that claim and no more.
+
+### 6.2 Running the validator
+
+```bash
+npm run check:migrations                                  # the repository's own migrations
+node platform/db/cli.ts --dir tests/fixtures/migrations/valid
+node platform/db/cli.ts --json                            # machine-readable
+```
+
+Exit 0 means no violations; exit 1 means at least one. It opens no connection and needs no
+PostgreSQL installed, which is why it can sit inside `npm run verify` and run on every change
+rather than at deploy time, when the cost of being wrong is highest.
+
+### 6.3 Schema-namespace ownership
+
+Every unit owns exactly one PostgreSQL schema, and the name is **derived from the architecture
+manifest** rather than maintained as a second list:
+
+| Owner | Schema | Example |
+|---|---|---|
+| Platform substrate | `platform` | the migration ledger |
+| Kernel component (K-01…K-15) | `kernel_<dir>` | K-01 Identity → `kernel_identity` |
+| Business module (M-01…M-47) | `module_<dir>` | M-11 Orders → `module_orders` |
+
+Kebab-case directory slugs become snake_case schema names. Add a unit to
+`platform/architecture/manifest.ts` and its namespace exists; misspell a schema in a migration and
+the validator rejects it, because the name resolves to no owner.
+
+**`public` is forbidden for unit data.** It sits on the default `search_path`, so anything in it
+is reachable by every unit and owned by none — precisely the coupling
+[MODULE_MAP.md §2](./MODULE_MAP.md#2-architectural-shape--modular-monolith) exists to prevent. An
+unqualified `CREATE TABLE` lands there implicitly, so that is rejected too.
+
+### 6.4 Writing a migration
+
+Files live in `db/migrations/` and come in pairs:
+
+```
+NNNN_snake_case_slug.up.sql      forward
+NNNN_snake_case_slug.down.sql    rollback
+```
+
+Every file starts with a header naming itself, its direction and its owning schema:
+
+```sql
+-- migration: 0003_create_orders_schema
+-- direction: up
+-- owner: module_orders
+
+BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS module_orders;
+
+COMMIT;
+```
+
+Rules, all enforced by `npm run check:migrations`:
+
+| Check | Rule | Severity |
+|---|---|---|
+| `malformed-name` | `NNNN_snake_case_slug.(up\|down).sql`. A version that cannot be ordered cannot be applied deterministically. | P1 |
+| `malformed-header` | Header names the migration, its direction and its owner, and matches the file name. | P1 |
+| `duplicate-version` | One migration per version per direction. Two claimants apply in an undefined order. | P0 |
+| `missing-rollback` | Every `.up.sql` has a matching `.down.sql`. A forward migration that cannot be reversed turns a bad deploy into an outage. | P0 |
+| `orphan-rollback` | No rollback without its forward migration. | P1 |
+| `non-transactional` | Wrapped in `BEGIN; … COMMIT;`. DDL that fails partway otherwise leaves a schema no rollback file describes. | P0 |
+| `public-schema` | No `public.`, and no unqualified object creation. | P0 |
+| `cross-owner-schema` | A migration touches only the schema it declares as owner. Go through the other unit's contract. | P0 |
+| `unregistered-schema` | Every schema referenced resolves to a unit in the architecture manifest. | P0 |
+| `unsafe-statement` | Forward migrations are additive: no `DROP TABLE`, `DROP SCHEMA`, `DROP COLUMN`, or `DELETE` without `WHERE`. `TRUNCATE`, `DROP DATABASE` and `GRANT … TO PUBLIC` are refused in either direction. Put removals in the rollback. | P0 |
+
+Rollbacks are exempt from the additive rule — undoing the forward migration is their entire
+purpose — but not from the transaction, namespace or always-unsafe rules.
+
+**A migration is versioned once and never edited afterwards.** The ledger
+(`platform.schema_migrations`) records a checksum of the file as applied; editing a file that has
+run somewhere is the most common cause of two environments disagreeing about their own schema.
+Correct a mistake with a new migration, not by rewriting history.
+
+### 6.5 Local development, when a database is needed
+
+No provisioning is delivered, so these are prerequisites for a contributor who wants to apply a
+migration by hand, not a supported workflow:
+
+```bash
+psql --version                                            # PostgreSQL 16 or later
+createdb jaya_dev
+psql -d jaya_dev -v ON_ERROR_STOP=1 -f db/migrations/0001_create_platform_schema.up.sql
+psql -d jaya_dev -v ON_ERROR_STOP=1 -f db/migrations/0002_create_migration_ledger.up.sql
+```
+
+`ON_ERROR_STOP=1` matters: without it `psql` continues after a failed statement and reports
+success. Rolling back means applying the `.down.sql` files in reverse version order.
+
+Nothing in `npm run verify` does any of the above, and nothing in this repository writes a
+connection string. When a runner and provisioning arrive, this section is where they get
+documented.
+
+---
+
+## 7. Module ownership and dependency rules
 
 The architecture is a **modular monolith**: one deployable, hard internal boundaries. It is
 defined in [MODULE_MAP.md](./MODULE_MAP.md) and encoded in `platform/architecture/manifest.ts` —
@@ -229,7 +362,7 @@ they are two representations of one decision, and the manifest tests exist to ke
 
 ---
 
-## 7. AI authority is excluded from financial code
+## 8. AI authority is excluded from financial code
 
 **AI never decides money.** Prices, fees, commissions, ledger entries, settlements and payouts are
 produced by deterministic code with an auditable input-to-output path. AI may summarise, explain,
@@ -256,7 +389,7 @@ never as an authority.
 
 ---
 
-## 8. Provider SDK imports are confined to K-13
+## 9. Provider SDK imports are confined to K-13
 
 **Only `kernel/ai-gateway` (K-13) may import a model-provider SDK.** Every other unit talks to the
 gateway through its interface. See
@@ -274,7 +407,7 @@ not.
 
 ---
 
-## 9. Secrets handling
+## 10. Secrets handling
 
 **No secret is ever committed.** Not a key, not a token, not a connection string, not a
 "temporary" test credential.
@@ -297,7 +430,7 @@ Until it does, the rule is simply that there is nothing to manage, because nothi
 
 ---
 
-## 10. Atomic changes
+## 11. Atomic changes
 
 **One bounded task per change.** A change delivers one coherent thing and leaves the repository
 verifiable at every point.
@@ -322,7 +455,7 @@ COMPLETE, `[!]` BLOCKED, `[-]` DEFERRED, `[o]` OUT OF SCOPE — and is defined i
 
 ---
 
-## 11. Review
+## 12. Review
 
 Every change is reviewed against the same questions, in this order:
 
@@ -345,7 +478,7 @@ financial correctness, security, or a boundary that guards them — stops progre
 
 ---
 
-## 12. Branch and Git conventions
+## 13. Branch and Git conventions
 
 This repository's Git operations are performed by **Conductor**, an automation layer that owns
 commits, pushes and branch management. Contributors — human or agent — express changes as **file
@@ -380,7 +513,7 @@ Git, that part is satisfied by Conductor. Write the files; leave the Git operati
 
 ---
 
-## 13. Documentation duties that come with a change
+## 14. Documentation duties that come with a change
 
 Three documents are updated as part of the change that affects them, never afterwards:
 

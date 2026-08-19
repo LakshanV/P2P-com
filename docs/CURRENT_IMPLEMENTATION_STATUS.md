@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-001b (source roots, architecture manifest, four executable boundary checks)
+**Last updated:** 2026-08-19 by task FND-002a (PostgreSQL selection, migration contract, schema-namespace ownership convention). Preceding updates: FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -13,6 +13,8 @@
 > **Read this first.** The repository now installs, builds, type-checks, lints, format-checks and tests from a clean dependency state. That is the whole of what exists in code.
 >
 > Four of the eight architectural checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are now executable and run inside `npm run verify`, each proven by a committed planted-violation fixture.
+>
+> The data foundation has begun (FND-002a): PostgreSQL 16+ is selected, the migration file contract is delivered and enforced by `npm run check:migrations` with a planted-invalid fixture per rule, and the schema-namespace ownership convention is derived from the architecture manifest. **No database is provisioned and no migration has been executed against a live server** — the validator reads SQL as text and opens no connection.
 >
 > Contributor documentation and git conventions are delivered (FND-001d) and are themselves under an executable contract: [docs/CONTRIBUTING.md](./CONTRIBUTING.md) is read by `tests/docs-contract.test.ts`, which fails the build if a documented guarantee is deleted or softened.
 >
@@ -43,11 +45,11 @@
 
 | Dimension | State |
 |---|---|
-| Phase | Phase 0 — Foundation. **In progress.** Toolchain and boundary enforcement; no data layer, no kernel. |
-| Application code | None. Substrate only: `platform/runtime/` (2 modules) and `platform/architecture/` + `platform/checks/` (3 modules) — version pins and boundary enforcement. |
-| Database | None |
-| Migrations | None |
-| Tests | 68 passing (`npm test`, exit 0) — substrate, boundary enforcement and the documentation contract only; no business logic exists to test |
+| Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement and the migration contract; no database server, no kernel. |
+| Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (3 modules) — version pins, boundary enforcement, documentation and migration contracts. |
+| Database | **Selected, not provisioned.** PostgreSQL 16+ chosen (FND-002a). No server, no connection string, no runner; nothing in this repository opens a connection. |
+| Migrations | 2 forward + 2 rollback, validated statically by `npm run check:migrations`. **Never executed against a live server.** They create the `platform` schema and the migration ledger; no kernel or module tables exist. |
+| Tests | 97 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract and migration contract only; no business logic exists to test |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -55,7 +57,7 @@
 | Modules implemented | 0 of 62 (15 kernel components + 47 business modules), all 62 registered in the architecture manifest |
 | Boundary rules enforced | 4 of 8 (`layer-direction`, `kernel-purity`, `financial-zone-ai`, `provider-import`); the other 4 need a schema, policy values or module contracts to exist |
 | Module contracts written | 0 of 62 |
-| Tracked requirements | 474, each with an explicit status; **2 of 472 implementation items complete** (P0-03, P0-11). 9 are `IN PROGRESS`. |
+| Tracked requirements | 474, each with an explicit status; **4 of 472 implementation items complete** (P0-03, P0-11, P0-12, P0-13). 13 are `IN PROGRESS`, 9 are `BLOCKED`. |
 | Release gates met | 0 of 26 |
 | Open P0 defects | 0 |
 | Open P1 defects | 0 |
@@ -175,14 +177,17 @@ This is the honest inventory, not a backlog summary. Items delivered by FND-001a
 | CI pipeline | Absent — FND-001c, **blocked by BL-10** (credential lacks the Workflows permission) | P0-09 |
 | Boundary / layering enforcement | **Present for 4 of 8 checks** (FND-001b); the other 4 need a schema, policy values or module contracts | P0-10, P0-11 |
 | Contributor documentation | **Present** — [docs/CONTRIBUTING.md](./CONTRIBUTING.md), enforced by `tests/docs-contract.test.ts` (FND-001d) | P0-12 |
-| Git workflow conventions | **Present** — [docs/CONTRIBUTING.md §10–§12](./CONTRIBUTING.md#10-atomic-changes) (FND-001d) | P0-13 |
+| Git workflow conventions | **Present** — [docs/CONTRIBUTING.md §11–§13](./CONTRIBUTING.md#11-atomic-changes) (FND-001d) | P0-13 |
 
 ### 4.2 Data infrastructure
 
 | Item | State | Checklist ID |
 |---|---|---|
-| Database | Absent | P0-14 |
-| Migration system | Absent | P0-15 |
+| Database selection | **Decided** — PostgreSQL 16+ (FND-002a) | P0-14 |
+| Local database provisioning | Absent — no container, service or init script | P0-14 |
+| Migration file contract and validator | **Present** — `db/migrations/`, `npm run check:migrations`, ten checks with planted-invalid fixtures | P0-15 |
+| Migration runner (applying files to a server) | Absent — nothing opens a connection | P0-15 |
+| Schema-namespace ownership convention | **Present and enforced for migrations** — `platform/db/schema-namespaces.ts`, derived from the architecture manifest | P0-16 |
 | Seed and fixture data | Absent | P0-17 |
 | Object / file storage | Absent | P0-18 |
 | Search index | Absent | K-15 |
@@ -229,7 +234,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains six gates and 68 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 97 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -277,7 +282,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more, for 68 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more tests, for 97 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -352,7 +357,7 @@ running the chain — and that is now a credential problem, not an engineering o
 | Order | Task | Scope | Blocked? |
 |---|---|---|---|
 | 1 | **FND-001** | Substrate, CI, boundary checks, test harness | No — **start here** |
-| 2 | FND-002 | Database, migration system, schema-namespace convention, seed strategy (P0-14…P0-17) | No |
+| 2 | FND-002 | Database, migration system, schema-namespace convention, seed strategy (P0-14…P0-17). **FND-002a delivered** — selection, migration contract and namespace convention (§11.5). Remaining: FND-002b local provisioning and a migration runner, FND-002c seed/fixture strategy | No |
 | 3 | FND-003 | K-05 Configuration, K-08 Events (build step B-1 — the kernel components that depend only on the substrate) | No |
 | 4 | FND-004 | K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, then K-09 Audit and K-07 Feature Flags (build step B-2) | No |
 | 5 | FND-005 | K-06 Policy, K-10 Ledger foundation, K-11 Commerce Unit Registry, K-12 Conversation, K-14 Notifications, K-15 Search, K-13 AI Gateway (build step B-3) | K-13 live adapter needs BL-04; the abstraction and a test double for the test suite do not |
@@ -403,7 +408,7 @@ The first true vertical slice is scheduled as **build step B-5 / Phase 1**: *acc
 
 ## 11. Evidence register
 
-Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository. There are seven: four documentation artefacts from DOC-001, and the three delivered FND-001 subtasks, each backed by named commands with recorded exit codes (§11.1, §11.2, §11.4).
+Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository. There are eight: four documentation artefacts from DOC-001, the three delivered FND-001 subtasks, and the first FND-002 subtask, each backed by named commands with recorded exit codes (§11.1, §11.2, §11.4, §11.5).
 
 | Item | Status | Evidence type | Evidence |
 |---|---|---|---|
@@ -414,6 +419,7 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | FND-001a — pinned toolchain and test harness | DELIVERED | Commands + exit codes | See §11.1. P0-04 satisfied; P0-05…P0-08 satisfied but held `IN PROGRESS` while FND-001 is unfinished. |
 | FND-001b — source roots, architecture manifest, boundary enforcement | DELIVERED | Commands + exit codes + planted fixtures | See §11.2. **P0-03 and P0-11 COMPLETE**; P0-10 `IN PROGRESS` (four of the eight MODULE_MAP §13 checks are built). |
 | FND-001d — contributor documentation and git conventions | DELIVERED | Commands + exit codes + planted erosions | See §11.4. **P0-12 and P0-13 COMPLETE**, each guarantee covered by a planted-erosion test. |
+| FND-002a — database selection, migration contract, schema namespaces | DELIVERED | Commands + exit codes + planted-invalid migrations | See §11.5. **Nothing marked COMPLETE.** P0-14, P0-15 and P0-16 move to `IN PROGRESS`; P0-17 stays `NOT STARTED`. No database was provisioned and no migration was executed. |
 
 **Evidence block for DOC-001:**
 
@@ -916,6 +922,186 @@ FOLLOW-UP:          FND-001c is the only remaining FND-001 subtask and is blocke
                     When CI does land, section 4 of the contributor document and the
                     verification-commands guarantee should be extended to name the CI workflow,
                     and X-44 and X-46 can move from IN PROGRESS to COMPLETE.
+```
+
+---
+
+### 11.5 Evidence — FND-002a (database selection, migration contract, schema namespaces)
+
+This subtask delivers the **contract** a migration must satisfy, not the ability to run one. That
+distinction is load-bearing and is preserved everywhere below: no database was installed, no
+connection was opened, and the migrations in `db/migrations/` have never been executed against a
+live server. What is proved is that a structurally unsafe migration cannot enter the repository.
+
+The validator is static by design. Parsing SQL as text means the checks run inside `npm run verify`
+on any machine, on every change — rather than at deploy time, when the cost of being wrong is
+highest and the feedback arrives last.
+
+```text
+ITEM ID:            P0-14, P0-15, P0-16 (FND-002a)
+MODULE / PHASE:     Platform substrate — data foundation / Phase 0
+STATUS:             P0-14 IN PROGRESS — selection decided, provisioning absent
+                    P0-15 IN PROGRESS — file contract and validator delivered, runner absent
+                    P0-16 IN PROGRESS — convention defined and enforced for migrations
+                    P0-17 NOT STARTED — no seed or fixture strategy
+                    Nothing is marked COMPLETE.
+
+IMPLEMENTED:        Database selection: PostgreSQL 16 or later. Chosen for what this architecture
+                    already assumes — schema namespaces as a first-class ownership boundary,
+                    transactional DDL so a failed migration rolls itself back, and the constraint
+                    vocabulary the deterministic financial zone will need.
+
+                    db/migrations/ — two forward migrations with their rollbacks:
+                      0001_create_platform_schema.up.sql / .down.sql
+                        creates the `platform` schema; the rollback uses RESTRICT rather than
+                        CASCADE so a non-empty schema fails loudly instead of being destroyed
+                      0002_create_migration_ledger.up.sql / .down.sql
+                        creates platform.schema_migrations — version, slug, checksum, applied_at,
+                        applied_by, duration_ms, with format and non-negativity constraints
+                    No kernel or business-module tables. A test asserts every delivered migration
+                    is owned by the platform schema, so that bound is enforced rather than stated.
+
+                    platform/db/schema-namespaces.ts — the ownership convention, DERIVED from
+                    platform/architecture/manifest.ts rather than maintained as a second list:
+                      platform substrate  -> platform
+                      kernel component    -> kernel_<dir>   (K-01 Identity -> kernel_identity)
+                      business module     -> module_<dir>   (M-11 Orders   -> module_orders)
+                    63 schemas total (1 + 15 + 47). `public` resolves to no owner, deliberately.
+
+                    platform/db/migrations.ts — ten checks:
+                      malformed-name       P1   NNNN_snake_case_slug.(up|down).sql
+                      malformed-header     P1   header names migration, direction and owner
+                      duplicate-version    P0   one migration per version per direction
+                      missing-rollback     P0   every .up.sql has its .down.sql
+                      orphan-rollback      P1   no rollback without its forward migration
+                      non-transactional    P0   wrapped in BEGIN; ... COMMIT;
+                      public-schema        P0   no public., no unqualified object creation
+                      cross-owner-schema   P0   touches only the schema it declares as owner
+                      unregistered-schema  P0   every schema resolves to a manifest unit
+                      unsafe-statement     P0   forward migrations are additive; TRUNCATE,
+                                                DROP DATABASE and GRANT ... TO PUBLIC refused
+                                                in either direction
+                    Comment and string-literal content is blanked before analysis, preserving line
+                    structure, so a statement quoted in a comment can neither trigger a check nor
+                    satisfy one, and reported line numbers stay correct.
+
+                    platform/db/cli.ts — `npm run check:migrations`, wired into `npm run verify`
+                    between the boundary checks and the tests, and into `postbuild` so the emitted
+                    dist/ output is exercised too.
+
+                    docs/CONTRIBUTING.md section 6 — prerequisites, the validator commands, the
+                    namespace table, how to write a migration, and an explicit table of what is
+                    NOT delivered. Four new documentation-contract guarantees fail the build if
+                    that honesty is later edited out.
+
+TESTED:             97 tests (68 before this subtask, 29 added). tests/migrations.test.ts holds 25
+                    of them; the rest extend the documentation contract.
+
+                    The planted fixtures are the substance. tests/fixtures/migrations/ contains a
+                    `valid/` control plus one `invalid-<check>/` directory per check, and each is
+                    asserted to produce EXACTLY that check and no other — a fixture that drifted
+                    into breaking two rules would stop proving anything precise about either. A
+                    coverage test fails the build if a check is ever added without a fixture.
+
+TEST COMMANDS:      npm run verify
+                    npm run check:migrations
+                    node platform/db/cli.ts --dir tests/fixtures/migrations/<each fixture>
+                    node docs/tools/validate-doc-links.mjs
+                    npm audit --audit-level=high
+                    git diff --check
+
+TEST RESULTS:       npm run verify          exit 0
+                      typecheck             exit 0
+                      lint                  exit 0
+                      format:check          exit 0
+                      build                 exit 0   postbuild: boundary PASS + migration PASS
+                      check:boundaries      exit 0   4 checks PASS, 0 violations
+                      check:migrations      exit 0   4 files, 10 checks PASS, 0 violations
+                      test                  exit 0   tests 97, pass 97, fail 0
+
+                    Migration validator against the real set          exit 0
+                      files scanned 4, forward 2, rollback 2, owned schemas 63, 0 violations
+
+                    Migration validator against every planted fixture:
+                      valid                          exit 0   PASS, 2 files, 0 violations
+                      invalid-malformed-name         exit 1   malformed-name
+                      invalid-malformed-header       exit 1   malformed-header
+                      invalid-duplicate-version      exit 1   duplicate-version
+                      invalid-missing-rollback       exit 1   missing-rollback
+                      invalid-orphan-rollback        exit 1   orphan-rollback
+                      invalid-non-transactional      exit 1   non-transactional
+                      invalid-public-schema          exit 1   public-schema
+                      invalid-cross-owner-schema     exit 1   cross-owner-schema
+                      invalid-unregistered-schema    exit 1   unregistered-schema
+                      invalid-unsafe-statement       exit 1   unsafe-statement
+
+                    node docs/tools/validate-doc-links.mjs   exit 0   4 files, 0 broken
+                    npm audit --audit-level=high             exit 0   found 0 vulnerabilities
+                    git diff --check                         exit 0   no whitespace errors
+
+                    NOT RUN: no migration was applied to a database, because no PostgreSQL server
+                    is available in this environment and none is provisioned by this repository.
+                    The SQL is unexecuted. That is the single largest gap in this evidence and is
+                    the reason P0-14 and P0-15 remain IN PROGRESS.
+
+SECURITY:           No credentials, connection strings or endpoints introduced. The ledger records
+                    current_user and a timestamp, no secrets. GRANT ... TO PUBLIC is refused by
+                    the validator in either direction. `public` is rejected as an owner or as a
+                    reference, which is a containment rule as much as an architectural one.
+
+UI/UX REVIEW:       N/A — no user-facing surface.
+MIGRATIONS:         Two forward, two rollback, none applied anywhere.
+EVENTS:             None.
+
+CONFIG / POLICY:    None. No business constants introduced. PostgreSQL 16+ is a technology
+                    selection, recorded here and in docs/CONTRIBUTING.md section 6.
+
+KNOWN LIMITATIONS:  1. NOTHING HAS RUN. The migrations are validated, not executed. A file can
+                       satisfy every check here and still fail against a real server — a bad type,
+                       a constraint that cannot be satisfied by existing rows, a lock that will not
+                       be granted. Only a runner and a live database close this.
+                    2. The validator is textual, not a SQL parser. It reads statements with
+                       regular expressions after blanking comments and strings. Exotic syntax,
+                       nested dollar-quoting inside dollar-quoted bodies, or a schema reached
+                       through a variable would evade it.
+                    3. Transaction wrapping is required unconditionally. CREATE INDEX CONCURRENTLY
+                       and a few other statements cannot run inside a transaction; when the first
+                       one is genuinely needed, this check needs an explicit, justified exception
+                       mechanism rather than a quiet relaxation.
+                    4. Cross-owner access is checked in migrations only. A module reading another
+                       module's tables at RUNTIME is invisible here — that is the table-ownership
+                       check in MODULE_MAP.md §13, still unbuilt, and it needs a real schema first.
+                    5. No seed or fixture strategy (P0-17), no connection pooling, no migration
+                       ledger writer, no local provisioning.
+                    6. NOT VERIFIED BY CI. Like every other check, this runs only when somebody
+                       runs it. P0-09, blocked by BL-10.
+
+DEFERRED:           P0-17 (seed/fixture strategy) to a later FND-002 subtask. Local provisioning
+                    and the migration runner to FND-002b. The table-ownership check to the point
+                    where a real schema exists.
+
+COMMITS:            Recorded at commit time for this branch.
+
+FILES:              db/migrations/0001_create_platform_schema.up.sql,
+                    db/migrations/0001_create_platform_schema.down.sql,
+                    db/migrations/0002_create_migration_ledger.up.sql,
+                    db/migrations/0002_create_migration_ledger.down.sql,
+                    platform/db/schema-namespaces.ts, platform/db/migrations.ts,
+                    platform/db/cli.ts, tests/migrations.test.ts,
+                    tests/fixtures/migrations/** (11 directories),
+                    modified: package.json (check:migrations, verify, postbuild),
+                    docs/CONTRIBUTING.md (section 6 and renumbering),
+                    platform/checks/docs-contract.ts, tests/docs-contract.test.ts,
+                    docs/CURRENT_IMPLEMENTATION_STATUS.md,
+                    docs/MASTER_IMPLEMENTATION_CHECKLIST.md
+
+FOLLOW-UP:          FND-002b — local provisioning and a migration runner that writes the ledger
+                    inside the migration's own transaction, at which point P0-14 and P0-15 can be
+                    argued for COMPLETE against evidence of an actual applied migration.
+                    FND-002c — seed and fixture strategy (P0-17).
+                    P0-16 stays IN PROGRESS until the table-ownership check exists, since the
+                    convention is currently enforced against migration files rather than against
+                    running code.
 ```
 
 ---

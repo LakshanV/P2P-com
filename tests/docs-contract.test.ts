@@ -23,6 +23,11 @@ import { fileURLToPath } from 'node:url';
 import { AI_GATEWAY_PATH, FINANCIAL_ZONE_PREFIXES } from '../platform/architecture/manifest.ts';
 import { CHECK_IDS } from '../platform/checks/boundaries.ts';
 import {
+  FORBIDDEN_SCHEMA,
+  KERNEL_SCHEMA_PREFIX,
+  MODULE_SCHEMA_PREFIX,
+} from '../platform/db/schema-namespaces.ts';
+import {
   CONTRIBUTING_PATH,
   DOCS_CONTRACT_IDS,
   checkDocsContract,
@@ -75,6 +80,8 @@ const expectations = (): DocsExpectations => {
     financialZonePrefixes: FINANCIAL_ZONE_PREFIXES,
     aiGatewayPath: AI_GATEWAY_PATH,
     defaultBranch: DEFAULT_BRANCH,
+    schemaPrefixes: [KERNEL_SCHEMA_PREFIX, MODULE_SCHEMA_PREFIX],
+    forbiddenSchema: FORBIDDEN_SCHEMA,
     resolveLink: (target) => fs.existsSync(path.resolve(DOC_DIR, target)),
   };
 };
@@ -287,7 +294,7 @@ const EROSIONS: ReadonlyArray<{
   {
     name: 'the review section is removed',
     id: 'review',
-    mutate: () => weaken(/^## 11\. Review$/m, '## 11. Notes'),
+    mutate: () => weaken(/^## \d+\. Review$/m, '## 12. Notes'),
   },
   {
     name: 'review no longer asks whether a guarantee was weakened',
@@ -308,6 +315,30 @@ const EROSIONS: ReadonlyArray<{
     name: 'a Git operation owned by Conductor is no longer listed',
     id: 'branch-conventions',
     mutate: () => weaken('git checkout', 'switching branches'),
+  },
+  {
+    name: 'the selected database is no longer named',
+    id: 'database',
+    mutate: () => weaken('PostgreSQL', 'a relational database'),
+  },
+  {
+    name: 'a schema-namespace prefix is no longer documented',
+    id: 'database',
+    mutate: () => weaken(MODULE_SCHEMA_PREFIX, 'mod_'),
+  },
+  {
+    name: 'the document stops saying what the data foundation does not deliver',
+    id: 'database',
+    mutate: () => weaken('Not delivered', 'Available'),
+  },
+  {
+    name: 'the document stops admitting the migrations were never run live',
+    id: 'database',
+    mutate: () =>
+      weaken('never been executed against a live server', 'been executed routinely').replace(
+        'opens no connection',
+        'connects on demand',
+      ),
   },
   {
     name: 'a cross-reference points at a file that does not exist',

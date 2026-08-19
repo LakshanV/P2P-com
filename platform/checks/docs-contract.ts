@@ -35,6 +35,7 @@ export type DocsContractId =
   | 'atomic-changes'
   | 'review'
   | 'branch-conventions'
+  | 'database'
   | 'link-integrity';
 
 /** Every guarantee this module enforces. The tests assert none is left unexercised. */
@@ -53,6 +54,7 @@ export const DOCS_CONTRACT_IDS: readonly DocsContractId[] = [
   'atomic-changes',
   'review',
   'branch-conventions',
+  'database',
   'link-integrity',
 ];
 
@@ -80,6 +82,10 @@ export interface DocsExpectations {
   readonly aiGatewayPath: string;
   /** The repository's default branch. */
   readonly defaultBranch: string;
+  /** Schema-name prefixes owned by kernel components and business modules. */
+  readonly schemaPrefixes: readonly string[];
+  /** The PostgreSQL schema no unit may use for its data. */
+  readonly forbiddenSchema: string;
   /**
    * Resolve a relative link target (already stripped of its anchor) against the document's own
    * directory. Returns true when the target exists on disk.
@@ -323,6 +329,35 @@ export function checkDocsContract(text: string, expected: DocsExpectations): Doc
         `the document no longer names \`${forbidden}\` among the operations Conductor owns`,
       );
     }
+  }
+
+  // --- database and migration contract ---------------------------------------------------------
+  require_('database', 'PostgreSQL', 'the selected database must be named');
+  for (const prefix of expected.schemaPrefixes) {
+    if (!has(prefix)) {
+      report('database', `the \`${prefix}\` schema-namespace prefix is no longer documented`);
+    }
+  }
+  if (!has(expected.forbiddenSchema)) {
+    report(
+      'database',
+      `the document no longer states that \`${expected.forbiddenSchema}\` is forbidden for unit ` +
+        'data, which is the rule that keeps schema ownership meaningful',
+    );
+  }
+  if (!mentionsAny(['Not delivered', 'not delivered'])) {
+    report(
+      'database',
+      'the document no longer distinguishes what the data foundation delivers from what it does ' +
+        'not — a reader would take provisioning and a migration runner to exist',
+    );
+  }
+  if (!mentionsAny(['never been executed against a live server', 'opens no connection'])) {
+    report(
+      'database',
+      'the document no longer states that the migrations are validated statically and have not ' +
+        'been run against a live database',
+    );
   }
 
   // --- link integrity ---------------------------------------------------------------------------
