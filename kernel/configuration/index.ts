@@ -46,7 +46,14 @@ export {
 } from './registry.ts';
 
 export { ConfigurationService, scopeChain } from './service.ts';
-export type { PublishRequest, PublishResult, ResolveRequest } from './service.ts';
+export type {
+  CreateDraftRequest,
+  CreateDraftResult,
+  PublishDraftRequest,
+  PublishRequest,
+  PublishResult,
+  ResolveRequest,
+} from './service.ts';
 
 export { InMemoryConfigurationRepository } from './repository.ts';
 export type { ConfigurationRepository, ConfigurationTransaction } from './repository.ts';

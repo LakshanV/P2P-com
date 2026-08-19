@@ -32,12 +32,19 @@ Everything another unit may use is exported from `kernel/configuration/index.ts`
 internal.
 
 ```ts
-service.publish(request): Promise<PublishResult>
-service.resolve({ key, scope, at }): Promise<Resolution>
-service.resolveForDecision({ key, scope, at }): Promise<ConfigurationDecisionRecord>
+service.createDraft(request): Promise<CreateDraftResult>
+service.publishDraft({ draftId, expectedActiveVersionId, now }): Promise<PublishResult>
+service.publish(request): Promise<PublishResult>              // createDraft + publishDraft
+service.resolve({ key, scope, region?, at }): Promise<Resolution>
+service.resolveForDecision({ key, scope, region?, at }): Promise<ConfigurationDecisionRecord>
 service.versionById(versionId): Promise<ConfigurationVersion>
 service.history(key, scope): Promise<readonly ConfigurationVersion[]>
 ```
+
+**Publication is two steps.** `createDraft` validates and stores an immutable draft, which
+resolution ignores. `publishDraft` supersedes the expected incumbent and *then* activates that
+same record. `publish` composes the two, so there is exactly one activation path rather than a
+second one to keep in step.
 
 **Callers record `versionId`, not the value.** A decision that stores only the value cannot say
 where it came from; one that stores only the key cannot be reproduced at all once a later version
@@ -47,11 +54,13 @@ lands. `resolveForDecision` returns exactly what should be persisted alongside t
 
 | Guarantee | Meaning |
 |---|---|
-| Immutable versions | Publishing never edits an existing record. Only `status` and `supersededAt` are ever stamped, and never the value, the effective time or the id. |
+| Immutable versions | Content — id, key, scope, value, effective time, origin, idempotency key — is fixed at creation. Only lifecycle state moves: `status`, `publishedAt`, `previousVersionId`, `supersededAt`. |
+| Replacement ordering | A replacement supersedes the incumbent **before** activating the draft. The partial unique index is checked per statement, so the reverse order asks the database to hold two active rows and it refuses. Both updates are predicated on the status they expect, which is also the concurrency control. |
+| All-or-nothing replacement | Supersession and activation share one transaction. A failure leaves the incumbent active and the draft still a draft — never an incumbent superseded with nothing to replace it. |
 | Draft to active | A version is validated before it becomes active. Nothing half-written is resolvable. |
 | Effective time | A version applies from an instant. `resolve` at a past instant answers with what was in force then — **not** bounded by when a successor was published, which is a different and usually earlier instant. |
 | Optimistic concurrency | A publication states the version it believes it is replacing. The second of two concurrent editors is refused, never silently applied. |
-| Idempotent publication | A retry with the same idempotency key returns the version the first attempt created. A dropped response cannot become a second version. |
+| Idempotent publication | A retry with the same idempotency key returns the original result **only when the whole logical request matches** — key, scope, value, effective time, origin and version id. Reusing a key for different content is a caller bug, not a duplicate delivery, and is refused: answering it would report success for a change that never happened. |
 | Determinism | `now`, `versionId` and `idempotencyKey` come from the caller. This component reads no clock and generates no randomness. |
 | Provider neutrality | Nothing here knows a model provider exists. No AI import, direct or transitive. |
 
@@ -65,7 +74,11 @@ lands. `resolveForDecision` returns exactly what should be persisted alongside t
 | `scope-escalation` | Authority at a narrower scope may not change a broader one. Broader authority acting narrowly is delegation and is allowed. |
 | `retroactive-change` | An effective time in the past would rewrite what earlier decisions were made under, which no version history can undo. |
 | `ambiguous-active-version` | Two versions effective at the same instant cannot be ordered, and two active versions for one key and scope cannot be resolved. |
-| `concurrent-modification` | The active version is not the one the caller expected, or it changed during the transaction. |
+| `concurrent-modification` | The active version is not the one the caller expected, or the incumbent or draft changed status during the transaction. The loser of a race keeps its draft and may retry against the new incumbent. |
+| `idempotency-key-reuse` | The key was already used for different content. |
+| `draft-not-found` | No such version to publish. |
+| `not-a-draft` | The named version is already superseded; only a draft can be published. |
+| `region-mismatch` | A region was supplied for a non-tenant request, or the supplied scope is not a region. |
 | `secret-bearing-value` | The key name or the value carries a credential. |
 | `financial-policy-value` | The key is K-06's. |
 | `origin-not-permitted` | See below. |
@@ -80,9 +93,14 @@ bypassed the service still could not record one.
 
 ### Scope precedence
 
-`tenant` → `region` → `global`, most specific first, ending at global. A named broader scope is
-not implied by a narrower one: a tenant does not know which region it belongs to at this layer, so
-a tenant lookup falls through to global, not to a region. `scopeChain` is exported and tested.
+`tenant` → `region` → `global`, most specific first, ending at global.
+
+**A region is consulted only when the caller names it.** `resolve` accepts an explicit `region`
+alongside a tenant scope; without one, the chain goes straight from tenant to global. This
+component holds no tenant-to-region map, and inferring the relationship would mean either
+inventing data or silently answering from a neighbouring region — both worse than answering from
+global. Supplying a region for a non-tenant request is refused rather than ignored.
+`scopeChain(scope, region?)` is exported and tested.
 
 ---
 
@@ -90,13 +108,19 @@ a tenant lookup falls through to global, not to a region. `scopeChain` is export
 
 An injected `ConfigurationRepository` port with two implementations:
 `InMemoryConfigurationRepository` (the reference implementation, used by the tests) and
-`PostgresConfigurationRepository`. Every mutation runs inside one transaction, because a
-publication both inserts the new version and supersedes the old one — a database that committed
-one without the other would hold two active versions, which is exactly the ambiguity this
-component exists to prevent.
+`PostgresConfigurationRepository`.
 
-The migration adds a partial unique index on `(config_key, scope_level, scope_id) WHERE status =
-'active'`, so the invariant holds even if something writes around the service.
+The port offers three mutations, and their shape is dictated by the index rather than by taste:
+
+| Operation | Effect | Guard |
+|---|---|---|
+| `insertDraft` | appends a draft, which is outside the partial unique index | refuses a non-draft, a duplicate id, a reused idempotency key |
+| `supersedeActiveVersion` | the incumbent leaves the index | conditional on it still being active |
+| `activateDraft` | the replacement enters the index | conditional on it still being a draft |
+
+The in-memory implementation enforces the same partial unique index the migration declares, and
+enforces it **after every mutation** rather than at commit — PostgreSQL rejects the second active
+row when the statement runs, so an ordering mistake must fail at the same point in both.
 
 ---
 

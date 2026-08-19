@@ -61,15 +61,16 @@ const KEY: ConfigurationKey = {
   scopes: ['global'],
 };
 
+/** A draft, because that is the only thing the port accepts as an insert. */
 const version = (overrides: Partial<ConfigurationVersion> = {}): ConfigurationVersion => ({
   versionId: 'ver-1',
   key: KEY.id,
   scope: GLOBAL_SCOPE,
   value: 900,
   effectiveFrom: '2026-01-01T00:00:00Z',
-  status: 'active',
+  status: 'draft',
   createdAt: '2026-01-01T00:00:00Z',
-  publishedAt: '2026-01-01T00:00:00Z',
+  publishedAt: null,
   supersededAt: null,
   previousVersionId: null,
   idempotencyKey: 'idem-1',
@@ -90,7 +91,7 @@ const codeOf = (error: unknown): string =>
 function conformanceSuite(name: string, make: () => ConfigurationRepository): void {
   test(`${name}: a version round-trips unchanged`, async () => {
     const repository = make();
-    await repository.withTransaction((tx) => tx.insertVersion(version()));
+    await repository.withTransaction((tx) => tx.insertDraft(version()));
     const found = await repository.withTransaction((tx) => tx.findVersionById('ver-1'));
     assert.deepEqual(found, version());
   });
@@ -106,11 +107,11 @@ function conformanceSuite(name: string, make: () => ConfigurationRepository): vo
 
   test(`${name}: a duplicate version id is refused, not overwritten`, async () => {
     const repository = make();
-    await repository.withTransaction((tx) => tx.insertVersion(version()));
+    await repository.withTransaction((tx) => tx.insertDraft(version()));
     await assert.rejects(
-      repository.withTransaction((tx) => tx.insertVersion(version({ value: 1800 }))),
+      repository.withTransaction((tx) => tx.insertDraft(version({ value: 1800 }))),
       (error: unknown) =>
-        codeOf(error) === 'immutable-version' || codeOf(error) === 'concurrent-modification',
+        codeOf(error) === 'immutable-version' || codeOf(error) === 'idempotency-key-reuse',
     );
     const found = await repository.withTransaction((tx) => tx.findVersionById('ver-1'));
     assert.equal(found?.value, 900, 'the original must survive');
@@ -118,24 +119,112 @@ function conformanceSuite(name: string, make: () => ConfigurationRepository): vo
 
   test(`${name}: a duplicate idempotency key is refused`, async () => {
     const repository = make();
-    await repository.withTransaction((tx) => tx.insertVersion(version()));
+    await repository.withTransaction((tx) => tx.insertDraft(version()));
     await assert.rejects(
       repository.withTransaction((tx) =>
-        tx.insertVersion(version({ versionId: 'ver-2', idempotencyKey: 'idem-1' })),
+        tx.insertDraft(version({ versionId: 'ver-2', idempotencyKey: 'idem-1' })),
       ),
-      (error: unknown) => codeOf(error) === 'concurrent-modification',
+      (error: unknown) => codeOf(error) === 'idempotency-key-reuse',
     );
   });
 
   test(`${name}: superseding a version that is not active is refused`, async () => {
     const repository = make();
-    await repository.withTransaction((tx) =>
-      tx.insertVersion(version({ status: 'superseded', supersededAt: '2026-01-02T00:00:00Z' })),
-    );
+    await repository.withTransaction((tx) => tx.insertDraft(version()));
     await assert.rejects(
-      repository.withTransaction((tx) => tx.supersedeVersion('ver-1', '2026-01-03T00:00:00Z')),
+      repository.withTransaction((tx) =>
+        tx.supersedeActiveVersion('ver-1', '2026-01-03T00:00:00Z'),
+      ),
       (error: unknown) => codeOf(error) === 'concurrent-modification',
-      'a lost update must be refused rather than applied twice',
+      'a draft is not an incumbent, and a lost update must be refused rather than applied twice',
+    );
+  });
+
+  test(`${name}: inserting an already-active version is refused`, async () => {
+    const repository = make();
+    await assert.rejects(
+      repository.withTransaction((tx) =>
+        tx.insertDraft(version({ status: 'active', publishedAt: '2026-01-01T00:00:00Z' })),
+      ),
+      (error: unknown) => codeOf(error) === 'immutable-version',
+      'a version is created as a draft and activated separately, never inserted active',
+    );
+  });
+
+  test(`${name}: a draft activates once, and only from draft`, async () => {
+    const repository = make();
+    await repository.withTransaction((tx) => tx.insertDraft(version()));
+    await repository.withTransaction((tx) =>
+      tx.activateDraft('ver-1', '2026-01-02T00:00:00Z', null),
+    );
+
+    const activated = await repository.withTransaction((tx) => tx.findVersionById('ver-1'));
+    assert.equal(activated?.status, 'active');
+    assert.equal(activated?.publishedAt, '2026-01-02T00:00:00Z');
+    assert.equal(activated?.value, 900, 'activation must not touch content');
+
+    await assert.rejects(
+      repository.withTransaction((tx) => tx.activateDraft('ver-1', '2026-01-03T00:00:00Z', null)),
+      (error: unknown) => codeOf(error) === 'concurrent-modification',
+      'a second activation must be refused, not applied',
+    );
+  });
+
+  test(`${name}: superseding then activating keeps at most one active version`, async () => {
+    const repository = make();
+    await repository.withTransaction(async (tx) => {
+      await tx.insertDraft(version());
+      await tx.activateDraft('ver-1', '2026-01-01T00:00:00Z', null);
+    });
+    await repository.withTransaction(async (tx) => {
+      await tx.insertDraft(
+        version({
+          versionId: 'ver-2',
+          idempotencyKey: 'idem-2',
+          effectiveFrom: '2026-02-01T00:00:00Z',
+        }),
+      );
+      // The order the partial unique index requires.
+      await tx.supersedeActiveVersion('ver-1', '2026-01-15T00:00:00Z');
+      await tx.activateDraft('ver-2', '2026-01-15T00:00:00Z', 'ver-1');
+    });
+
+    const all = await repository.withTransaction((tx) => tx.findVersions(KEY.id, [GLOBAL_SCOPE]));
+    assert.deepEqual(
+      all.map((v) => [v.versionId, v.status].join(':')),
+      ['ver-1:superseded', 'ver-2:active'],
+    );
+  });
+
+  test(`${name}: activating before superseding is refused by the unique-index invariant`, async () => {
+    const repository = make();
+    await repository.withTransaction(async (tx) => {
+      await tx.insertDraft(version());
+      await tx.activateDraft('ver-1', '2026-01-01T00:00:00Z', null);
+    });
+
+    await assert.rejects(
+      repository.withTransaction(async (tx) => {
+        await tx.insertDraft(
+          version({
+            versionId: 'ver-2',
+            idempotencyKey: 'idem-2',
+            effectiveFrom: '2026-02-01T00:00:00Z',
+          }),
+        );
+        // Deliberately the wrong order: two rows would be active at once.
+        await tx.activateDraft('ver-2', '2026-01-15T00:00:00Z', 'ver-1');
+        await tx.supersedeActiveVersion('ver-1', '2026-01-15T00:00:00Z');
+      }),
+      (error: unknown) => codeOf(error) === 'ambiguous-active-version',
+      'the reference implementation enforces the same index the migration declares',
+    );
+
+    const all = await repository.withTransaction((tx) => tx.findVersions(KEY.id, [GLOBAL_SCOPE]));
+    assert.deepEqual(
+      all.map((v) => v.versionId),
+      ['ver-1'],
+      'the refused transaction wrote nothing',
     );
   });
 
@@ -143,7 +232,7 @@ function conformanceSuite(name: string, make: () => ConfigurationRepository): vo
     const repository = make();
     await assert.rejects(
       repository.withTransaction(async (tx) => {
-        await tx.insertVersion(version());
+        await tx.insertDraft(version());
         throw new Error('planted failure after the insert');
       }),
       /planted failure/,
@@ -158,8 +247,8 @@ function conformanceSuite(name: string, make: () => ConfigurationRepository): vo
   test(`${name}: findVersions filters by key and scope together`, async () => {
     const repository = make();
     await repository.withTransaction(async (tx) => {
-      await tx.insertVersion(version());
-      await tx.insertVersion(
+      await tx.insertDraft(version());
+      await tx.insertDraft(
         version({
           versionId: 'ver-2',
           idempotencyKey: 'idem-2',

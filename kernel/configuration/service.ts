@@ -1,23 +1,35 @@
 /**
- * K-05 Configuration — the service (FND-003a).
+ * K-05 Configuration — the service (FND-003a, corrected).
  *
- * Publication and resolution, with the properties that make configuration trustworthy rather than
- * merely storable:
+ * Publication is two operations, not one:
  *
- *   - **Immutable versions.** Publishing never edits an existing record. A decision that recorded
- *     a version id can be replayed exactly, forever, however many versions land afterwards.
- *   - **Draft to active.** A draft exists, is validated, and becomes active only when published.
- *     Nothing half-written is ever resolvable.
- *   - **Effective time.** A version applies from an instant. Resolution answers "what was the
- *     value at T", not merely "what is the value now", because that is the question an audit asks.
- *   - **Optimistic concurrency.** A publication states which version it believes it is replacing.
- *     Two concurrent editors cannot both win; the second is refused rather than silently applied.
- *   - **Idempotent publication.** A retried request with the same idempotency key returns the
- *     version the first attempt created. A dropped response must not become a second version.
- *   - **Scoped overrides.** tenant beats region beats global, and only for keys that permit it.
+ *   `createDraft`  writes an immutable draft. A draft is validated, stored and invisible to
+ *                  resolution. Nothing half-decided is ever resolvable, and nothing is ever
+ *                  constructed already active.
+ *   `publishDraft` supersedes the expected incumbent and *then* activates the draft, in that
+ *                  order, inside one transaction.
+ *
+ * The order is not stylistic. The migration declares a partial unique index on
+ * `(config_key, scope_level, scope_id) WHERE status = 'active'`, so two active rows for one key
+ * and scope may not coexist at any instant. Inserting the replacement already active and
+ * superseding the incumbent afterwards — which is what the first revision did — asks the database
+ * to hold both, and it will refuse. Superseding first also gives the concurrency control for free:
+ * each step is conditional on the row's current status, so the second of two racing publications
+ * finds nothing to change and is refused.
+ *
+ * Other properties, unchanged in intent:
+ *
+ *   - **Immutable versions.** Content is fixed at creation; only lifecycle state moves.
+ *   - **Effective time.** Resolution answers "what was the value at T", not merely "what is it now".
+ *   - **Idempotent retries.** A repeated idempotency key returns the original result *only when
+ *     the whole logical request matches*. The same key with different content is a mistake, not a
+ *     retry, and is refused rather than silently answered with the wrong version.
+ *   - **Explicit scope relationships.** A tenant request that should fall back to a region carries
+ *     that region. This component does not know which region a tenant belongs to and does not
+ *     guess.
  *
  * Deterministic by construction: the caller supplies `now`, the version id and the idempotency
- * key. Nothing here reads a clock or generates randomness, so every case above is reproducible.
+ * key. Nothing here reads a clock or generates randomness.
  *
  * Owned by: K-05 Configuration. No API, no UI, no events — see CONTRACT.md for why.
  */
@@ -36,46 +48,68 @@ import {
   type PublicationOrigin,
   type Resolution,
   type Scope,
+  type ScopeLevel,
   sameScope,
   scopeRank,
 } from './types.ts';
 
-export interface PublishRequest {
+/** Everything that identifies a logical publication request. All of it must match on a retry. */
+export interface CreateDraftRequest {
   readonly key: string;
   readonly scope: Scope;
   readonly value: ConfigurationValue;
   /** ISO-8601 instant from which the new value applies. Never in the past. */
   readonly effectiveFrom: string;
-  /** The version the caller believes is active at this scope, or null if it believes none is. */
-  readonly expectedActiveVersionId: string | null;
   /** Stable across retries of one logical publication. */
   readonly idempotencyKey: string;
-  /** Caller-supplied identity for the new version, so the service stays deterministic. */
+  /** Caller-supplied identity for the draft, so the service stays deterministic. */
   readonly versionId: string;
   readonly origin: PublicationOrigin;
   /**
    * The broadest scope level the actor is entitled to change.
    *
    * K-04 Permissions does not exist yet, so this is supplied by the caller rather than derived
-   * from a session. It is enforced anyway: a component that adds the check later, once there is
-   * something to derive it from, is a component that shipped without it in the meantime.
+   * from a session. It is enforced anyway.
    */
-  readonly authorityLevel: Scope['level'];
-  /** The instant the publication is being made. */
+  readonly authorityLevel: ScopeLevel;
+  readonly now: string;
+}
+
+export interface CreateDraftResult {
+  readonly draft: ConfigurationVersion;
+  /** True when this idempotency key had already produced this exact draft. */
+  readonly deduplicated: boolean;
+}
+
+export interface PublishDraftRequest {
+  readonly draftId: string;
+  /** The version the caller believes is active at this scope, or null if it believes none is. */
+  readonly expectedActiveVersionId: string | null;
   readonly now: string;
 }
 
 export interface PublishResult {
   readonly version: ConfigurationVersion;
-  /** True when an earlier attempt with this idempotency key already created the version. */
+  /** True when an earlier attempt already produced this result. */
   readonly deduplicated: boolean;
   readonly supersededVersionId: string | null;
 }
 
+/** The one-call convenience: create the draft, then publish it. */
+export interface PublishRequest extends CreateDraftRequest {
+  readonly expectedActiveVersionId: string | null;
+}
+
 export interface ResolveRequest {
   readonly key: string;
-  /** The most specific scope the caller is asking about. Broader scopes are consulted in turn. */
+  /** The most specific scope the caller is asking about. */
   readonly scope: Scope;
+  /**
+   * The region a tenant belongs to, supplied explicitly when tenant values should fall back to a
+   * regional default. Omitted or null means the chain skips straight to global — this component
+   * has no tenant-to-region map and refuses to invent one.
+   */
+  readonly region?: Scope | null;
   /** The instant to resolve at. Past instants answer historical questions. */
   readonly at: string;
 }
@@ -90,12 +124,13 @@ export class ConfigurationService {
   }
 
   /**
-   * Publish a new active version.
+   * Validate a change and store it as a draft.
    *
-   * Everything happens inside one transaction: the new version is inserted and the one it replaces
-   * is superseded together, so the database never holds two active versions for one key and scope.
+   * A draft is a real, immutable record that resolution ignores. It exists so that the decision
+   * to change something and the moment that change takes over are separable — and so that
+   * activation has something to activate rather than something to construct.
    */
-  async publish(request: PublishRequest): Promise<PublishResult> {
+  async createDraft(request: CreateDraftRequest): Promise<CreateDraftResult> {
     const key = this.#registry.require(request.key);
 
     if (!PERMITTED_ORIGINS.includes(request.origin)) {
@@ -113,8 +148,7 @@ export class ConfigurationService {
 
     // Broader authority covers narrower scopes; the reverse is escalation. An actor entitled to
     // change one tenant's settings must not be able to change every tenant's by aiming higher.
-    const authorityRank = SCOPE_LEVELS.indexOf(request.authorityLevel);
-    if (authorityRank > scopeRank(request.scope)) {
+    if (SCOPE_LEVELS.indexOf(request.authorityLevel) > scopeRank(request.scope)) {
       throw new ConfigurationError(
         'scope-escalation',
         `authority at ${request.authorityLevel} scope does not permit a change at the broader ` +
@@ -132,61 +166,103 @@ export class ConfigurationService {
     }
 
     return this.#repository.withTransaction(async (tx) => {
-      const duplicate = await tx.findByIdempotencyKey(request.idempotencyKey);
-      if (duplicate !== null) {
-        // A retry, not a second change. Returning the original version is the whole point.
-        return { version: duplicate, deduplicated: true, supersededVersionId: null };
+      const existing = await tx.findByIdempotencyKey(request.idempotencyKey);
+      if (existing !== null) {
+        assertSameLogicalRequest(existing, request);
+        return { draft: existing, deduplicated: true };
       }
 
-      const existing = await tx.findVersions(request.key, [request.scope]);
-      const active = existing.filter((version) => version.status === 'active');
-
-      if (active.length > 1) {
-        throw new ConfigurationError(
-          'ambiguous-active-version',
-          `"${request.key}" already has ${active.length} active versions at ${request.scope.level} ` +
-            'scope, which should be impossible. Refusing to add a third rather than guessing',
-        );
-      }
-
-      const current = active[0] ?? null;
-      const expected = request.expectedActiveVersionId;
-      if ((current?.versionId ?? null) !== expected) {
-        throw new ConfigurationError(
-          'concurrent-modification',
-          `expected active version ${expected ?? 'none'} but found ${current?.versionId ?? 'none'} ` +
-            '— someone published while this change was being prepared. Re-read and retry',
-        );
-      }
-
-      if (current !== null && request.effectiveFrom <= current.effectiveFrom) {
-        throw new ConfigurationError(
-          'ambiguous-active-version',
-          `effectiveFrom ${request.effectiveFrom} is not after the current version's ` +
-            `${current.effectiveFrom}; two versions effective at the same instant cannot be ordered`,
-        );
-      }
-
-      const version: ConfigurationVersion = {
+      const draft: ConfigurationVersion = {
         versionId: request.versionId,
         key: request.key,
         scope: request.scope,
         value: request.value,
         effectiveFrom: request.effectiveFrom,
-        status: 'active',
+        status: 'draft',
         createdAt: request.now,
-        publishedAt: request.now,
+        publishedAt: null,
         supersededAt: null,
-        previousVersionId: current?.versionId ?? null,
+        previousVersionId: null,
         idempotencyKey: request.idempotencyKey,
         origin: request.origin,
       };
+      await tx.insertDraft(draft);
+      return { draft, deduplicated: false };
+    });
+  }
 
-      await tx.insertVersion(version);
-      if (current !== null) await tx.supersedeVersion(current.versionId, request.now);
+  /**
+   * Activate a draft, superseding the expected incumbent first.
+   *
+   * Both steps are conditional on current status and both are in one transaction, so either the
+   * replacement happens completely or the incumbent and the draft are left exactly as they were.
+   */
+  async publishDraft(request: PublishDraftRequest): Promise<PublishResult> {
+    assertInstant(request.now, 'now');
 
+    return this.#repository.withTransaction(async (tx) => {
+      const draft = await tx.findVersionById(request.draftId);
+      if (draft === null) {
+        throw new ConfigurationError(
+          'draft-not-found',
+          `no configuration version ${request.draftId} to publish`,
+        );
+      }
+
+      if (draft.status === 'active') {
+        // A retried publication of a draft that already went live. Idempotent by state.
+        return {
+          version: draft,
+          deduplicated: true,
+          supersededVersionId: draft.previousVersionId,
+        };
+      }
+      if (draft.status !== 'draft') {
+        throw new ConfigurationError(
+          'not-a-draft',
+          `version ${request.draftId} is ${draft.status}; only a draft can be published`,
+        );
+      }
+
+      const siblings = await tx.findVersions(draft.key, [draft.scope]);
+      const active = siblings.filter((version) => version.status === 'active');
+      if (active.length > 1) {
+        throw new ConfigurationError(
+          'ambiguous-active-version',
+          `"${draft.key}" already has ${active.length} active versions at ${draft.scope.level} ` +
+            'scope, which should be impossible. Refusing to add a third rather than guessing',
+        );
+      }
+
+      const current = active[0] ?? null;
+      if ((current?.versionId ?? null) !== request.expectedActiveVersionId) {
+        throw new ConfigurationError(
+          'concurrent-modification',
+          `expected active version ${request.expectedActiveVersionId ?? 'none'} but found ` +
+            `${current?.versionId ?? 'none'} — someone published while this change was being ` +
+            'prepared. Re-read and retry',
+        );
+      }
+
+      if (current !== null && draft.effectiveFrom <= current.effectiveFrom) {
+        throw new ConfigurationError(
+          'ambiguous-active-version',
+          `effectiveFrom ${draft.effectiveFrom} is not after the current version's ` +
+            `${current.effectiveFrom}; two versions effective at the same instant cannot be ordered`,
+        );
+      }
+
+      // Order matters, and it is the index that decides it: the incumbent leaves the partial
+      // unique index before the replacement enters it.
+      if (current !== null) await tx.supersedeActiveVersion(current.versionId, request.now);
+      await tx.activateDraft(draft.versionId, request.now, current?.versionId ?? null);
+
+      const activated = await tx.findVersionById(draft.versionId);
+      if (activated === null) {
+        throw new ConfigurationError('draft-not-found', `version ${draft.versionId} vanished`);
+      }
       return {
-        version,
+        version: activated,
         deduplicated: false,
         supersededVersionId: current?.versionId ?? null,
       };
@@ -194,17 +270,41 @@ export class ConfigurationService {
   }
 
   /**
+   * Create a draft and publish it. The common case, composed from the two steps rather than
+   * reimplementing them, so there is exactly one activation path.
+   */
+  async publish(request: PublishRequest): Promise<PublishResult> {
+    const { draft, deduplicated } = await this.createDraft(request);
+
+    if (deduplicated && draft.status !== 'draft') {
+      // The original attempt got all the way through; return what it produced.
+      return {
+        version: draft,
+        deduplicated: true,
+        supersededVersionId: draft.previousVersionId,
+      };
+    }
+
+    const result = await this.publishDraft({
+      draftId: draft.versionId,
+      expectedActiveVersionId: request.expectedActiveVersionId,
+      now: request.now,
+    });
+    return { ...result, deduplicated: deduplicated || result.deduplicated };
+  }
+
+  /**
    * Resolve a key at an instant.
    *
-   * Scopes are consulted most specific first. Within a scope the winner is the version with the
-   * latest `effectiveFrom` at or before `at` that had not been superseded by then — so a
-   * resolution at a past instant answers with what was true then, not with what is true now.
+   * Scopes are consulted most specific first: the requested scope, then the region if the caller
+   * supplied one, then global. Drafts are invisible. Within a scope the winner is the version with
+   * the latest `effectiveFrom` at or before `at`.
    */
   async resolve(request: ResolveRequest): Promise<Resolution> {
     this.#registry.require(request.key);
     assertInstant(request.at, 'at');
 
-    const candidates = scopeChain(request.scope);
+    const candidates = scopeChain(request.scope, request.region ?? null);
     const versions = await this.#repository.withTransaction((tx) =>
       tx.findVersions(request.key, candidates),
     );
@@ -225,7 +325,7 @@ export class ConfigurationService {
     throw new ConfigurationError(
       'no-value',
       `"${request.key}" has no version effective at ${request.at} for ${request.scope.level} scope ` +
-        'or any broader scope',
+        'or any broader scope named in the request',
     );
   }
 
@@ -247,10 +347,8 @@ export class ConfigurationService {
   }
 
   /**
-   * The exact version a decision recorded, whatever has happened since.
-   *
-   * This is the read that makes history answerable. It returns superseded versions deliberately:
-   * a superseded version is not a deleted one.
+   * The exact version a decision recorded, whatever has happened since. Superseded versions are
+   * returned deliberately: superseded is not deleted.
    */
   async versionById(versionId: string): Promise<ConfigurationVersion> {
     const version = await this.#repository.withTransaction((tx) => tx.findVersionById(versionId));
@@ -269,18 +367,33 @@ export class ConfigurationService {
   }
 }
 
-/** The scopes to consult, most specific first, ending at global. */
-export function scopeChain(scope: Scope): readonly Scope[] {
-  const chain: Scope[] = [scope];
-  for (let rank = scopeRank(scope) - 1; rank >= 0; rank -= 1) {
-    const level = SCOPE_LEVELS[rank];
-    if (level === undefined) continue;
-    // Only `global` is reachable without an identifier; a broader *named* scope is not implied by
-    // a narrower one, because a tenant does not know which region it belongs to at this layer.
-    if (level === 'global') chain.push(GLOBAL_SCOPE);
+/**
+ * The scopes to consult, most specific first.
+ *
+ * A region is included only when the caller names one. This component holds no tenant-to-region
+ * map, and inferring the relationship would mean either inventing data or silently returning a
+ * neighbouring region's value — both worse than answering from global.
+ */
+export function scopeChain(scope: Scope, region: Scope | null = null): readonly Scope[] {
+  if (region !== null && region.level !== 'region') {
+    throw new ConfigurationError(
+      'region-mismatch',
+      `the region of a resolution must be a region scope, got ${region.level}`,
+    );
   }
+  if (region !== null && scope.level !== 'tenant') {
+    throw new ConfigurationError(
+      'region-mismatch',
+      `a region may only be supplied for a tenant request, not for a ${scope.level} one`,
+    );
+  }
+
+  const chain: Scope[] = [scope];
+  if (region !== null) chain.push(region);
+  chain.push(GLOBAL_SCOPE);
+
   return chain.filter(
-    (candidate, index, all) => all.findIndex((c) => sameScope(c, candidate)) === index,
+    (candidate, index, all) => all.findIndex((other) => sameScope(other, candidate)) === index,
   );
 }
 
@@ -290,9 +403,10 @@ export function scopeChain(scope: Scope): readonly Scope[] {
  * The window is bounded by effective time, not by `supersededAt`. Those are different instants and
  * conflating them is a real bug: `supersededAt` records when a successor was *published*, which is
  * typically before the successor *takes effect*. A version published on the 15th to take effect on
- * the 1st of next month must still answer questions about the 20th of this one — the predecessor
- * is superseded but remains in force. Ordering by `effectiveFrom` gives that for free: once the
- * successor's instant passes, it simply becomes the latest applicable version.
+ * the 1st of next month must still answer questions about the 20th of this one.
+ *
+ * Drafts are excluded outright — a draft is a proposal, and resolution answers only from what was
+ * actually published.
  */
 function effectiveVersion(
   versions: readonly ConfigurationVersion[],
@@ -306,6 +420,41 @@ function effectiveVersion(
     .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
 
   return applicable[0] ?? null;
+}
+
+/**
+ * A retry must be a retry of *this* request.
+ *
+ * Reusing one idempotency key for different content is not a duplicate delivery, it is a caller
+ * bug — usually a key derived from too little of the request. Returning the earlier version would
+ * report success for a change that never happened, which is the worst of the available outcomes.
+ */
+function assertSameLogicalRequest(
+  existing: ConfigurationVersion,
+  request: CreateDraftRequest,
+): void {
+  const differences: string[] = [];
+  const compare = (field: string, was: unknown, now: unknown): void => {
+    if (was !== now)
+      differences.push(`${field} was ${JSON.stringify(was)}, now ${JSON.stringify(now)}`);
+  };
+
+  compare('key', existing.key, request.key);
+  compare('scope.level', existing.scope.level, request.scope.level);
+  compare('scope.id', existing.scope.id, request.scope.id);
+  compare('value', existing.value, request.value);
+  compare('effectiveFrom', existing.effectiveFrom, request.effectiveFrom);
+  compare('origin', existing.origin, request.origin);
+  compare('versionId', existing.versionId, request.versionId);
+
+  if (differences.length > 0) {
+    throw new ConfigurationError(
+      'idempotency-key-reuse',
+      `idempotency key "${request.idempotencyKey}" was already used for a different request ` +
+        `(${differences.join('; ')}). A retry must carry the same content; reusing a key for a ` +
+        'different change would report success for a change that never happened',
+    );
+  }
 }
 
 function assertInstant(value: string, field: string): void {

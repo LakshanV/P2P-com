@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-003a (K-05 Configuration foundation: registry, immutable versions, effective-time resolution, scoped overrides, injected repository port, migration 0003). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-003a, as corrected (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -53,7 +53,7 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Migrations | 3 forward + 3 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger and the `kernel_configuration` schema with K-05's version table. No business-module tables exist. |
-| Tests | 247 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 272 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -240,7 +240,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 247 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 272 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -288,7 +288,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 47 more tests, for 247 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 72 more tests, for 272 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -1761,6 +1761,83 @@ FOLLOW-UP:          K-08 Event Infrastructure completes build step B-1 and is th
                     unblocked task. K-05 cannot move to COMPLETE until a live PostgreSQL run
                     proves the adapter and migration, and until K-02/K-04/K-09 give it an
                     authenticated actor, enforced authority and an audit trail.
+```
+
+---
+
+### 11.11 Correction — FND-003a lifecycle, replacement ordering, idempotency and scope inference
+
+Four defects in the FND-003a delivery were found by review and corrected. Recorded here per v3 §58.
+Two of them are the same kind of mistake the migration-runner corrections were: the code and the
+constraint it was supposed to respect disagreed, and only one of them was tested.
+
+| # | Defect | Failed invariant | Correction |
+|---|---|---|---|
+| 1 | **Replacement violated the partial unique index.** `publish` inserted the replacement already `active` and superseded the incumbent afterwards. The migration declares a unique index on `(config_key, scope_level, scope_id) WHERE status = 'active'`, checked per statement rather than deferred to COMMIT — so against a real PostgreSQL the insert would have failed every time a key already had a value. The in-memory repository did not model the index, so every test passed. | The reference implementation must enforce what the database enforces, at the same point the database enforces it. | The port now offers `insertDraft`, `supersedeActiveVersion` and `activateDraft`, used in that order: the draft sits outside the index, the incumbent leaves it, the replacement enters it. The in-memory repository enforces the index **after every mutation**, so the wrong order now fails there too — and a test plants exactly that wrong order and requires the refusal. |
+| 2 | **No draft existed.** A version was constructed already active, so the documented draft→active lifecycle had no draft: nothing to be invisible to resolution, nothing to activate, and no failure mode where activation is refused with the proposal intact. | A documented lifecycle state that no operation produces is not a lifecycle. | `createDraft` writes an immutable draft; `publishDraft` activates that same record. `publish` composes the two so there is one activation path, not two. A refused activation now leaves the incumbent active *and* the draft still a draft, which is asserted directly. |
+| 3 | **Idempotency answered the wrong question.** Any repeat of an idempotency key returned the original version, whatever the caller had actually asked for. A key reused with a different value reported success for a change that never happened — the worst available outcome, because the caller has no way to notice. | A retry must be a retry *of this request*. | The complete logical request is compared — key, scope, value, effective time, origin, version id. Identical content returns the original; anything else is refused as `idempotency-key-reuse`, with a message naming what differed. |
+| 4 | **Tenant resolution could not reach a region.** `scopeChain` walked tenant → global, because the component has no tenant-to-region map and the previous revision tried to derive one and silently gave up. A regional default was therefore unreachable in practice. | Do not infer a relationship you do not hold; make the caller state it. | `resolve` takes an explicit optional `region`. With one, the chain is tenant → region → global; without, tenant → global. A region supplied for a non-tenant request, or a non-region passed as one, is refused as `region-mismatch` rather than ignored. |
+
+**Tests added** (deterministic, no database):
+
+```text
+tests/configuration-lifecycle.test.ts        20 cases
+  drafts            stored and immutable; invisible to resolution; activation reuses the record;
+                    re-publishing is idempotent by state; unknown and superseded ids refused
+  failure           a refused activation leaves incumbent active and draft still draft
+  replacement       supersede-then-activate; exactly one active version survives
+  concurrency       the loser is refused, keeps its draft, and changes nothing
+  idempotency       identical retry returns the original; five kinds of mismatched reuse refused;
+                    the refusal names what differed
+  region            tenant → named region → global; no region named means no region consulted;
+                    another region does not inherit; tenant still beats region; mismatches refused
+  adapter queries   supersede precedes activate; each UPDATE is status-guarded; a zero-row
+                    activation rolls back without committing; a zero-row supersession refuses
+                    before activation is attempted; an active insert is refused before any write
+
+tests/configuration-repository.test.ts       +4 conformance cases
+  an already-active insert is refused; a draft activates once and only from draft;
+  supersede-then-activate keeps one active version; activate-then-supersede is refused
+```
+
+The adapter-query cases run the **real** PostgreSQL adapter against a recording fake
+(`tests/helpers/recording-database.ts`), because statement order is behaviour and cannot be
+asserted by reading source.
+
+```text
+STATUS AFTER CORRECTION:
+                    K-05 contract   COMPLETE (updated for the two-step lifecycle)
+                    K-05 implementation IN PROGRESS — unchanged
+                    P0-38 IN PROGRESS — unchanged
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 272, pass 272, fail 0
+                                                                (247 before; +25)
+                    npm run check:migrations           exit 0   6 files, 10 checks PASS
+                    node --test tests/configuration.test.ts
+                                                       exit 0   tests 28, pass 28
+                    node --test tests/configuration-lifecycle.test.ts
+                                                       exit 0   tests 20, pass 20
+                    node --test tests/configuration-repository.test.ts
+                                                       exit 0   tests 23, pass 23
+                    npm run test:integration           exit 0   tests 12, pass 0, SKIPPED 12
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+                    Two further defects surfaced while writing the tests and were fixed:
+                    the in-memory index check ran at commit rather than per statement, which made
+                    the planted wrong-ordering case pass; and the recording fake matched an UPDATE
+                    against a SELECT pattern, reporting one row changed where the test meant none —
+                    silently turning a concurrency case into a happy path.
+
+STILL NOT VERIFIED: No PostgreSQL runtime is available here. The ordering these corrections exist
+                    to satisfy is proved against the reference implementation and against recorded
+                    adapter statements; the index that motivates it has never rejected anything,
+                    because no migration has ever been applied. Defect 1 in particular would have
+                    been caught immediately by one live run, and was not caught by any number of
+                    passing tests against a repository that did not model the constraint. Every
+                    live-database gate stays incomplete.
 ```
 
 ---

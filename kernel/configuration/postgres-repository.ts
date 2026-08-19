@@ -186,7 +186,15 @@ class PostgresTransaction implements ConfigurationTransaction {
     return result.rows.map(toVersion);
   }
 
-  async insertVersion(version: ConfigurationVersion): Promise<void> {
+  async insertDraft(version: ConfigurationVersion): Promise<void> {
+    if (version.status !== 'draft') {
+      throw new ConfigurationError(
+        'immutable-version',
+        `insertDraft was given a ${version.status} version — a version is created as a draft and ` +
+          'activated separately, never inserted already active. Inserting an active row while the ' +
+          'incumbent is still active is exactly what the partial unique index refuses',
+      );
+    }
     const encoded = encodeValue(version.value);
     await this.#client.query(
       `INSERT INTO ${CONFIG_TABLE} (${COLUMNS})
@@ -210,9 +218,15 @@ class PostgresTransaction implements ConfigurationTransaction {
     );
   }
 
-  async supersedeVersion(versionId: string, supersededAt: string): Promise<void> {
-    // `status = 'active'` in the predicate is the concurrency check: if another transaction
-    // superseded this version first, zero rows change and the publication is refused.
+  /**
+   * Take the incumbent out of the partial unique index.
+   *
+   * `status = 'active'` in the predicate is the concurrency check: if another transaction
+   * superseded this version first, zero rows change and this publication is refused rather than
+   * overwriting the winner. This runs *before* the draft is activated, so the index is never asked
+   * to hold two active rows for one key and scope.
+   */
+  async supersedeActiveVersion(versionId: string, supersededAt: string): Promise<void> {
     const result = await this.#client.query(
       `UPDATE ${CONFIG_TABLE}
           SET status = 'superseded', superseded_at = $2
@@ -224,6 +238,32 @@ class PostgresTransaction implements ConfigurationTransaction {
         'concurrent-modification',
         `version ${versionId} was not active when this publication tried to supersede it — it ` +
           'changed underneath the transaction',
+      );
+    }
+  }
+
+  /**
+   * Bring the replacement into the index, stamping when it was published and what it replaced.
+   *
+   * `status = 'draft'` in the predicate is the second half of the concurrency control: a draft
+   * that someone else already activated changes zero rows here, and the loser is refused.
+   */
+  async activateDraft(
+    draftId: string,
+    publishedAt: string,
+    previousVersionId: string | null,
+  ): Promise<void> {
+    const result = await this.#client.query(
+      `UPDATE ${CONFIG_TABLE}
+          SET status = 'active', published_at = $2, previous_version_id = $3
+        WHERE version_id = $1 AND status = 'draft';`,
+      [draftId, publishedAt, previousVersionId],
+    );
+    if (result.rowCount === 0) {
+      throw new ConfigurationError(
+        'concurrent-modification',
+        `version ${draftId} was not a draft when this publication tried to activate it — it was ` +
+          'activated or superseded underneath the transaction',
       );
     }
   }

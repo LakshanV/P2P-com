@@ -11,6 +11,19 @@
 -- This migration touches no other unit's schema. The partial unique index is what makes "two
 -- active versions for one key and scope" impossible at the database level rather than only in
 -- application code — the service refuses it, and this refuses it again if the service is bypassed.
+--
+-- That index also dictates how a replacement must be written, because it is checked per statement
+-- and not deferred to COMMIT. A publication must therefore supersede the incumbent BEFORE
+-- activating its replacement:
+--
+--     INSERT ... status = 'draft'          -- outside the index
+--     UPDATE ... SET status = 'superseded' -- the incumbent leaves the index
+--     UPDATE ... SET status = 'active'     -- the replacement enters it
+--
+-- Inserting the replacement already active and superseding afterwards asks this index to hold two
+-- active rows at once, and it will refuse. Both UPDATEs are additionally predicated on the status
+-- they expect to find, which is what makes a concurrent publication lose loudly instead of
+-- overwriting the winner. See kernel/configuration/repository.ts.
 
 BEGIN;
 

@@ -12,6 +12,10 @@
 | `provisioning-contract.test.ts` | Local provisioning and the isolated test-database guard (FND-002c). |
 | `integration-safety.test.ts` | Proves no live suite can reach the development database, and that `.env` alone configures everything (FND-002c). |
 | `helpers/fake-database.ts` | The in-memory stand-in for PostgreSQL. Not a test; imported by the runner tests. |
+| `configuration.test.ts` | K-05 Configuration: refusals, effective time, decision pinning (FND-003a). |
+| `configuration-lifecycle.test.ts` | K-05 draft lifecycle, replacement ordering, idempotency, explicit region, adapter query order. |
+| `configuration-repository.test.ts` | K-05 port conformance and module contract. |
+| `helpers/recording-database.ts` | Records the SQL the PostgreSQL adapter issues. Not a test. |
 | `integration/harness.ts` | The only sanctioned route to a database. Derives and guards the `_test` database, creates it, drops it in a `finally`. Not a test. |
 | `integration/` | Opt-in live-PostgreSQL suites. **Outside `npm test`** — run with `npm run test:integration`; they skip with a stated reason when nothing is configured. Every one goes through the harness. |
 | `fixtures/` | Deliberately non-conforming source trees, plus `fixtures/migrations/` — one directory per migration-contract check. **Excluded from TypeScript, ESLint and Prettier on purpose.** |

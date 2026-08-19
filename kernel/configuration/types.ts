@@ -69,10 +69,15 @@ export type VersionStatus = 'draft' | 'active' | 'superseded';
 /**
  * An immutable version record.
  *
- * Nothing mutates a published version. `status` moves draft → active → superseded, and
- * `supersededAt` is stamped when a later version takes over, but `value`, `effectiveFrom` and
- * `versionId` are fixed at creation. A historical decision that recorded `versionId` can therefore
- * always be replayed exactly.
+ * The **content** is fixed at creation: `versionId`, `key`, `scope`, `value`, `effectiveFrom`,
+ * `origin` and `idempotencyKey` never change afterwards. What moves is lifecycle state —
+ * `status` walks draft → active → superseded, `publishedAt` is stamped at activation,
+ * `previousVersionId` records what this version replaced at that moment, and `supersededAt` is
+ * stamped when a later version takes over.
+ *
+ * A draft is created first and activated separately, so no version is ever constructed already
+ * active. That matters for more than tidiness: activation is where the previous version is
+ * superseded, and doing the two in one step is what forces a moment where two rows are active.
  */
 export interface ConfigurationVersion {
   readonly versionId: string;
@@ -133,6 +138,10 @@ export interface ConfigurationDecisionRecord {
 
 export type ConfigurationErrorCode =
   | 'unknown-key'
+  | 'idempotency-key-reuse'
+  | 'draft-not-found'
+  | 'not-a-draft'
+  | 'region-mismatch'
   | 'invalid-value'
   | 'scope-not-permitted'
   | 'scope-escalation'

@@ -224,18 +224,31 @@ test('a superseded version is still retrievable by id', async () => {
 
 test('a retried publication returns the original version and writes nothing new', async () => {
   const { service, repository } = build();
-  const first = await service.publish(publication({ idempotencyKey: 'retry-me' }));
-  const retry = await service.publish(
-    publication({ idempotencyKey: 'retry-me', versionId: 'ver-different', value: 1800 }),
-  );
+  const request = publication({ idempotencyKey: 'retry-me' });
+  const first = await service.publish(request);
+  const retry = await service.publish({ ...request });
 
   assert.equal(retry.deduplicated, true);
   assert.equal(retry.version.versionId, first.version.versionId);
-  assert.equal(retry.version.value, 900, 'the retry must not smuggle a different value through');
+  assert.equal(retry.version.value, 900);
   assert.equal(
     repository.snapshot().length,
     1,
     'a dropped response must not become a second version',
+  );
+});
+
+test('a reused idempotency key with different content is refused, not answered', async () => {
+  // The earlier revision returned the original version here, reporting success for a change that
+  // never happened — the worst of the available outcomes. The detailed cases live in
+  // tests/configuration-lifecycle.test.ts; this pins the headline behaviour beside its sibling.
+  const { service } = build();
+  const request = publication({ idempotencyKey: 'reused-here' });
+  await service.publish(request);
+
+  await assert.rejects(
+    service.publish({ ...request, versionId: 'ver-different', value: 1800 }),
+    (error: unknown) => codeOf(error) === 'idempotency-key-reuse',
   );
 });
 
@@ -263,7 +276,17 @@ test('a stale expected version is refused rather than silently applied', async (
     ),
     (error: unknown) => codeOf(error) === 'concurrent-modification',
   );
-  assert.equal(repository.snapshot().length, 2, 'the refused publication must write nothing');
+  // The draft the refused publication created survives, unactivated — it is a real record, and
+  // discarding it would lose a validated proposal the caller may retry against the new incumbent.
+  // What must not have changed is either published version.
+  assert.deepEqual(
+    repository
+      .snapshot()
+      .filter((version) => version.status !== 'draft')
+      .map((version) => version.status),
+    ['superseded', 'active'],
+    'the refused publication must not have changed a published version',
+  );
 });
 
 test('claiming no active version when one exists is refused', async () => {
@@ -291,9 +314,13 @@ test('a failed publication rolls back, leaving no partial write', async () => {
     (error: unknown) => codeOf(error) === 'ambiguous-active-version',
   );
 
-  assert.equal(repository.snapshot().length, 1);
-  assert.equal(repository.snapshot()[0]?.status, 'active', 'the existing version stays active');
-  assert.ok(repository.transactionsRolledBack > 0, 'the transaction must have rolled back');
+  const published = repository.snapshot().filter((version) => version.status !== 'draft');
+  assert.equal(published.length, 1);
+  assert.equal(published[0]?.status, 'active', 'the existing version stays active');
+  assert.ok(
+    repository.transactionsRolledBack > 0,
+    'the activation transaction must have rolled back',
+  );
 });
 
 // --------------------------------------------------------------- scoped overrides
