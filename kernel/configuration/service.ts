@@ -34,6 +34,7 @@
  * Owned by: K-05 Configuration. No API, no UI, no events — see CONTRACT.md for why.
  */
 
+import { assertInstant, compareInstants, instantsEqual } from './instant.ts';
 import type { ConfigurationRepository, ConfigurationTransaction } from './repository.ts';
 import { assertScopePermitted, assertValidValue } from './registry.ts';
 import type { ConfigurationRegistry } from './registry.ts';
@@ -156,7 +157,7 @@ export class ConfigurationService {
       );
     }
 
-    if (request.effectiveFrom < request.now) {
+    if (compareInstants(request.effectiveFrom, request.now, 'effectiveFrom') < 0) {
       throw new ConfigurationError(
         'retroactive-change',
         `effectiveFrom ${request.effectiveFrom} is before now (${request.now}). A retroactive ` +
@@ -218,9 +219,34 @@ export class ConfigurationService {
         };
       }
       if (draft.status !== 'draft') {
+        // Superseded, which means it *was* published and has since been replaced. Two very
+        // different callers arrive here and they must not get the same answer:
+        //
+        //   - A retry of the original publication, naming the same incumbent that publication
+        //     superseded. The work succeeded; a redelivery weeks later, after a third version
+        //     took over, should still be told what it did rather than told it failed. Nothing is
+        //     written — the original result is simply restated.
+        //   - Someone asking to activate a superseded version afresh, against whatever is active
+        //     now. That would resurrect a retired version, so it is refused.
+        //
+        // The expectation separates them, and it is the only thing that can: a retry carries the
+        // predecessor this version replaced, a new activation carries the current incumbent.
+        const isRetryOfItsOwnPublication =
+          draft.publishedAt !== null &&
+          (draft.previousVersionId ?? null) === request.expectedActiveVersionId;
+        if (isRetryOfItsOwnPublication) {
+          return {
+            version: draft,
+            deduplicated: true,
+            supersededVersionId: draft.previousVersionId,
+          };
+        }
+
         throw new ConfigurationError(
           'not-a-draft',
-          `version ${request.draftId} is ${draft.status}; only a draft can be published`,
+          `version ${request.draftId} is ${draft.status} and was published over; only a draft ` +
+            'can be published. A superseded version cannot be made active again — publish a new ' +
+            'version carrying the value you want',
         );
       }
 
@@ -244,7 +270,11 @@ export class ConfigurationService {
         );
       }
 
-      if (current !== null && draft.effectiveFrom <= current.effectiveFrom) {
+      // Compared as instants, never as strings. `2026-01-01T00:00:00.000Z` and
+      // `2026-01-01T00:00:00Z` are one moment, but the fractional spelling sorts *earlier* as
+      // text, which let a replacement effective at the incumbent's own instant past this check —
+      // the exact ambiguity the check exists to prevent.
+      if (current !== null && compareInstants(draft.effectiveFrom, current.effectiveFrom) <= 0) {
         throw new ConfigurationError(
           'ambiguous-active-version',
           `effectiveFrom ${draft.effectiveFrom} is not after the current version's ` +
@@ -416,8 +446,8 @@ function effectiveVersion(
   const applicable = versions
     .filter((version) => sameScope(version.scope, scope))
     .filter((version) => version.status !== 'draft')
-    .filter((version) => version.effectiveFrom <= at)
-    .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+    .filter((version) => compareInstants(version.effectiveFrom, at) <= 0)
+    .sort((a, b) => compareInstants(b.effectiveFrom, a.effectiveFrom));
 
   return applicable[0] ?? null;
 }
@@ -443,7 +473,15 @@ function assertSameLogicalRequest(
   compare('scope.level', existing.scope.level, request.scope.level);
   compare('scope.id', existing.scope.id, request.scope.id);
   compare('value', existing.value, request.value);
-  compare('effectiveFrom', existing.effectiveFrom, request.effectiveFrom);
+  // The effective time is compared as an instant: a retry that spells the same moment with a
+  // different precision is the same request, and refusing it would turn a harmless redelivery
+  // into a caller error.
+  if (!instantsEqual(existing.effectiveFrom, request.effectiveFrom)) {
+    differences.push(
+      `effectiveFrom was ${JSON.stringify(existing.effectiveFrom)}, now ` +
+        JSON.stringify(request.effectiveFrom),
+    );
+  }
   compare('origin', existing.origin, request.origin);
   compare('versionId', existing.versionId, request.versionId);
 
@@ -453,15 +491,6 @@ function assertSameLogicalRequest(
       `idempotency key "${request.idempotencyKey}" was already used for a different request ` +
         `(${differences.join('; ')}). A retry must carry the same content; reusing a key for a ` +
         'different change would report success for a change that never happened',
-    );
-  }
-}
-
-function assertInstant(value: string, field: string): void {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value)) {
-    throw new ConfigurationError(
-      'invalid-value',
-      `${field} must be an ISO-8601 UTC instant such as 2026-01-01T00:00:00Z, got "${value}"`,
     );
   }
 }

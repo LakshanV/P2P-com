@@ -154,7 +154,7 @@ test('publishing a draft twice is idempotent by state', async () => {
   assert.equal(retry.version.publishedAt, '2026-01-01T00:00:00Z', 'the original instant stands');
 });
 
-test('publishing an unknown or already-superseded version is refused', async () => {
+test('publishing a version that does not exist is refused', async () => {
   const { service } = build();
   await assert.rejects(
     service.publishDraft({
@@ -164,9 +164,13 @@ test('publishing an unknown or already-superseded version is refused', async () 
     }),
     (error: unknown) => codeOf(error) === 'draft-not-found',
   );
+});
+
+test('re-activating a superseded version against the current incumbent is refused', async () => {
+  const { service, repository } = build();
 
   const first = await service.publish(publishRequest());
-  await service.publish(
+  const second = await service.publish(
     publishRequest({
       value: 1800,
       effectiveFrom: '2026-02-01T00:00:00Z',
@@ -174,13 +178,23 @@ test('publishing an unknown or already-superseded version is refused', async () 
       now: '2026-01-15T00:00:00Z',
     }),
   );
+
+  // Not a retry: this names the *current* incumbent, so it is asking for the retired version to
+  // take over again. A superseded version never becomes active a second time.
   await assert.rejects(
     service.publishDraft({
       draftId: first.version.versionId,
-      expectedActiveVersionId: null,
+      expectedActiveVersionId: second.version.versionId,
       now: '2026-02-01T00:00:00Z',
     }),
     (error: unknown) => codeOf(error) === 'not-a-draft',
+  );
+
+  const active = repository.snapshot().filter((version) => version.status === 'active');
+  assert.deepEqual(
+    active.map((version) => version.versionId),
+    [second.version.versionId],
+    'the refusal left the incumbent alone',
   );
 });
 

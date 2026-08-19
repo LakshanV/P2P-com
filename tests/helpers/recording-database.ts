@@ -27,6 +27,27 @@ export interface RecordingOptions {
   readonly updates?: ReadonlyArray<{ readonly match: RegExp; readonly rowCount: number }>;
   /** Statement that should throw, simulating a constraint violation or a lost connection. */
   readonly failOn?: RegExp;
+  /**
+   * Statements that should throw a *specific* error.
+   *
+   * `failOn` throws an anonymous failure, which is the right shape for "the connection dropped"
+   * but the wrong one for a constraint violation: the adapter is supposed to recognise SQLSTATE
+   * 23505 on a named constraint and translate it into a refusal a caller can act on, and a
+   * generic error cannot exercise that at all.
+   */
+  readonly failures?: ReadonlyArray<{ readonly match: RegExp; readonly error: Error }>;
+}
+
+/** An error shaped like the one the platform client raises for a constraint violation. */
+export function sqlstateError(
+  message: string,
+  code: string,
+  constraint?: string,
+): Error & { code: string; constraint?: string } {
+  const error = new Error(message) as Error & { code: string; constraint?: string };
+  error.code = code;
+  if (constraint !== undefined) error.constraint = constraint;
+  return error;
 }
 
 export class RecordingDatabase implements Database {
@@ -62,6 +83,10 @@ export class RecordingDatabase implements Database {
 
         if (this.#options.failOn?.test(sql) === true) {
           return Promise.reject(new Error('simulated database failure'));
+        }
+
+        for (const failure of this.#options.failures ?? []) {
+          if (failure.match.test(sql)) return Promise.reject(failure.error);
         }
 
         // Dispatch on the leading verb first. A `WHERE version_id = $1` matcher intended for a

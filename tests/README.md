@@ -15,6 +15,7 @@
 | `configuration.test.ts` | K-05 Configuration: refusals, effective time, decision pinning (FND-003a). |
 | `configuration-lifecycle.test.ts` | K-05 draft lifecycle, replacement ordering, idempotency, explicit region, adapter query order. |
 | `configuration-repository.test.ts` | K-05 port conformance and module contract. |
+| `configuration-temporal.test.ts` | K-05 canonical instants, competing publications, constraint translation, retries after supersession. |
 | `helpers/recording-database.ts` | Records the SQL the PostgreSQL adapter issues. Not a test. |
 | `integration/harness.ts` | The only sanctioned route to a database. Derives and guards the `_test` database, creates it, drops it in a `finally`. Not a test. |
 | `integration/` | Opt-in live-PostgreSQL suites. **Outside `npm test`** — run with `npm run test:integration`; they skip with a stated reason when nothing is configured. Every one goes through the harness. |

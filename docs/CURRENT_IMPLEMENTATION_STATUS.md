@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-003a, as corrected (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-003a, as corrected twice (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -53,7 +53,7 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Migrations | 3 forward + 3 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger and the `kernel_configuration` schema with K-05's version table. No business-module tables exist. |
-| Tests | 272 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 297 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -240,7 +240,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 272 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 297 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -288,7 +288,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 72 more tests, for 272 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 97 more tests, for 297 today. Seven defects were found in FND-003a by review after delivery and corrected in two passes (§11.11, §11.12); no defect was found in the earlier tasks. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -1838,6 +1838,108 @@ STILL NOT VERIFIED: No PostgreSQL runtime is available here. The ordering these 
                     been caught immediately by one live run, and was not caught by any number of
                     passing tests against a repository that did not model the constraint. Every
                     live-database gate stays incomplete.
+```
+
+---
+
+### 11.12 Correction — FND-003a canonical instants, publication races and retries after supersession
+
+Three further defects, each one a case where the component accepted something it documented itself
+as refusing, or refused something it had already done. Recorded here per v3 §58.
+
+| # | Defect | Failed invariant | Correction |
+|---|---|---|---|
+| 1 | **Instants were compared as text.** Every ordering decision — the retroactive check, the "a replacement must be effective strictly after the incumbent" check, resolution's filter and sort, and the idempotency comparison — used string comparison. `.` sorts before `Z`, so `2026-01-01T00:00:00.000Z` ranked *earlier* than the identical `2026-01-01T00:00:00Z`. An incumbent written with a fraction therefore accepted a replacement at its own instant, producing exactly the unorderable pair `ambiguous-active-version` exists to prevent; a genuinely retroactive change hid behind a coarser spelling; and the version that answered a resolution depended on how its effective time had been typed. Separately, validation was a pattern match, so `2026-02-30T00:00:00Z` was stored — `new Date` reads it as 2 March. | One moment is one moment, however it is written; and an instant must be a point in time the calendar contains. | `kernel/configuration/instant.ts` parses an instant, validates it against the real calendar by requiring it to survive a UTC round trip, and reduces it to microseconds since the epoch as a `bigint`. Every comparison in the component goes through that number. The caller's spelling is still what gets stored — a version records the instant as it was expressed — but nothing compares strings any more. |
+| 2 | **A first-publication race leaked a driver error.** Two drafts at one key and scope, each correctly stating that it expected no active version, both reached activation: neither is wrong about what it read, so the service's own expectation check cannot separate them. Against PostgreSQL the loser got a raw unique-violation on `config_version_one_active_per_scope` — an error with no code, absent from the refusal table, naming an index rather than saying that someone else published first. Against the in-memory repository it was worse: transactions committed by swapping the whole working copy in, so the second commit overwrote the first and left **two active rows with no error raised at all**. | The reference implementation must not be able to reach a state the database forbids, and a race must be reported as a race. | The adapter translates SQLSTATE 23505 into the refusal the violated constraint actually means — `concurrent-modification`, `idempotency-key-reuse` or `immutable-version` — and rethrows anything else untouched, because an I/O failure dressed up as a race would be retried forever. The platform client now carries the SQLSTATE and constraint name across its redaction boundary, so this is never decided by matching English error text. The in-memory repository commits by applying only the rows the transaction wrote onto the current store, refusing if they moved underneath it or if the result would hold two active rows. |
+| 3 | **A retry after supersession was told it had failed.** `publishDraft` on a version that had been published successfully and later replaced answered `not-a-draft`. A redelivery arriving after a third version took over reported failure for work that had demonstrably succeeded. | A retry of work that succeeded is answered with what it did. | A superseded version whose publication is retried — identified by the caller naming the predecessor *that* publication superseded — returns the original result, `deduplicated: true`, writing nothing. Naming the *current* incumbent instead is a request to reinstate a retired version and is still refused as `not-a-draft`. The expectation is the only thing that separates the two, and it separates them exactly. |
+
+A fourth, smaller problem was fixed alongside defect 1: the adapter read instants back through
+`new Date(…)`, which holds milliseconds where `timestamptz` holds microseconds. Two versions whose
+effective times differed by less than a millisecond would have read back as the same instant —
+reintroducing on the way out the ambiguity publication had just refused. A string result is now
+rebuilt directly. The `Date` path cannot be recovered and is recorded as a limitation in
+`kernel/configuration/CONTRACT.md` §5.
+
+**Tests added** (deterministic, no database):
+
+```text
+tests/configuration-temporal.test.ts         24 cases
+  calendar        30 February, 29 February 2025, 31 April, month 13, month 00, day 32, day 00,
+                  hour 24, minute 60, leap second - each refused; 29 February 2024 accepted;
+                  refused by the service, not merely by the parser
+  equivalence     three spellings of one moment compare equal and canonicalise identically
+  ordering        .5 after whole seconds; microseconds; .1 after .05; 00:01 after 00:00.999999
+  bypasses        a same-instant replacement refused in *both* spelling directions; a retroactive
+                  change refused when text comparison calls it later than now
+  resolution      versions ordered by instant, not by typing: resolving at .400 and at .500 each
+                  answer with the right version
+  idempotency     a retry spelling one instant differently is a retry; a retry one millisecond
+                  away is still refused as key reuse
+  races           two competing first publications: one wins, one is refused as
+                  concurrent-modification, one active row survives, the loser keeps its draft and
+                  is unpublished, and may then retry successfully against the winner; two
+                  replacements of one incumbent, same outcome
+  retries         a retry after supersession returns the original result, writes nothing, and
+                  leaves the current incumbent alone; reinstating a retired version refused;
+                  the same retry through publish() answered from the idempotency key
+  normalization   23505 on the active index becomes concurrent-modification and the transaction
+                  rolls back without committing; idempotency and primary-key violations told
+                  apart; an unrecognised SQLSTATE passed through untouched; a violation with no
+                  constraint field recognised from the message; databaseErrorDetail extracts
+                  SQLSTATE and constraint and nothing else
+  precision       a microsecond instant read back intact and still ordering after the whole
+                  second; one moment rendered one way from three stored forms
+
+tests/configuration-lifecycle.test.ts        20 -> 21 cases
+  the single "unknown or already-superseded version is refused" case became two, because half of
+  what it asserted is now the wrong answer: a redelivery is answered, a reinstatement is refused
+```
+
+**Each defect was re-planted and the tests observed to fail**, since a regression test that cannot
+fail is a placeholder:
+
+```text
+string comparison restored at all four sites + calendar check disabled
+                                                   8 of 24 failed
+wholesale-swap commit + adapter translation removed
+                                                   6 of 24 failed
+post-supersession retry branch disabled            1 of 24 failed
+```
+
+The eight include both spelling directions of the same-instant replacement, which matters: the
+first version of this suite tested only the direction the *old* code already caught, and passed
+against the very defect it was written for. It was rewritten after the plant exposed it.
+
+```text
+STATUS AFTER CORRECTION:
+                    K-05 contract   COMPLETE (updated: canonical instants, constraint translation,
+                                    retry-after-supersession, microsecond limitation)
+                    K-05 implementation IN PROGRESS - unchanged
+                    P0-38 IN PROGRESS - unchanged
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 297, pass 297, fail 0
+                                                                (272 before; +25)
+                    npm run check:migrations           exit 0   6 files, 10 checks PASS
+                    node --test tests/configuration.test.ts
+                                                       exit 0   tests 28, pass 28
+                    node --test tests/configuration-lifecycle.test.ts
+                                                       exit 0   tests 21, pass 21
+                    node --test tests/configuration-repository.test.ts
+                                                       exit 0   tests 23, pass 23
+                    node --test tests/configuration-temporal.test.ts
+                                                       exit 0   tests 24, pass 24
+                    npm run test:integration           exit 0   tests 12, pass 0, SKIPPED 12
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: No PostgreSQL runtime is available here. Defect 2's translation is proved
+                    against a recording fake raising an error shaped like the driver's; no real
+                    23505 has ever been raised, because no migration has ever been applied and no
+                    two transactions have ever raced for real. The in-memory races are real races
+                    between overlapping transactions, but they are races in a model of the
+                    database, not in the database. Every live-database gate stays incomplete.
 ```
 
 ---

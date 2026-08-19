@@ -17,6 +17,33 @@ export interface QueryResult<Row = Record<string, unknown>> {
 }
 
 /**
+ * A failed statement, carrying the machine-readable part of the driver's report.
+ *
+ * The message is redacted and the driver error is deliberately not attached as `cause`, because it
+ * may quote the connection string and with it the password. The SQLSTATE and the constraint name
+ * carry no credential and are the only reliable way for a caller to tell *which* rule the database
+ * enforced — a unique-violation on one index means something quite different from one on another,
+ * and deciding that by matching English error text would break the first time a server is
+ * configured for a different locale or a driver reworded its output.
+ */
+export interface DatabaseErrorDetail {
+  /** SQLSTATE, e.g. `23505` for a unique violation. Absent if the driver did not report one. */
+  readonly code?: string;
+  /** The constraint or unique index the statement violated, if the driver named it. */
+  readonly constraint?: string;
+}
+
+/** Read the SQLSTATE details off a thrown error, whatever threw it. */
+export function databaseErrorDetail(error: unknown): DatabaseErrorDetail {
+  if (typeof error !== 'object' || error === null) return {};
+  const candidate = error as { code?: unknown; constraint?: unknown };
+  const detail: { code?: string; constraint?: string } = {};
+  if (typeof candidate.code === 'string') detail.code = candidate.code;
+  if (typeof candidate.constraint === 'string') detail.constraint = candidate.constraint;
+  return detail;
+}
+
+/**
  * A single session. The runner holds exactly one for a whole run, because a PostgreSQL
  * session-level advisory lock belongs to the session that took it — spread the run across a pool
  * and the lock protects nothing.

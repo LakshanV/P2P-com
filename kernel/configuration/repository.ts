@@ -24,6 +24,7 @@
  * Owned by: K-05 Configuration.
  */
 
+import { compareInstants } from './instant.ts';
 import { ConfigurationError, type ConfigurationVersion, type Scope, scopeKey } from './types.ts';
 
 export interface ConfigurationTransaction {
@@ -77,8 +78,10 @@ export interface ConfigurationRepository {
  * contract, and it enforces the same invariants the database does — including the partial unique
  * index, so an ordering mistake fails here as loudly as it would against PostgreSQL.
  *
- * Transactions copy state on entry and swap it in on success, giving the same all-or-nothing
- * behaviour the SQL adapter gets from the database.
+ * Transactions read a snapshot taken on entry and, on success, apply only the rows they wrote onto
+ * the current store — refusing if those rows moved underneath them. That gives the same
+ * all-or-nothing behaviour the SQL adapter gets from the database, and the same refusal when two
+ * publications overlap, rather than letting the later commit quietly overwrite the earlier one.
  */
 export class InMemoryConfigurationRepository implements ConfigurationRepository {
   #versions: ConfigurationVersion[] = [];
@@ -95,12 +98,12 @@ export class InMemoryConfigurationRepository implements ConfigurationRepository 
   }
 
   async withTransaction<T>(body: (tx: ConfigurationTransaction) => Promise<T>): Promise<T> {
-    const working = this.#versions.map((version) => ({ ...version }));
+    const base = this.#versions.map((version) => ({ ...version }));
+    const working = base.map((version) => ({ ...version }));
     const tx = new InMemoryTransaction(working);
     try {
       const result = await body(tx);
-      assertAtMostOneActivePerScope(working);
-      this.#versions = working;
+      this.#versions = this.#merge(base, working, tx.touched);
       this.transactionsCommitted += 1;
       return result;
     } catch (error) {
@@ -108,6 +111,86 @@ export class InMemoryConfigurationRepository implements ConfigurationRepository 
       throw error;
     }
   }
+
+  /**
+   * Commit this transaction's writes onto whatever the store looks like *now*.
+   *
+   * A transaction reads a snapshot taken on entry, so two overlapping publications each believe
+   * they found no active version. Swapping the working copy in wholesale — which is what the
+   * previous revision did — would let the second commit overwrite the first and leave two active
+   * rows behind with no error raised anywhere: the very state the partial unique index exists to
+   * make impossible, reachable in the reference implementation but not in the database it stands
+   * in for.
+   *
+   * So only the rows this transaction actually touched are applied, and applying them is refused
+   * if the store moved underneath them or if the result would hold two active rows for one key
+   * and scope. Both are races, and both are reported as `concurrent-modification` — the loser
+   * keeps its draft and may retry against the winner.
+   */
+  #merge(
+    base: readonly ConfigurationVersion[],
+    working: readonly ConfigurationVersion[],
+    touched: ReadonlySet<string>,
+  ): ConfigurationVersion[] {
+    const baseById = new Map(base.map((version) => [version.versionId, version]));
+    const currentById = new Map(this.#versions.map((version) => [version.versionId, version]));
+    const merged = this.#versions.map((version) => ({ ...version }));
+    const indexById = new Map(merged.map((version, index) => [version.versionId, index]));
+
+    for (const versionId of touched) {
+      const written = working.find((version) => version.versionId === versionId);
+      if (written === undefined) continue;
+
+      const before = baseById.get(versionId);
+      const now = currentById.get(versionId);
+
+      if (before === undefined) {
+        if (now !== undefined) {
+          throw new ConfigurationError(
+            'concurrent-modification',
+            `version ${versionId} was inserted by another transaction while this one was open`,
+          );
+        }
+        indexById.set(versionId, merged.length);
+        merged.push({ ...written });
+        continue;
+      }
+
+      if (now === undefined || !sameLifecycle(before, now)) {
+        throw new ConfigurationError(
+          'concurrent-modification',
+          `version ${versionId} changed underneath this transaction — it was ` +
+            `${before.status} when read and is ${now?.status ?? 'gone'} now. Re-read and retry`,
+        );
+      }
+
+      merged[indexById.get(versionId) as number] = { ...written };
+    }
+
+    try {
+      assertAtMostOneActivePerScope(merged);
+    } catch {
+      // Reached only across transactions: an ordering mistake inside one transaction is caught by
+      // `activateDraft` when the statement runs, exactly as the database would catch it.
+      throw new ConfigurationError(
+        'concurrent-modification',
+        'another publication activated a version for this key and scope first. The partial ' +
+          'unique index permits one active row, so this one is refused rather than committed ' +
+          'alongside it',
+      );
+    }
+    return merged;
+  }
+}
+
+/** Only lifecycle state moves, so only lifecycle state can be raced on. */
+function sameLifecycle(a: ConfigurationVersion, b: ConfigurationVersion): boolean {
+  return (
+    a.status === b.status &&
+    a.publishedAt === b.publishedAt &&
+    a.supersededAt === b.supersededAt &&
+    a.previousVersionId === b.previousVersionId
+  );
 }
 
 /** The partial unique index, in code. A commit that would violate it is refused. */
@@ -128,6 +211,8 @@ function assertAtMostOneActivePerScope(versions: readonly ConfigurationVersion[]
 
 class InMemoryTransaction implements ConfigurationTransaction {
   readonly #versions: ConfigurationVersion[];
+  /** Every version this transaction wrote, so the commit applies those rows and only those. */
+  readonly touched = new Set<string>();
 
   constructor(versions: ConfigurationVersion[]) {
     this.#versions = versions;
@@ -148,7 +233,7 @@ class InMemoryTransaction implements ConfigurationTransaction {
         .filter((v) => v.key === key && wanted.has(scopeKey(v.scope)))
         .sort(
           (a, b) =>
-            a.effectiveFrom.localeCompare(b.effectiveFrom) ||
+            compareInstants(a.effectiveFrom, b.effectiveFrom) ||
             a.versionId.localeCompare(b.versionId),
         ),
     );
@@ -178,6 +263,7 @@ class InMemoryTransaction implements ConfigurationTransaction {
       );
     }
     this.#versions.push({ ...version });
+    this.touched.add(version.versionId);
     return Promise.resolve();
   }
 
@@ -199,6 +285,7 @@ class InMemoryTransaction implements ConfigurationTransaction {
       );
     }
     this.#versions[index] = { ...existing, status: 'superseded', supersededAt };
+    this.touched.add(versionId);
     return Promise.resolve();
   }
 
@@ -232,6 +319,7 @@ class InMemoryTransaction implements ConfigurationTransaction {
       this.#versions[index] = existing;
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
+    this.touched.add(draftId);
     return Promise.resolve();
   }
 }

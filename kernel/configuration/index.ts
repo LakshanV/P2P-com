@@ -45,6 +45,15 @@ export {
   describeSchemaFailure,
 } from './registry.ts';
 
+export {
+  assertInstant,
+  canonicalInstant,
+  compareInstants,
+  instantsEqual,
+  parseInstant,
+} from './instant.ts';
+export type { Instant } from './instant.ts';
+
 export { ConfigurationService, scopeChain } from './service.ts';
 export type {
   CreateDraftRequest,

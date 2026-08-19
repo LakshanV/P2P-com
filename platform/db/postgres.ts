@@ -18,6 +18,7 @@ import process from 'node:process';
 import pg from 'pg';
 
 import {
+  databaseErrorDetail,
   redactConnectionString,
   redactText,
   passwordOf,
@@ -104,8 +105,16 @@ export class PostgresDatabase implements Database {
         } catch (error) {
           // Same reasoning as the connect path: a `cause` here would carry the unredacted
           // driver error, and with it whatever credential the driver chose to quote.
-          // eslint-disable-next-line preserve-caught-error
-          throw new Error(redact(error instanceof Error ? error.message : String(error)));
+          //
+          // The SQLSTATE and the constraint name are carried across, though. They contain no
+          // credential, and without them a caller can only tell a unique violation on one index
+          // from one on another by matching English error text.
+          const failure = new Error(redact(error instanceof Error ? error.message : String(error)));
+          const detail = databaseErrorDetail(error);
+          if (detail.code !== undefined) Object.assign(failure, { code: detail.code });
+          if (detail.constraint !== undefined)
+            Object.assign(failure, { constraint: detail.constraint });
+          throw failure;
         }
       },
       async release(): Promise<void> {

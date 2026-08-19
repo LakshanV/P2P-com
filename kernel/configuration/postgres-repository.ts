@@ -16,10 +16,12 @@
  * Owned by: K-05 Configuration.
  */
 
+import { databaseErrorDetail } from '../../platform/db/client.ts';
 import type { Database, DatabaseClient } from '../../platform/db/client.ts';
 import type { ConfigurationRepository, ConfigurationTransaction } from './repository.ts';
 import {
   ConfigurationError,
+  type ConfigurationErrorCode,
   type ConfigurationValue,
   type ConfigurationVersion,
   type PublicationOrigin,
@@ -30,6 +32,68 @@ import {
 
 export const CONFIG_SCHEMA = 'kernel_configuration';
 export const CONFIG_TABLE = `${CONFIG_SCHEMA}.config_version`;
+
+/** SQLSTATE 23505. The only driver code this adapter interprets. */
+const UNIQUE_VIOLATION = '23505';
+
+/**
+ * The constraints the migration declares, and what a violation of each one actually means.
+ *
+ * Without this table a race surfaces as a raw driver error — `duplicate key value violates unique
+ * constraint "config_version_one_active_per_scope"` — which no caller can act on. It is not a
+ * `ConfigurationError`, so it carries no code, cannot be matched against the refusal table, and
+ * tells an operator about an index rather than about what happened. What happened is that someone
+ * else published first.
+ *
+ * The one-active-row case is reported as a race rather than as an ordering mistake because the
+ * database cannot tell the two apart: it sees a second active row and nothing about who put the
+ * first one there. The service supersedes before activating on every path, so the reachable cause
+ * in production is a competing transaction. The in-memory reference implementation *can* tell them
+ * apart, and reports an ordering mistake as `ambiguous-active-version` when the statement runs —
+ * which is where that class of bug gets caught, long before this code is reached.
+ */
+const CONSTRAINT_MEANINGS: Readonly<
+  Record<string, { readonly code: ConfigurationErrorCode; readonly explanation: string }>
+> = {
+  config_version_one_active_per_scope: {
+    code: 'concurrent-modification',
+    explanation:
+      'another publication activated a version for this key and scope first. One active row is ' +
+      'permitted, so this publication is refused and rolled back rather than committed alongside ' +
+      'it. Re-read the active version and retry',
+  },
+  config_version_idempotency_unique: {
+    code: 'idempotency-key-reuse',
+    explanation: 'this idempotency key has already been used by a publication that got there first',
+  },
+  config_version_pkey: {
+    code: 'immutable-version',
+    explanation: 'a version with this id already exists, and a version is never rewritten',
+  },
+};
+
+/**
+ * Turn a driver failure into a refusal the caller can act on, or rethrow it untouched.
+ *
+ * Rethrowing is the default on purpose: an unrecognised failure must not be dressed up as a
+ * domain refusal, because a caller that retries a `concurrent-modification` would then retry a
+ * disk error forever.
+ */
+function normalizeDatabaseError(error: unknown, operation: string): unknown {
+  if (error instanceof ConfigurationError) return error;
+
+  const detail = databaseErrorDetail(error);
+  if (detail.code !== UNIQUE_VIOLATION) return error;
+
+  const message = error instanceof Error ? error.message : String(error);
+  const named =
+    detail.constraint ??
+    Object.keys(CONSTRAINT_MEANINGS).find((constraint) => message.includes(constraint));
+  const meaning = named === undefined ? undefined : CONSTRAINT_MEANINGS[named];
+  if (meaning === undefined) return error;
+
+  return new ConfigurationError(meaning.code, `${operation} was refused: ${meaning.explanation}`);
+}
 
 const COLUMNS = [
   'version_id',
@@ -65,12 +129,34 @@ interface Row {
   readonly origin: string;
 }
 
-/** Instants are compared as strings everywhere above this layer, so normalise on the way out. */
+/**
+ * Normalise a stored instant on the way out.
+ *
+ * A string from the driver is rebuilt directly rather than pushed through `new Date(…)`, because
+ * `Date` holds milliseconds and the column holds microseconds. Truncating here would merge two
+ * genuinely different instants into one, and two versions that appear to share an effective time
+ * cannot be ordered — the precise ambiguity the service refuses at publication would reappear on
+ * the way back out, after publication had already allowed it.
+ *
+ * Trailing zeros are trimmed so that one moment has one spelling. Comparison is canonical
+ * regardless (see `instant.ts`), so this is presentation, not correctness.
+ */
+const STORED_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:Z|\+00(?::00)?)?$/;
+
 function instant(value: Date | string): string {
-  return (value instanceof Date ? value.toISOString() : new Date(value).toISOString()).replace(
-    /\.000Z$/,
-    'Z',
-  );
+  if (typeof value === 'string') {
+    const match = STORED_INSTANT.exec(value.trim());
+    if (match !== null) {
+      const [, year, month, day, hour, minute, second, fraction] = match;
+      const digits = (fraction ?? '').replace(/0+$/, '');
+      const suffix = digits === '' ? '' : `.${digits}`;
+      return `${year}-${month}-${day}T${hour}:${minute}:${second}${suffix}Z`;
+    }
+  }
+  // A driver that parses `timestamptz` into a `Date` has already discarded anything finer than a
+  // millisecond; nothing here can recover it. Recorded as a limitation in CONTRACT.md §5.
+  return (value instanceof Date ? value : new Date(value)).toISOString().replace(/\.000Z$/, 'Z');
 }
 
 function optionalInstant(value: Date | string | null): string | null {
@@ -148,6 +234,20 @@ class PostgresTransaction implements ConfigurationTransaction {
     this.#client = client;
   }
 
+  /**
+   * Run a mutation, translating the constraint violations this schema can produce.
+   *
+   * Only the writes go through here. A failing SELECT has no constraint to violate, so wrapping
+   * reads would add a layer that could only ever pass its error straight through.
+   */
+  async #run<T>(operation: string, body: () => Promise<T>): Promise<T> {
+    try {
+      return await body();
+    } catch (error) {
+      throw normalizeDatabaseError(error, operation);
+    }
+  }
+
   async findVersionById(versionId: string): Promise<ConfigurationVersion | null> {
     const result = await this.#client.query<Row>(
       `SELECT ${COLUMNS} FROM ${CONFIG_TABLE} WHERE version_id = $1;`,
@@ -196,25 +296,27 @@ class PostgresTransaction implements ConfigurationTransaction {
       );
     }
     const encoded = encodeValue(version.value);
-    await this.#client.query(
-      `INSERT INTO ${CONFIG_TABLE} (${COLUMNS})
+    await this.#run('insertDraft', () =>
+      this.#client.query(
+        `INSERT INTO ${CONFIG_TABLE} (${COLUMNS})
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);`,
-      [
-        version.versionId,
-        version.key,
-        version.scope.level,
-        version.scope.id,
-        encoded.kind,
-        encoded.text,
-        version.effectiveFrom,
-        version.status,
-        version.createdAt,
-        version.publishedAt,
-        version.supersededAt,
-        version.previousVersionId,
-        version.idempotencyKey,
-        version.origin,
-      ],
+        [
+          version.versionId,
+          version.key,
+          version.scope.level,
+          version.scope.id,
+          encoded.kind,
+          encoded.text,
+          version.effectiveFrom,
+          version.status,
+          version.createdAt,
+          version.publishedAt,
+          version.supersededAt,
+          version.previousVersionId,
+          version.idempotencyKey,
+          version.origin,
+        ],
+      ),
     );
   }
 
@@ -227,11 +329,13 @@ class PostgresTransaction implements ConfigurationTransaction {
    * to hold two active rows for one key and scope.
    */
   async supersedeActiveVersion(versionId: string, supersededAt: string): Promise<void> {
-    const result = await this.#client.query(
-      `UPDATE ${CONFIG_TABLE}
+    const result = await this.#run('supersedeActiveVersion', () =>
+      this.#client.query(
+        `UPDATE ${CONFIG_TABLE}
           SET status = 'superseded', superseded_at = $2
         WHERE version_id = $1 AND status = 'active';`,
-      [versionId, supersededAt],
+        [versionId, supersededAt],
+      ),
     );
     if (result.rowCount === 0) {
       throw new ConfigurationError(
@@ -253,11 +357,13 @@ class PostgresTransaction implements ConfigurationTransaction {
     publishedAt: string,
     previousVersionId: string | null,
   ): Promise<void> {
-    const result = await this.#client.query(
-      `UPDATE ${CONFIG_TABLE}
+    const result = await this.#run('activateDraft', () =>
+      this.#client.query(
+        `UPDATE ${CONFIG_TABLE}
           SET status = 'active', published_at = $2, previous_version_id = $3
         WHERE version_id = $1 AND status = 'draft';`,
-      [draftId, publishedAt, previousVersionId],
+        [draftId, publishedAt, previousVersionId],
+      ),
     );
     if (result.rowCount === 0) {
       throw new ConfigurationError(
