@@ -54,7 +54,7 @@
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures` and by every runner path (FND-002d, as corrected). **Never loaded into a live server.** No business-module, financial-policy or production data. |
 | Migrations | 5 forward + 5 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table and the trigger that refuses to update or delete a row. No business-module tables exist. |
-| Tests | 520 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration and K-08 Event Infrastructure. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 537 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration, K-08 Event Infrastructure and K-09 Audit Foundation. A further 20 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -241,7 +241,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 520 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 537 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -289,7 +289,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 64 more, for 520 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction), for 537 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -2758,6 +2758,95 @@ STILL NOT VERIFIED: No PostgreSQL runtime is available here, so migration 0005 h
                     with its reason stated, when there is no server. K-09 also has no producer, no
                     authentication and no entitlement check, so P0-36 and every live-database gate
                     stay incomplete.
+```
+
+---
+
+### 11.20 Correction — FND-003c immutability boundary, persisted integrity, and the actor `CHECK`
+
+§11.19 called immutability "not a feature of this component, it is the reason it exists". Three gaps
+sat underneath that sentence. None was visible from the tests that shipped with the slice, because
+each test asked the question the code was already answering.
+
+| # | The gap | Why it mattered | The correction |
+|---|---|---|---|
+| 1 | **Only the evidence map was frozen.** `actor` and `resource` were plain objects on a frozen top level. A caller holding a returned record could write `record.actor.id` and change who the record says did it. | The one thing an audit trail must survive is being edited afterwards, and this was editable from any caller holding a result. | A single boundary, `sealRecord` in `kernel/audit-foundation/immutable.ts`, copies and freezes the record together with its `actor`, `resource` and `evidence`. Applied on service results, on all ten in-memory seed/read/write/query paths, and on PostgreSQL decoding. |
+| 2 | **A shallow copy shares its children.** `{ ...record }` produces a new top level over the *same* nested objects, so a record the caller passed in — to `record`, to `seed`, to `insertRecord` — stayed reachable from the caller's own handle after it was stored. Editing that handle edited stored state, after the fact, with nothing to see. | This is the version of the same defect that leaves no trace at all: the log changes and no call was made. | The same boundary. `sealRecord` copies before freezing, so the store is unreachable from anything the caller kept, and the caller's own objects are left unfrozen rather than surprisingly immobilised. |
+| 3 | **The stored fingerprint was trusted on read.** Decoding checked that `content_fingerprint` was *shaped* like a SHA-256 and returned it. Nothing compared it with the content it was supposed to fingerprint. | Every other decode check asks whether a field is well formed. None asked whether the record still said what it said when it was written — which is the only question the fingerprint exists to answer. A row altered by something that got past the append-only trigger, or restored from a doctored backup, decoded cleanly and was read as fact. | `fingerprintRecord` moved to its own module so the adapter can use it without depending on the service, and `toRecord` now recomputes it from the **fully decoded** record and refuses `malformed-record` on any mismatch. One bad row fails its whole page rather than being dropped from it. |
+
+**And the constraint that was the wrong way round.** Migration 0005 carried
+`CHECK (actor_session_id IS NULL OR actor_authentication <> 'unauthenticated')` — "a session id
+requires an authentication method". It reads sensibly and it permitted `('session', 'sess-1')`: a
+combination the service refuses outright, because K-02 does not exist and nothing has authenticated
+anybody. The constraint that matters is the one a write *around* the service hits, so it now
+enforces the documented placeholder exactly:
+
+```sql
+CHECK (actor_authentication = 'unauthenticated')
+CHECK (actor_session_id IS NULL)
+```
+
+Of the six combinations of three known authentication methods and a present-or-absent session id,
+exactly one is writable. Relaxing these when K-02 lands is a later migration's job.
+
+**Each correction was planted and the tests observed to fail:**
+
+```text
+the seal made shallow again ({ ...record } only)        10 of 32 failed
+the recomputation replaced by the stored value           4 of 16 failed
+one field (reason) dropped from the canonical form       1 of 16 failed
+the actor CHECKs weakened back to the implication form   2 of 27 failed
+```
+
+The third plant is the one worth keeping. "Every field is covered by the recomputation" builds a
+consistent row, edits one column without recomputing — which is precisely what an alteration looks
+like — and asserts the refusal, for all fifteen columns. Dropping `reason` from the canonical form
+fails exactly that case and nothing else, which is how a fingerprint quietly stops covering a field.
+
+**New tests.** `tests/audit-immutability.test.ts` (16) attacks the boundary from every direction a
+record crosses one: service results, repository reads, transaction reads, query pages, `queryAll`,
+seeded arrays and inserted objects, with twelve distinct nested writes each. Plus a deterministic
+`(actor_authentication, actor_session_id)` matrix evaluated from the migration text in
+`tests/audit-repository.test.ts`, and a live counterpart in `tests/integration/audit.integration.ts`
+that enumerates all six combinations plus an unknown method against the real constraints.
+
+The deterministic matrix exists because the live suite skips without a server: it parses the actor
+`CHECK` predicates out of the migration and evaluates them, and it **throws rather than passing** if
+a constraint is rewritten into a form it cannot evaluate. A check that cannot fail is a placeholder,
+and a check that silently stops checking is worse.
+
+```text
+STATUS AFTER THIS TASK:
+                    K-09 contract         COMPLETE (kernel/audit-foundation/CONTRACT.md)
+                    K-09 implementation   IN PROGRESS - core only
+                    P0-36 IN PROGRESS - not complete: no live PostgreSQL, no producer integration,
+                          no RBAC, no authentication
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 537, pass 537, fail 0
+                                                                (520 before; +17)
+                    npm run check:migrations           exit 0   10 files, 0 violations
+                    npm run check:fixtures             exit 0   2 files, 2 datasets, 0 violations
+                    node --test tests/audit.test.ts    exit 0   tests 22, pass 22
+                    node --test tests/audit-repository.test.ts
+                                                       exit 0   tests 27, pass 27
+                    node --test tests/audit-concurrency.test.ts
+                                                       exit 0   tests 16, pass 16
+                    node --test tests/audit-immutability.test.ts
+                                                       exit 0   tests 16, pass 16
+                    npm run test:integration           exit 0   tests 20, pass 0, SKIPPED 20
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: Unchanged from §11.19, and one item is now sharper. The corrected actor
+                    constraints have never been applied to a server, so the six-combination matrix
+                    is proved by evaluating the migration text rather than by PostgreSQL refusing
+                    five inserts. The live test that would refuse them is written and skips. The
+                    append-only trigger has still never refused anything, and the recomputed
+                    fingerprint has never rejected a row that a real database returned — both are
+                    proved against the adapter driven by a recording fake, which proves the adapter
+                    and not the server.
 ```
 
 ---

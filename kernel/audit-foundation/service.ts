@@ -23,10 +23,10 @@
  * Owned by: K-09 Audit Foundation. No API, no UI — see CONTRACT.md for why.
  */
 
-import { createHash } from 'node:crypto';
-
 import { InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
 
+import { fingerprintRecord } from './fingerprint.ts';
+import { sealRecord, sealRecords } from './immutable.ts';
 import { assertValidEvidence, type AuditActionRegistry } from './registry.ts';
 import type {
   AuditCursor,
@@ -70,43 +70,6 @@ const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const RESOURCE_TYPE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 const DEFAULT_PAGE_LIMIT = 100;
 const MAX_PAGE_LIMIT = 1_000;
-
-/**
- * SHA-256 over the record's logical content, in canonical form.
- *
- * Keys sorted, so how the evidence object was written cannot change the fingerprint. Exported
- * because a reader checking a record's integrity has to be able to recompute it without trusting
- * the row it came from.
- */
-export function fingerprintRecord(record: Omit<AuditRecord, 'contentFingerprint'>): string {
-  const evidence = Object.keys(record.evidence)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${JSON.stringify(record.evidence[key] ?? null)}`)
-    .join(',');
-
-  const canonical = [
-    record.recordId,
-    record.action,
-    record.recordedAt,
-    record.actor.kind,
-    record.actor.id,
-    record.actor.authentication,
-    record.actor.sessionId ?? '',
-    record.resource.owner,
-    record.resource.type,
-    record.resource.id,
-    record.outcome,
-    record.reason,
-    record.correlationId,
-    record.causationId ?? '',
-    `{${evidence}}`,
-    record.idempotencyKey,
-  ]
-    .map((part) => JSON.stringify(part))
-    .join('|');
-
-  return createHash('sha256').update(canonical).digest('hex');
-}
 
 export class AuditService {
   readonly #actions: AuditActionRegistry;
@@ -220,7 +183,13 @@ export class AuditService {
       evidence,
       idempotencyKey: request.idempotencyKey,
     };
-    const record: AuditRecord = { ...draft, contentFingerprint: fingerprintRecord(draft) };
+    // Sealed before it is stored *and* before it is returned: the same boundary in both
+    // directions. A caller that keeps its request object cannot reach into the log through the
+    // actor or resource it passed, because those were copied here.
+    const record: AuditRecord = sealRecord({
+      ...draft,
+      contentFingerprint: fingerprintRecord(draft),
+    });
 
     try {
       return await this.#append(record);
@@ -240,7 +209,7 @@ export class AuditService {
       if (winner === null) throw error;
 
       assertSameLogicalRecord(winner, record);
-      return { record: winner, deduplicated: true };
+      return { record: sealRecord(winner), deduplicated: true };
     }
   }
 
@@ -249,11 +218,11 @@ export class AuditService {
       const existing = await tx.findRecordByIdempotencyKey(record.idempotencyKey);
       if (existing !== null) {
         assertSameLogicalRecord(existing, record);
-        return { record: existing, deduplicated: true };
+        return { record: sealRecord(existing), deduplicated: true };
       }
 
       await tx.insertRecord(record);
-      return { record, deduplicated: false };
+      return { record: sealRecord(record), deduplicated: false };
     });
   }
 
@@ -263,7 +232,7 @@ export class AuditService {
       tx.findRecordById(recordId),
     );
     if (record === null) throw new AuditError('no-such-record', `no audit record ${recordId}`);
-    return record;
+    return sealRecord(record);
   }
 
   /**
@@ -290,7 +259,10 @@ export class AuditService {
       throw new AuditError('invalid-query', `outcome "${query.outcome}" is not a known outcome`);
     }
 
-    return this.#repository.withTransaction((tx) => tx.queryRecords({ ...query, limit }));
+    const page = await this.#repository.withTransaction((tx) =>
+      tx.queryRecords({ ...query, limit }),
+    );
+    return { records: sealRecords(page.records), next: page.next };
   }
 
   /** Every page, for a caller that genuinely wants the whole result. Bounded by `maxRecords`. */
@@ -312,7 +284,7 @@ export class AuditService {
       after = page.next;
     }
 
-    return collected;
+    return sealRecords(collected);
   }
 }
 

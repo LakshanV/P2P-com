@@ -25,6 +25,9 @@ import { databaseErrorDetail } from '../../platform/db/client.ts';
 import type { Database, DatabaseClient } from '../../platform/db/client.ts';
 import { InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
 
+import { fingerprintRecord } from './fingerprint.ts';
+import { sealRecord } from './immutable.ts';
+
 import type {
   AuditCursor,
   AuditPage,
@@ -254,7 +257,7 @@ export function toRecord(row: Row): AuditRecord {
     );
   }
 
-  return {
+  const decoded: Omit<AuditRecord, 'contentFingerprint'> = {
     recordId,
     action: text(row.action, 'action'),
     recordedAt: instant(row.recorded_at, 'recorded_at'),
@@ -278,9 +281,31 @@ export function toRecord(row: Row): AuditRecord {
     correlationId: text(row.correlation_id, 'correlation_id'),
     causationId: optionalText(row.causation_id, 'causation_id'),
     evidence: decodeEvidence(row.evidence, recordId),
-    contentFingerprint: fingerprint,
     idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
   };
+
+  // Recomputed from the *fully decoded* record, not trusted from the column.
+  //
+  // Every other check here asks whether a field is well formed. This one asks whether the record
+  // still says what it said when it was written — which is the only question an audit trail is
+  // ultimately for. A row can pass every constraint the schema declares and still have had its
+  // reason, its actor or one evidence field changed by something that reached the table another
+  // way; the append-only trigger is the first defence and this is what catches a row that got past
+  // it, or that was restored from a doctored backup.
+  //
+  // Fail closed rather than warn. A record whose evidence contradicts itself is worse than a
+  // missing one, because it is read as fact.
+  const recomputed = fingerprintRecord(decoded);
+  if (recomputed !== fingerprint) {
+    throw new AuditError(
+      'malformed-record',
+      `record ${recordId} declares content_fingerprint ${fingerprint} but its stored content ` +
+        `hashes to ${recomputed}. The row has been altered since it was written, or was never ` +
+        'written by this component. Refusing to return it rather than presenting altered evidence',
+    );
+  }
+
+  return sealRecord({ ...decoded, contentFingerprint: fingerprint });
 }
 
 /** Statements that begin, end or subdivide a transaction. An enlisted path may issue none of them. */

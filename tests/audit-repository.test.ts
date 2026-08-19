@@ -31,6 +31,7 @@ import {
   TIMESTAMP_COLUMNS,
   decodeEvidence,
   enlistedClient,
+  fingerprintRecord,
   toRecord,
 } from '../kernel/audit-foundation/index.ts';
 import type { AuditRecord, AuditRepository } from '../kernel/audit-foundation/index.ts';
@@ -71,7 +72,38 @@ const record = (overrides: Partial<AuditRecord> = {}): AuditRecord => ({
   ...overrides,
 });
 
-const row = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+/**
+ * A stored row, carrying a fingerprint of its own decoded content.
+ *
+ * Computed rather than hard-coded, because decoding now recomputes and compares: a fixture with a
+ * stale fingerprint would be refused, and the test would be reporting the fixture rather than the
+ * code. `fingerprintFor` mirrors what the decoder will reconstruct from these columns.
+ */
+const fingerprintFor = (columns: Record<string, unknown>): string =>
+  fingerprintRecord({
+    recordId: String(columns.record_id),
+    action: String(columns.action),
+    recordedAt: '2026-04-01T12:00:00Z',
+    actor: {
+      kind: columns.actor_kind as AuditRecord['actor']['kind'],
+      id: String(columns.actor_id),
+      authentication: columns.actor_authentication as AuditRecord['actor']['authentication'],
+      sessionId: (columns.actor_session_id ?? null) as string | null,
+    },
+    resource: {
+      owner: String(columns.resource_owner),
+      type: String(columns.resource_type),
+      id: String(columns.resource_id),
+    },
+    outcome: columns.outcome as AuditRecord['outcome'],
+    reason: String(columns.reason),
+    correlationId: String(columns.correlation_id),
+    causationId: (columns.causation_id ?? null) as string | null,
+    evidence: columns.evidence as AuditRecord['evidence'],
+    idempotencyKey: String(columns.idempotency_key),
+  });
+
+const rawRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   record_id: 'aud-1',
   action: 'configuration.version_published',
   recorded_at: '2026-04-01T12:00:00.000000Z',
@@ -91,6 +123,14 @@ const row = (overrides: Record<string, unknown> = {}): Record<string, unknown> =
   idempotency_key: 'idem-1',
   ...overrides,
 });
+
+/** The same row, with its fingerprint made consistent unless the test overrode it deliberately. */
+const row = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+  const columns = rawRow(overrides);
+  return 'content_fingerprint' in overrides
+    ? columns
+    : { ...columns, content_fingerprint: fingerprintFor(columns) };
+};
 
 // ---------------------------------------------------------------------------
 // Port conformance
@@ -643,12 +683,76 @@ test('the migration enforces the record contract in the database, not only in th
   );
   // AI may not author a record, at the database level as well as in the service.
   assert.match(MIGRATION_UP, /CHECK \(actor_kind <> 'ai'\)/);
-  assert.match(MIGRATION_UP, /audit_record_session_requires_authentication/);
+  // The placeholder, enforced exactly rather than as an implication.
+  assert.match(MIGRATION_UP, /CHECK \(actor_authentication = 'unauthenticated'\)/);
+  assert.match(MIGRATION_UP, /CHECK \(actor_session_id IS NULL\)/);
   assert.match(MIGRATION_UP, /CHECK \(outcome IN \('succeeded', 'failed', 'denied'\)\)/);
   assert.match(MIGRATION_UP, /CHECK \(btrim\(reason\) <> ''\)/);
   assert.match(MIGRATION_UP, /CHECK \(jsonb_typeof\(evidence\) = 'object'\)/);
   // The index that makes pagination stable.
   assert.match(MIGRATION_UP, /audit_record_chronological_idx[\s\S]*\(recorded_at, record_id\)/);
+});
+
+test('every actor-authentication combination but the documented placeholder is refused', () => {
+  // The live suite proves this against PostgreSQL and skips without a server, so the refusal is
+  // also evaluated here from the migration text — otherwise the only thing standing between the
+  // schema and a weakened constraint is a server nobody in this environment has.
+  //
+  // The evaluator understands exactly the three predicate forms the actor constraints use. Anything
+  // else fails loudly rather than being read as satisfied, so rewriting a constraint into a form
+  // this cannot check is a failure and not a silent pass.
+  const evaluate = (
+    predicate: string,
+    row: { readonly actor_authentication: string; readonly actor_session_id: string | null },
+  ): boolean => {
+    const equality = /^(\w+) = '([^']*)'$/.exec(predicate);
+    if (equality !== null) return row[equality[1] as keyof typeof row] === equality[2];
+
+    const isNull = /^(\w+) IS NULL$/.exec(predicate);
+    if (isNull !== null) return row[isNull[1] as keyof typeof row] === null;
+
+    const membership = /^(\w+) IN \((.+)\)$/.exec(predicate);
+    if (membership !== null) {
+      const allowed = String(membership[2])
+        .split(',')
+        .map((literal) => literal.trim().replace(/^'|'$/g, ''));
+      return allowed.includes(String(row[membership[1] as keyof typeof row]));
+    }
+
+    throw new Error(
+      `the actor constraint uses a predicate this test cannot evaluate: ${predicate}`,
+    );
+  };
+
+  // Pulled from the file, so weakening a constraint weakens what is evaluated below.
+  const predicates = [
+    ...MIGRATION_UP.matchAll(/CONSTRAINT (audit_record_\w+)\s*\n?\s*CHECK \(([^\n]+?)\),/g),
+  ]
+    .filter(
+      ([, name]) => String(name).includes('authentication') || String(name).includes('session'),
+    )
+    .map(([, , predicate]) => String(predicate));
+
+  assert.ok(predicates.length >= 2, 'the actor constraints were not found in the migration');
+
+  const METHODS = ['unauthenticated', 'session', 'service-credential', 'bearer-token'];
+  const SESSIONS = [null, 'sess-1'];
+  const accepted: string[] = [];
+
+  for (const actor_authentication of METHODS) {
+    for (const actor_session_id of SESSIONS) {
+      const row = { actor_authentication, actor_session_id };
+      if (predicates.every((predicate) => evaluate(predicate, row))) {
+        accepted.push(`(${actor_authentication}, ${actor_session_id ?? 'NULL'})`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    accepted,
+    ['(unauthenticated, NULL)'],
+    'exactly the documented K-09 placeholder may be written, including around the service',
+  );
 });
 
 test('the rollback reverses exactly what the forward migration created', () => {

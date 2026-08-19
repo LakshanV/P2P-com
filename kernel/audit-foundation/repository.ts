@@ -22,6 +22,8 @@
 
 import { compareInstants } from '../../platform/time/instant.ts';
 
+import { sealRecord, sealRecords } from './immutable.ts';
+
 import { AuditError, type AuditRecord } from './types.ts';
 
 /** Where a page of results starts. Exclusive: the record named here has already been returned. */
@@ -103,17 +105,19 @@ export class InMemoryAuditRepository implements AuditRepository {
   transactionsRolledBack = 0;
 
   records(): readonly AuditRecord[] {
-    return this.#records.map((record) => ({ ...record, evidence: { ...record.evidence } }));
+    return sealRecords(this.#records);
   }
 
   /** Seed state directly, for tests that need a starting point without going through the service. */
   seed(records: readonly AuditRecord[]): void {
-    this.#records = records.map((record) => ({ ...record }));
+    // Sealed on the way in: a test that seeds an array and then edits it must not be editing the
+    // store. A shallow copy would have shared the actor and resource objects.
+    this.#records = records.map(sealRecord);
   }
 
   async withTransaction<T>(body: (tx: AuditTransaction) => Promise<T>): Promise<T> {
-    const base = this.#records.map((record) => ({ ...record }));
-    const working = base.map((record) => ({ ...record }));
+    const base = this.#records.map(sealRecord);
+    const working = base.map(sealRecord);
     const tx = new InMemoryAuditTransaction(working);
 
     try {
@@ -162,10 +166,7 @@ export class InMemoryAuditRepository implements AuditRepository {
       }
     }
 
-    this.#records = [
-      ...this.#records,
-      ...appended.map((record) => ({ ...record, evidence: { ...record.evidence } })),
-    ];
+    this.#records = [...this.#records, ...appended.map(sealRecord)];
   }
 }
 
@@ -177,13 +178,13 @@ class InMemoryAuditTransaction implements AuditTransaction {
   }
 
   findRecordById(recordId: string): Promise<AuditRecord | null> {
-    return Promise.resolve(this.#records.find((record) => record.recordId === recordId) ?? null);
+    const found = this.#records.find((record) => record.recordId === recordId);
+    return Promise.resolve(found === undefined ? null : sealRecord(found));
   }
 
   findRecordByIdempotencyKey(idempotencyKey: string): Promise<AuditRecord | null> {
-    return Promise.resolve(
-      this.#records.find((record) => record.idempotencyKey === idempotencyKey) ?? null,
-    );
+    const found = this.#records.find((record) => record.idempotencyKey === idempotencyKey);
+    return Promise.resolve(found === undefined ? null : sealRecord(found));
   }
 
   insertRecord(record: AuditRecord): Promise<void> {
@@ -203,7 +204,7 @@ class InMemoryAuditTransaction implements AuditTransaction {
         ),
       );
     }
-    this.#records.push({ ...record, evidence: { ...record.evidence } });
+    this.#records.push(sealRecord(record));
     return Promise.resolve();
   }
 
@@ -240,7 +241,7 @@ class InMemoryAuditTransaction implements AuditTransaction {
     const exhausted = from + page.length >= matching.length;
 
     return Promise.resolve({
-      records: page.map((record) => ({ ...record, evidence: { ...record.evidence } })),
+      records: sealRecords(page),
       next:
         last === undefined || exhausted
           ? null

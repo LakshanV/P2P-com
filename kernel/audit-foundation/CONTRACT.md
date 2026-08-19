@@ -56,7 +56,8 @@ component reads no clock and generates no randomness.
 | Guarantee | Meaning |
 |---|---|
 | Immutability | A record is written once. No update or delete exists at any layer, and the database refuses both by trigger, so a connection that bypasses this component still cannot edit history |
-| Content fingerprint | SHA-256 over the record's canonical content, computed at append. A reader can recompute it without trusting the row it came from |
+| Immutability in the process | Every record crossing a boundary — a service result, a repository read, a query page, a decoded row — is deep-frozen and severed from the caller's objects by a single seal. Writing `record.actor.id` throws; editing an object you passed in or seeded does not reach what is stored |
+| Content fingerprint | SHA-256 over the record's canonical content, computed at append **and recomputed from the fully decoded record on every read from PostgreSQL**. A row whose stored fingerprint does not match its own content is refused, so a record altered by something that reached the table another way is never presented as evidence |
 | Idempotent recording | A retry with the same key returns the original record **only when the whole logical content matches**. Two retries that overlap in time converge on the winner rather than one failing — a caller retrying after a timeout has done nothing wrong |
 | Classified evidence | Every evidence field is declared with a classification at registration. An undeclared field is refused, not stored |
 | Deterministic retrieval | Ordered by `(recordedAt, recordId)` ascending, always. Audit records arrive in bursts and two can share an instant; ordering by time alone makes a paginated read skip or repeat rows |
@@ -110,8 +111,21 @@ record therefore carries what it can honestly carry:
 
 Refusing the optimistic values rather than accepting them is the point. A record written today that
 claimed a verified session would be asserting a verification that never happened, and a reader in
-two years could not tell which records had a real actor and which did not. The migration carries the
-matching `CHECK`, and relaxing it is a later migration's job rather than a silent change of meaning.
+two years could not tell which records had a real actor and which did not.
+
+Migration 0005 carries the matching constraints, and they enforce the placeholder **exactly**:
+
+```sql
+CHECK (actor_authentication = 'unauthenticated')
+CHECK (actor_session_id IS NULL)
+```
+
+Of the six combinations of the three known authentication methods and a present-or-absent session
+id, exactly one is writable. The first revision said "a session id requires an authentication
+method", which reads sensibly and permitted `('session', 'sess-1')` — the service refused it and the
+database did not, so a write around the service could claim an authenticated session that nothing
+had established. Relaxing these is a later migration's job when K-02 lands, and will be a deliberate
+change of meaning rather than a gap somebody finds.
 
 ---
 
@@ -124,6 +138,23 @@ An injected `AuditRepository` port with three implementations:
 | `InMemoryAuditRepository` | yes, modelled | the reference implementation, used by the tests |
 | `PostgresAuditRepository` | yes, its own `BEGIN … COMMIT` | a caller that is only recording |
 | `EnlistedAuditRepository` | no — it uses the caller's | a unit coupling a domain write to its audit record |
+
+Every record that leaves any of them passes through one boundary, `sealRecord` in `immutable.ts`,
+which copies the record and its `actor`, `resource` and `evidence` and freezes all four. There is a
+single such function rather than a convention, because a shallow `{ ...record }` looks like a copy
+and shares its children: before this existed, storing a caller's record and then letting the caller
+edit its actor edited what was stored, silently and after the fact. The seal is applied on service
+results, on every in-memory seed, read, write and query path, and on PostgreSQL decoding, so no
+reference a caller holds or is handed reaches authoritative state.
+
+On decode the fingerprint is **recomputed from the fully decoded record** and compared with the
+stored column. Every other decode check asks whether a field is well formed; this one asks whether
+the record still says what it said when it was written, which is the only question an audit trail is
+ultimately for. A row can satisfy every constraint the schema declares and still have had its
+reason, its actor or one evidence field changed by something that got past the append-only trigger,
+or restored from a doctored backup. A mismatch fails closed, and one bad row fails its whole page
+rather than being quietly dropped from it — a page that looked complete and omitted exactly the
+record somebody had reason to alter would be worse than an error.
 
 Timestamps are projected as UTC text through `to_char`, never left to the driver's `Date` parser:
 `Date` holds milliseconds where the column holds microseconds, and both ordering and pagination
@@ -193,7 +224,8 @@ npm run verify                                 # everything, including the tests
 npm run check:migrations                       # the FND-002a contract over db/migrations
 node --test tests/audit.test.ts                # record contract, registry, refusals
 node --test tests/audit-repository.test.ts     # port conformance, adapter, pagination, contract
-node --test tests/audit-concurrency.test.ts    # retry convergence, enlistment, immutability
+node --test tests/audit-concurrency.test.ts    # retry convergence, enlistment
+node --test tests/audit-immutability.test.ts   # the seal boundary, recomputed fingerprints
 npm run test:integration                       # live PostgreSQL; skips without a database
 ```
 

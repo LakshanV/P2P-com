@@ -48,7 +48,10 @@ export type {
   EvidenceFieldKind,
 } from './registry.ts';
 
-export { AuditService, fingerprintRecord } from './service.ts';
+export { fingerprintRecord } from './fingerprint.ts';
+export { isSealed, sealEvidence, sealRecord, sealRecords } from './immutable.ts';
+
+export { AuditService } from './service.ts';
 export type { RecordRequest, RecordResult } from './service.ts';
 
 export { InMemoryAuditRepository } from './repository.ts';

@@ -57,11 +57,19 @@ CREATE TABLE IF NOT EXISTS kernel_audit_foundation.audit_record (
   CONSTRAINT audit_record_actor_not_ai CHECK (actor_kind <> 'ai'),
   CONSTRAINT audit_record_authentication_known
     CHECK (actor_authentication IN ('unauthenticated', 'session', 'service-credential')),
-  -- K-02 does not exist, so no session can have been established. A record claiming one would be
-  -- asserting a verification that never happened. This constraint is expected to be relaxed by a
-  -- later migration when authentication lands, and until then it keeps the log honest.
-  CONSTRAINT audit_record_session_requires_authentication
-    CHECK (actor_session_id IS NULL OR actor_authentication <> 'unauthenticated'),
+  -- K-02 does not exist, so nothing has authenticated anybody and no session can have been
+  -- established. The service refuses any other value; these enforce the same placeholder exactly,
+  -- for a write that never went through the service.
+  --
+  -- The first revision said "a session id requires an authentication method", which permitted
+  -- ('session', 'sess-1') — a combination the service refuses and the database accepted. That is
+  -- the wrong way round: the constraint that matters is the one a bypass hits. Both are expected to
+  -- be relaxed by a later migration when authentication lands, and relaxing them will be a
+  -- deliberate change of meaning rather than a gap somebody discovers.
+  CONSTRAINT audit_record_authentication_is_placeholder
+    CHECK (actor_authentication = 'unauthenticated'),
+  CONSTRAINT audit_record_session_absent_until_k02
+    CHECK (actor_session_id IS NULL),
   CONSTRAINT audit_record_outcome_known
     CHECK (outcome IN ('succeeded', 'failed', 'denied')),
   CONSTRAINT audit_record_reason_present CHECK (btrim(reason) <> ''),

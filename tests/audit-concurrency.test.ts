@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AuditError, InMemoryAuditRepository } from '../kernel/audit-foundation/index.ts';
+import { AuditError, InMemoryAuditRepository, isSealed } from '../kernel/audit-foundation/index.ts';
 import type { AuditCursor, AuditRecord } from '../kernel/audit-foundation/index.ts';
 
 import { OPERATOR, build, recordRequest } from './helpers/audit-fixtures.ts';
@@ -141,15 +141,31 @@ test('a recorded record cannot be changed through anything the service returns',
   const { service, repository } = build();
   const result = await service.record(recordRequest({ recordId: 'aud-1', idempotencyKey: 'k-1' }));
 
-  // The evidence handed back is frozen, so a caller cannot edit the object it was given and
-  // believe it changed the log.
+  // Sealed all the way down, and asserted as a property rather than by trying one mutation and
+  // hoping it was representative.
+  assert.ok(isSealed(result.record), 'the returned record is frozen through actor and resource');
+
+  // Every nested write throws rather than failing silently: a caller learns it did something wrong
+  // instead of believing it edited the log.
   assert.throws(() => {
     (result.record.evidence as Record<string, unknown>).config_key = 'tampered';
   }, TypeError);
+  assert.throws(() => {
+    (result.record.actor as unknown as Record<string, unknown>).id = 'someone-else';
+  }, TypeError);
+  assert.throws(() => {
+    (result.record.resource as unknown as Record<string, unknown>).id = 'another-resource';
+  }, TypeError);
+  assert.throws(() => {
+    (result.record as unknown as Record<string, unknown>).reason = 'tampered';
+  }, TypeError);
 
-  // And the store returns copies, so mutating a read cannot reach into it either.
+  // And a read from the store is sealed too, so nothing reachable from one can reach the store.
   const read = repository.records()[0] as AuditRecord;
-  (read as unknown as Record<string, unknown>).reason = 'tampered';
+  assert.ok(isSealed(read));
+  assert.throws(() => {
+    (read as unknown as Record<string, unknown>).reason = 'tampered';
+  }, TypeError);
   assert.equal(repository.records()[0]?.reason, 'published by the configuration service');
 });
 
