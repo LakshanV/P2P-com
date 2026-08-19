@@ -15,8 +15,8 @@
     {
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
-      "status": "in_progress",
-      "notes": "FND-001a and FND-001b are accepted. FND-001c workflow remains absent after repeated creation instructions; the failure to create or track the artifact is now under investigation. Anti-weakening tests and FND-001d remain afterward."
+      "status": "blocked",
+      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated explicit workflow-creation instructions; diagnosis of the local artifact-creation/tracking failure is now required before implementation can proceed. Anti-weakening tests and FND-001d remain afterward."
     },
     {
       "id": 4,
@@ -41,7 +41,8 @@
     "FND-001a is accepted as delivered, not as completion of FND-001 or Phase 0.",
     "FND-001b is accepted as delivered: all source roots, the architecture manifest, four static boundary checks, and planted violation proofs are present; P0-10 remains partial because four specified checks are deferred to schema/contracts/policy artefacts.",
     "FND-001c must use immutable action SHAs, least-privilege permissions, exact toolchain pins, full verification, and a high/critical dependency-audit gate with an automated anti-weakening contract test.",
-    "FND-001c delivery is split into a workflow-file task followed by the anti-weakening contract test and acceptance review."
+    "FND-001c delivery is split into a workflow-file task followed by the anti-weakening contract test and acceptance review.",
+    "No further workflow implementation attempt will be directed until the repeated artifact-creation failure has a reported root cause."
   ],
   "concerns": [
     "There is no database, authentication, deployment, or monitoring foundation yet.",
@@ -50,7 +51,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Multiple workflow-creation instructions have produced no tracked workflow artifact; repository/path/ignore state must be diagnosed before another implementation retry."
+    "Multiple workflow-creation instructions have produced no tracked workflow artifact, and no command-level diagnostic evidence has yet been supplied."
   ],
-  "last_instruction": "Investigate why `.github/workflows/ci.yml` was not created or tracked after the last instruction without changing any files: report the exact output of `pwd`, `git branch --show-current`, `git status --short --untracked-files=all`, `git log -3 --oneline --stat`, `ls -la .github .github/workflows 2>&1`, `git check-ignore -v .github/workflows/ci.yml 2>&1`, and state the root cause supported by that evidence."
+  "last_instruction": "Without changing any files, diagnose why `.github/workflows/ci.yml` was not created or tracked after the previous instruction: report the exact commands attempted, their stdout/stderr and exit codes, whether `.github` and `.github/workflows` exist in the working tree, the output of `git check-ignore -v .github/workflows/ci.yml` (or its nonzero exit), and `git status --short --untracked-files=all .github`; conclude with the specific root cause."
 }
