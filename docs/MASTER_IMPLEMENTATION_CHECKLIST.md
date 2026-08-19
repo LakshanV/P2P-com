@@ -9,9 +9,9 @@
 - [CURRENT_IMPLEMENTATION_STATUS.md](./CURRENT_IMPLEMENTATION_STATUS.md)
 - [MODULE_MAP.md](./MODULE_MAP.md)
 
-> **Baseline truth: no implementation capability in this checklist is complete.** The repository contains the specifications, the documentation baseline, and the pinned toolchain delivered by FND-001a. There is no CI, no boundary enforcement, no database, no kernel component, no business module and no UI.
+> **Baseline truth: no business capability in this checklist is complete.** The repository contains the specifications, the documentation baseline, the pinned toolchain (FND-001a), and four executable architectural boundary checks over tracked-but-empty source roots (FND-001b). There is no CI, no database, no kernel component, no business module and no UI.
 >
-> The only `COMPLETE` item is P0-01, the documentation artefacts produced by DOC-001. P0-03 through P0-08 are `IN PROGRESS` — advanced by FND-001a but deliberately not marked complete, because FND-001 as a whole is unfinished. Every other implementation item is `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`.
+> `COMPLETE` items are confined to §A.1: P0-01 (documentation), P0-03 (source structure) and P0-11 (financial-zone and provider-import checks). P0-04 through P0-08 remain `IN PROGRESS` — satisfied by FND-001a but held there while FND-001 is unfinished — and P0-10 is `IN PROGRESS` because it references MODULE_MAP §13, which lists eight checks of which four are built. Every business capability — all 15 kernel components, all 47 modules, all 19 phases — remains `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`.
 
 ---
 
@@ -94,15 +94,15 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 |---|---|---|---|
 | P0-01 | `/docs` planning baseline created, with reproducible link validation | `[x]` COMPLETE | `docs/CURRENT_IMPLEMENTATION_STATUS.md`, `docs/MASTER_IMPLEMENTATION_CHECKLIST.md`, `docs/MODULE_MAP.md`, `docs/tools/validate-doc-links.mjs` — created by DOC-001. Validated by `node docs/tools/validate-doc-links.mjs` → 74 internal links across 3 files, 0 broken, exit 0 (count as of the FND-001a reconciliation; re-run the command for the current figure). Full evidence block: [CURRENT_IMPLEMENTATION_STATUS.md §11](./CURRENT_IMPLEMENTATION_STATUS.md#11-evidence-register). Documentation artefact, not an implementation capability. |
 | P0-02 | Remaining `/docs` set from v3 §42 (ARCHITECTURE, DATABASE_SCHEMA, API_CONTRACTS, EVENT_CATALOG, AI_ARCHITECTURE, AI_MODEL_REGISTRY, SECURITY_MODEL, PERMISSIONS_MATRIX, POLICY_CATALOG, TEST_STRATEGY, UX_SYSTEM, DEPLOYMENT_GUIDE, OPERATIONS_RUNBOOK, DECISIONS_LEDGER, KNOWN_LIMITATIONS, CHANGELOG, MASTER_PRODUCT_SPEC) | `[ ]` NOT STARTED | NONE — files do not exist |
-| P0-03 | Repository source structure (`/platform`, `/kernel`, `/modules`, `/design-system`, `/apps`, `/tests`) | `[~]` IN PROGRESS | Partial (FND-001a): `platform/` and `tests/` exist. `kernel/`, `modules/`, `design-system/` and `apps/` do not. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
+| P0-03 | Repository source structure (`/platform`, `/kernel`, `/modules`, `/design-system`, `/apps`, `/tests`) | `[x]` COMPLETE | All six roots exist, are tracked and carry an ownership README (FND-001b). `kernel/`, `modules/`, `design-system/` and `apps/` are empty of implementation by design — this item is about structure, not content. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
 | P0-04 | Runtime and package manifest chosen and committed | `[~]` IN PROGRESS | Satisfied by FND-001a. **Pinned toolchain:** Node 26.7.0 (`.nvmrc`), npm 11.19.0 (`packageManager`). **Supported ranges:** `engines.node >=22.18.0`, `engines.npm >=10.0.0`. Exact devDependency pins, committed lockfile, `npm ci` exit 0. Automated assertions bind each pin to its range. Held at IN PROGRESS until FND-001 completes. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-05 | Build pipeline (compile/bundle) | `[~]` IN PROGRESS | `npm run build` exit 0, emits `dist/`. Compilation check only — no runnable entry point exists yet. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-06 | Type checking | `[~]` IN PROGRESS | `npm run typecheck` exit 0, strict with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-07 | Lint and format configuration | `[~]` IN PROGRESS | `npm run lint` and `npm run format:check` both exit 0. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
-| P0-08 | Test framework and runner | `[~]` IN PROGRESS | `npm test` exit 0 — tests 15, pass 15, fail 0. Runner proven to report failure (exit 1) on a deliberately failing assertion. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
+| P0-08 | Test framework and runner | `[~]` IN PROGRESS | `npm test` exit 0 — tests 32, pass 32, fail 0. Runner proven to report failure (exit 1) on a deliberately failing assertion. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness), [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
 | P0-09 | CI pipeline running build + typecheck + lint + tests + `node docs/tools/validate-doc-links.mjs` on every change | `[ ]` NOT STARTED | NONE — no CI configuration |
-| P0-10 | Import-boundary / layering enforcement checks ([MODULE_MAP.md](./MODULE_MAP.md) §13) | `[ ]` NOT STARTED | NONE |
-| P0-11 | Financial-zone and AI-provider-import enforcement checks | `[ ]` NOT STARTED | NONE |
+| P0-10 | Import-boundary / layering enforcement checks ([MODULE_MAP.md](./MODULE_MAP.md) §13) | `[~]` IN PROGRESS | `layer-direction` and `kernel-purity` delivered (FND-001b), wired into `npm run verify`, each proven by a committed planted-violation fixture. **Held at IN PROGRESS: §13 lists eight checks and four are built** — table ownership, policy-literal scan, contract presence and cycle detection need a schema, policy values and module contracts to exist. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
+| P0-11 | Financial-zone and AI-provider-import enforcement checks | `[x]` COMPLETE | `financial-zone-ai` (severity P0) and `provider-import` in `platform/checks/boundaries.ts`, wired into `npm run verify`, exit 1 on violation. Planted fixtures rejected, including the control proving the zone matches on path boundaries — `modules/rewards/ledger` restricted, `modules/rewards/ui` not. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
 | P0-12 | Contributor and development documentation | `[ ]` NOT STARTED | NONE |
 | P0-13 | Git workflow conventions (atomic commits, branch policy) | `[ ]` NOT STARTED | NONE |
 
@@ -574,14 +574,14 @@ These are not owned by one phase. Each is verified per module and again at relea
 | ID | Requirement | Status |
 |---|---|---|
 | X-43 | Deterministic services own totals, payments, refunds, ledger, commissions, rewards, settlements, reserves, guarantee exposure, payouts | `[ ]` NOT STARTED |
-| X-44 | AI is never the financial authority; enforced by a CI check | `[ ]` NOT STARTED |
+| X-44 | AI is never the financial authority; enforced by a CI check | `[~]` IN PROGRESS — the `financial-zone-ai` check exists and fails `npm run verify` at P0 severity; it is not yet a **CI** check, because there is no CI (P0-09) |
 | X-45 | Append-only/immutable financial records where appropriate | `[ ]` NOT STARTED |
 
 ### E.7 AI control plane (v3 §29–§32)
 
 | ID | Requirement | Status |
 |---|---|---|
-| X-46 | No business module hardcodes a provider; enforced by a CI check | `[ ]` NOT STARTED |
+| X-46 | No business module hardcodes a provider; enforced by a CI check | `[~]` IN PROGRESS — the `provider-import` check exists and fails `npm run verify`; it is not yet a **CI** check, because there is no CI (P0-09) |
 | X-47 | Task-based model routing | `[ ]` NOT STARTED |
 | X-48 | Shadow mode for new models | `[ ]` NOT STARTED |
 | X-49 | Full AI decision metadata recorded (v3 §31) | `[ ]` NOT STARTED |

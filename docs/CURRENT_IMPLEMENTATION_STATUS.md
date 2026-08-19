@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-001a (first FND-001 subtask: pinned toolchain and test harness)
+**Last updated:** 2026-08-19 by task FND-001b (source roots, architecture manifest, four executable boundary checks)
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -12,9 +12,11 @@
 
 > **Read this first.** The repository now installs, builds, type-checks, lints, format-checks and tests from a clean dependency state. That is the whole of what exists in code.
 >
-> There is **no CI, no boundary enforcement, no database, no kernel component, no business module and no UI**. FND-001 is **not complete** — this is its first subtask only (FND-001a). Nothing in the checklist is marked `COMPLETE`: P0-03 through P0-08 are `IN PROGRESS`, and P0-09 through P0-13 remain `NOT STARTED`.
+> Four of the eight architectural checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are now executable and run inside `npm run verify`, each proven by a committed planted-violation fixture.
 >
-> Exact commands and results: §11.1.
+> There is still **no CI, no database, no kernel component, no business module and no UI**. FND-001 is **not complete** — subtasks FND-001c (CI) and FND-001d (contributor docs, git conventions) remain. `kernel/`, `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**.
+>
+> Exact commands and results: §11.1 (FND-001a) and §11.2 (FND-001b).
 
 ---
 
@@ -39,25 +41,26 @@
 
 | Dimension | State |
 |---|---|
-| Phase | Phase 0 — Foundation. **In progress**, early. Toolchain only. |
-| Application code | None. Substrate only: two modules under `platform/runtime/` making the Node and npm pins checkable. |
+| Phase | Phase 0 — Foundation. **In progress.** Toolchain and boundary enforcement; no data layer, no kernel. |
+| Application code | None. Substrate only: `platform/runtime/` (2 modules) and `platform/architecture/` + `platform/checks/` (3 modules) — version pins and boundary enforcement. |
 | Database | None |
 | Migrations | None |
-| Tests | 15 passing (`npm test`, exit 0) — substrate only; no business logic exists to test |
-| CI | None — deliberately out of scope for this subtask |
+| Tests | 32 passing (`npm test`, exit 0) — substrate and boundary enforcement only; no business logic exists to test |
+| CI | None — FND-001c. Every check runs locally via `npm run verify`, nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
 | Monitoring | None |
-| Modules implemented | 0 of 62 (15 kernel components + 47 business modules) |
+| Modules implemented | 0 of 62 (15 kernel components + 47 business modules), all 62 registered in the architecture manifest |
+| Boundary rules enforced | 4 of 8 (`layer-direction`, `kernel-purity`, `financial-zone-ai`, `provider-import`); the other 4 need a schema, policy values or module contracts to exist |
 | Module contracts written | 0 of 62 |
-| Tracked requirements | 474, each with an explicit status; **0 of 472 implementation items complete**. 6 are `IN PROGRESS` (P0-03…P0-08). |
+| Tracked requirements | 474, each with an explicit status; **2 of 472 implementation items complete** (P0-03, P0-11). 9 are `IN PROGRESS`. |
 | Release gates met | 0 of 26 |
 | Open P0 defects | 0 |
 | Open P1 defects | 0 |
 | Open blockers | 9, none on the current critical path |
-| Permitted completion language | *"Planning baseline established; toolchain substrate in progress."* Not "FND-001 complete", not "Phase 0 complete", not "MVP candidate". |
+| Permitted completion language | *"Planning baseline established; toolchain and boundary enforcement delivered."* Not "FND-001 complete", not "Phase 0 complete", not "MVP candidate". |
 
-**Per v3 §64**, no completion claim beyond the toolchain may be made. Per v3 §54, nothing containing a placeholder may be called complete. The accurate description of this repository is: **a specification with a planning baseline and a working build/test harness, and no product.**
+**Per v3 §64**, no completion claim beyond the substrate may be made. Per v3 §54, nothing containing a placeholder may be called complete. The accurate description of this repository is: **a specification with a planning baseline, a working build/test harness, enforced architectural boundaries, and no product.**
 
 ---
 
@@ -88,9 +91,22 @@ Verified by direct inspection of the working tree at baseline time.
 | `tests/node-version.test.ts` | Tests | 7 tests, including one asserting the running Node satisfies the declared `engines.node`. |
 | `tests/toolchain.test.ts` | Tests | 8 tests binding the exact pins (`.nvmrc`, `packageManager`) to the supported ranges (`engines.*`). |
 
-**That is the entire repository.** There is no CI configuration, no boundary enforcement, no database, no migration directory, no environment configuration, no kernel component, no business module and no UI. The `kernel/`, `modules/`, `design-system/` and `apps/` roots do not exist yet.
+**Added by FND-001b:**
 
-DOC-001 was scoped to documentation and created no source file. FND-001a was scoped to the toolchain and created **no CI, boundary-enforcement, database, kernel, business-module or UI functionality**.
+| Path | Type | Description |
+|---|---|---|
+| `kernel/`, `modules/`, `design-system/`, `apps/` | Source roots | Tracked, each with a README recording its ownership rules. **Empty of implementation.** |
+| `platform/architecture/manifest.ts` | Substrate | Machine-readable encoding of MODULE_MAP: 15 kernel components, 47 modules, layer depths, the financial authority zone as path prefixes, the provider SDK list. |
+| `platform/checks/boundaries.ts` | Substrate | The four boundary checks, extracting imports through the TypeScript compiler API. |
+| `platform/checks/cli.ts` | Substrate | `npm run check:boundaries`; exits 1 on any violation. |
+| `tests/manifest.test.ts` | Tests | 7 tests guarding the manifest's structural invariants. |
+| `tests/boundaries.test.ts` | Tests | 10 tests: positive cases plus a planted-violation proof per check. |
+| `tests/fixtures/**` (22 files) | Fixtures | Committed non-conforming trees, one per rule, plus a clean control. Excluded from TypeScript, ESLint and Prettier. |
+| `tests/README.md` | Tests | Ownership note, including why fixtures must not be "fixed". |
+
+**That is the entire repository.** There is no CI configuration, no database, no migration directory, no environment configuration, no kernel component, no business module and no UI.
+
+DOC-001 created no source file. FND-001a was scoped to the toolchain. FND-001b was scoped to the source roots and boundary enforcement and created **no CI, database, kernel, business-module or UI functionality** — `kernel/` and `modules/` contain one README each and nothing else.
 
 ---
 
@@ -116,8 +132,8 @@ v3 §1 defines the hierarchy of authority and places `JAYA_MASTER_AUTONOMOUS_DEV
 4. `docs/ARCHITECTURE.md` *(not yet created)*
 5. Module specifications — [`docs/MODULE_MAP.md`](./MODULE_MAP.md) and the per-module contracts *(not yet created)*
 6. API / database / event contracts *(not yet created)*
-7. Existing tests — `tests/node-version.test.ts`, `tests/toolchain.test.ts` (15 tests, substrate only)
-8. Existing implementation — `platform/runtime/node-version.ts`, `platform/runtime/package-manager.ts` (substrate only; no kernel component, module or UI)
+7. Existing tests — `tests/` (32 tests: version pins, reproducibility contract, manifest integrity, boundary enforcement)
+8. Existing implementation — `platform/runtime/`, `platform/architecture/`, `platform/checks/` (substrate only; no kernel component, module or UI)
 9. Temporary chat / run instructions
 10. `JAYA___Autonomous_Build_Master_Development_Guide___Completion_Checklist_v1.0.md` — **compatible detail only**
 
@@ -149,13 +165,13 @@ This is the honest inventory, not a backlog summary. Items delivered by FND-001a
 |---|---|---|
 | Runtime / language toolchain | **Present** (FND-001a) | P0-04 |
 | Package manifest and lockfile | **Present** | P0-04 |
-| Source directory structure | **Partial** — `platform/`, `tests/` only; `kernel/`, `modules/`, `design-system/`, `apps/` not created | P0-03 |
+| Source directory structure | **Present** — all six roots tracked and documented (FND-001b) | P0-03 |
 | Build pipeline | **Present** — compilation to `dist/`; no runnable entry point exists yet | P0-05 |
 | Type checking | **Present** | P0-06 |
 | Lint and formatting | **Present** | P0-07 |
-| Test framework | **Present** (15 tests) | P0-08 |
-| CI pipeline | Absent — out of scope for this subtask | P0-09 |
-| Boundary / layering enforcement | Absent — out of scope for this subtask | P0-10, P0-11 |
+| Test framework | **Present** (32 tests) | P0-08 |
+| CI pipeline | Absent — FND-001c | P0-09 |
+| Boundary / layering enforcement | **Present for 4 of 8 checks** (FND-001b); the other 4 need a schema, policy values or module contracts | P0-10, P0-11 |
 | Contributor documentation | Absent | P0-12 |
 | Git workflow conventions | Absent | P0-13 |
 
@@ -212,7 +228,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
 | R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains five gates and 15 tests, all green from a clean install. The residues close as CI lands (FND-001c) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c |
-| R-02 | **Boundary rules are unenforced.** [MODULE_MAP.md](./MODULE_MAP.md) defines layering, financial-zone and provider-neutrality rules with no mechanical check behind them. | High | Boundary violations are cheap to introduce and expensive to unwind. By the time 62 modules exist, review alone will not hold the line. | Ship import-boundary, kernel-purity, financial-zone and provider-import checks in build step B-0 (P0-10, P0-11), before the first module. | Next task |
+| R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
 | R-05 | **Scope-to-verification mismatch.** 19 phases, 62 owned units and two adversarial suites is a large programme; the failure mode is shallow completion ("the page renders"). | High | v3 §33, §51 and §54 explicitly reject this. Shallow completion is discovered late and is expensive. | Definition of Done (v3 §55) and the evidence block are mandatory per item; the UI/UX gate is an independent release gate. | Reviewer |
@@ -594,7 +610,161 @@ still holds.
 
 ---
 
-### 11.2 Corrections applied to the DOC-001 baseline after first review
+### 11.2 Evidence — FND-001b (source roots, architecture manifest, boundary enforcement)
+
+Every command below was run from a **clean dependency state**: `node_modules/` and `dist/`
+deleted, then `npm ci`.
+
+```text
+ITEM ID:            P0-03 (COMPLETE), P0-11 (COMPLETE), P0-10 (IN PROGRESS)
+MODULE / PHASE:     Platform substrate / Phase 0, build step B-0
+STATUS:             DELIVERED. P0-03 and P0-11 are COMPLETE. P0-10 is IN PROGRESS because it
+                    references MODULE_MAP §13, which lists eight checks; four are built.
+                    FND-001 as a whole remains IN PROGRESS: FND-001c (CI) and FND-001d
+                    (contributor docs, git conventions) are not started.
+
+IMPLEMENTED:        Source roots: kernel/, modules/, design-system/, apps/ created, tracked and
+                    documented with per-root ownership READMEs. All four are empty of
+                    implementation.
+                    platform/architecture/manifest.ts — machine-readable encoding of
+                    docs/MODULE_MAP.md: 15 kernel components, 47 business modules, layer depths
+                    L1..L8, the financial authority zone as PATH PREFIXES (so the Rewards entry
+                    names modules/rewards/ledger specifically, which is what §11 places in the
+                    zone), and the model-provider SDK list.
+                    platform/checks/boundaries.ts — four checks:
+                      layer-direction    imports point downward only; same-layer modules must
+                                         use events; unregistered units are rejected because
+                                         their layer is unknown
+                      kernel-purity      the kernel never imports a module, the design system
+                                         or an app
+                      financial-zone-ai  the financial authority zone never imports K-13 (P0)
+                      provider-import    only kernel/ai-gateway may import a provider SDK
+                    Imports are extracted with the TypeScript compiler API, not by regular
+                    expression, so multi-line imports, dynamic import(), export-from,
+                    import-equals-require and commented-out code are handled exactly.
+                    platform/checks/cli.ts — npm run check:boundaries, exit 1 on any violation,
+                    with --root, --json and --quiet.
+
+INTEGRATION:        npm run verify now chains:
+                      typecheck -> lint -> format:check -> build -> check:boundaries -> test
+                    build additionally runs a postbuild step executing the EMITTED
+                    dist/checks/cli.js, so the compiled artefact is proven to run rather than
+                    merely to compile.
+
+TESTED:             32 tests (15 from FND-001a, 17 added here).
+                    tests/manifest.test.ts (7): counts, unique and kebab-case slugs, sequential
+                    ids, known and ascending layer depths, the AI Gateway being registered,
+                    every financial-zone prefix naming a registered unit, path-boundary
+                    matching, and provider detection covering subpaths and scopes without
+                    matching lookalikes such as "openai-schema-validator".
+                    tests/boundaries.test.ts (10): the real source tree passing; a clean
+                    fixture exercising every allowed edge; one planted-violation proof per
+                    check; an unregistered-unit case; a coverage test asserting every declared
+                    check id has a fixture; plus unit tests for import extraction and unit
+                    classification.
+
+TEST COMMANDS:      npm ci
+                    node docs/tools/validate-doc-links.mjs
+                    npm run typecheck
+                    npm run lint
+                    npm run format:check
+                    npm run build
+                    npm run check:boundaries
+                    npm test
+                    npm run verify
+
+TEST RESULTS:       npm ci                    exit 0   added 91 packages
+                    validate-doc-links        exit 0   3 files, 74 internal links, 0 broken
+                    npm run typecheck         exit 0
+                    npm run lint              exit 0
+                    npm run format:check      exit 0
+                    npm run build             exit 0   postbuild ran dist/checks/cli.js ->
+                                                       "PASS — 5 files, 8 imports, 0 violations"
+                    npm run check:boundaries  exit 0   5 files, 8 imports scanned
+                                                       layer-direction    PASS
+                                                       kernel-purity      PASS
+                                                       financial-zone-ai  PASS
+                                                       provider-import    PASS
+                    npm test                  exit 0   tests 32, pass 32, fail 0, cancelled 0,
+                                                       skipped 0, todo 0
+                    npm run verify            exit 0   full chain, clean dependency state
+
+                    Persistent planted-violation fixtures, each run through the CLI:
+                      violation-layer-direction     exit 1   P1 layer-direction x2
+                                                             (L2->L5 upward; L7->L7 sibling)
+                      violation-kernel-purity       exit 1   P1 kernel-purity
+                      violation-financial-zone-ai   exit 1   P0 financial-zone-ai x2
+                      violation-provider-import     exit 1   P1 provider-import x2
+                      violation-unregistered-unit   exit 1   P1 layer-direction
+                      clean (control)               exit 0   no violations
+                    Control inside the financial-zone fixture: modules/rewards/ui is NOT
+                    flagged, proving the zone matches on path boundaries rather than on the
+                    module name.
+
+FIXTURE ISOLATION:  Fixtures are excluded from TypeScript (tsconfig.json), ESLint
+                    (eslint.config.mjs) and Prettier (.prettierignore). Two of the three
+                    exclusions were shown to be load-bearing by removing them:
+                      tsconfig exclusion removed  -> npm run typecheck exit 2, 3 x TS2307
+                                                     ("Cannot find module 'openai'")
+                      eslint exclusion removed    -> npm run lint exit 1, 23 parsing errors
+                                                     ("was not found by the project service")
+                      prettier exclusion removed  -> format:check still exit 0; the fixtures
+                                                     happen to be Prettier-conformant, so this
+                                                     one is defence in depth rather than
+                                                     currently load-bearing
+                    All three exclusions were restored and the chain re-run green.
+
+SECURITY:           No secrets; no credentials; no network access. The checks read source files
+                    and write nothing. No authentication, permissions or data handling exists
+                    to review.
+
+UI/UX REVIEW:       N/A — no user-facing surface.
+
+MIGRATIONS:         None. No database. Out of scope; FND-002.
+
+EVENTS:             None. No event infrastructure exists; K-08 is build step B-1.
+
+CONFIG / POLICY:    No business constants introduced. The financial zone and provider list in
+                    the manifest are architectural facts, not commercial policy.
+
+KNOWN LIMITATIONS:  1. STATIC IMPORTS ONLY. The checks read import/export/dynamic-import/require
+                       specifiers. Runtime indirection — a service locator, dependency
+                       injection by name, or raw SQL reaching another module's table — is
+                       invisible to them. The B-1 table-ownership check narrows this.
+                    2. Four of the eight MODULE_MAP §13 checks are not built: table ownership,
+                       policy-literal scan, contract presence, cycle detection. Each needs an
+                       artefact that does not exist yet.
+                    3. The kernel is treated as ONE layer. Its internal ordering
+                       (K-01 -> K-02/K-03 -> K-04) is not checked.
+                    4. NO CI. Every check runs only when someone runs it. FND-001c.
+                    5. The provider list is an allowlist of known SDKs. An unlisted provider is
+                       an unenforced provider; the list must be extended when one is adopted.
+                    6. The checks currently scan 5 files, because kernel/ and modules/ contain
+                       no source. Their real load-bearing test arrives with the first module.
+
+DEFERRED:           P0-09 (CI) to FND-001c. P0-12, P0-13 (contributor docs, git conventions) to
+                    FND-001d. The four B-1 checks to FND-002/FND-003.
+
+COMMITS:            Recorded at commit time for this branch.
+
+FILES:              kernel/README.md, modules/README.md, design-system/README.md,
+                    apps/README.md, tests/README.md,
+                    platform/architecture/manifest.ts, platform/checks/boundaries.ts,
+                    platform/checks/cli.ts, tests/manifest.test.ts, tests/boundaries.test.ts,
+                    tests/fixtures/** (22 files),
+                    modified: package.json (check:boundaries, postbuild, verify),
+                    tsconfig.json, eslint.config.mjs, .prettierignore (fixture exclusions)
+
+FOLLOW-UP:          FND-001c (CI), then FND-001d (contributor docs and git conventions).
+                    FND-001 stays IN PROGRESS until both land.
+                    Risk R-13 (cockpits are same-layer with the modules they compose) will be
+                    hit by layer-direction at build step B-5 and needs an architectural
+                    decision, not a disabled check.
+```
+
+---
+
+### 11.3 Corrections applied to the DOC-001 baseline after first review
 
 Two defects were found in the DOC-001 baseline by review and corrected. Recorded here per v3 §58 rather than silently patched.
 

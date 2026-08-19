@@ -16,13 +16,13 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001 remains selected. FND-001a code and clean local verification evidence are accepted in substance, but final authority-rank-2 documentation contradictions must be corrected before formally closing the subtask. FND-001b through FND-001d remain unstarted."
+      "notes": "FND-001 remains selected. FND-001a is accepted as delivered with 15 substrate tests and clean local verification evidence. FND-001b is now in progress; FND-001c and FND-001d remain unstarted."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "After the final status-document correction, proceed to FND-001b boundary enforcement with persistent planted-violation fixtures. GitHub CI execution evidence remains required during FND-001c."
+      "notes": "Review FND-001b against the manifest, executable checks, persistent planted-violation fixtures, and clean verification evidence. GitHub CI execution evidence remains required during FND-001c."
     },
     {
       "id": 5,
@@ -37,7 +37,8 @@
     "No implementation capability may be marked complete without repository evidence and applicable test results.",
     "DOC-001 planning baseline is accepted; FND-001 is the first implementation task.",
     "FND-001 will be delivered as separately reviewable subtasks, beginning with the local executable toolchain before CI and boundary enforcement.",
-    "The exact .nvmrc value is the pinned development runtime, while engines.node may remain a compatible supported-runtime range; packageManager must identify an exact npm version."
+    "The exact .nvmrc value is the pinned development runtime, while engines.node may remain a compatible supported-runtime range; packageManager must identify an exact npm version.",
+    "FND-001a is accepted as delivered, not as completion of FND-001 or Phase 0."
   ],
   "concerns": [
     "There is no CI, database, authentication, deployment, or monitoring foundation yet.",
@@ -45,7 +46,7 @@
     "The baseline requirement count is extensive and must remain mechanically verifiable as statuses change.",
     "FND-001 boundary checks must inspect real source paths and have persistent negative fixtures; checks that merely pass an empty repository are not acceptable.",
     "GitHub currently reports no checks, so CI workflow execution evidence will be required before P0-09 can be accepted.",
-    "CURRENT_IMPLEMENTATION_STATUS.md remains internally inconsistent about the now-delivered FND-001a tests, implementation, and permitted completion language."
+    "The architecture manifest must remain consistent with the authoritative module map and encode enough ownership/layer information for all four checks to make substantive decisions."
   ],
-  "last_instruction": "Correct only the remaining FND-001a factual contradictions in docs/CURRENT_IMPLEMENTATION_STATUS.md: update §3.3 entries for existing tests and existing implementation, change §4.1 test-framework count from 7 to 15, and replace the final §12 permitted-description sentence with the same accurate FND-001a wording used in §10; then run the documentation link validator and `npm run verify`, record changed evidence if applicable, and commit without starting FND-001b."
+  "last_instruction": "Implement FND-001b only: add the remaining tracked source roots with ownership documentation, create a machine-readable architecture manifest consistent with docs/MODULE_MAP.md, and add executable enforcement for downward/layer-safe imports, kernel purity, financial-zone exclusion of K-13, and provider-SDK imports being restricted to K-13. Integrate all four checks into `npm run verify` and add persistent negative fixtures/tests proving each rule rejects a planted violation while the real source tree passes; ensure fixtures cannot contaminate normal build/lint checks. Run a clean `npm ci`, the documentation link validator, and the full verification chain; update CURRENT_IMPLEMENTATION_STATUS.md and MASTER_IMPLEMENTATION_CHECKLIST.md with exact evidence and non-overclaimed statuses, commit the bounded subtask, and do not start CI or FND-001d."
 }

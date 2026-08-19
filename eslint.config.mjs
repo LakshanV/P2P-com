@@ -4,7 +4,16 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'dist/**', 'coverage/**'] },
+  {
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      'coverage/**',
+      // Deliberately non-conforming source. Linting it would report the very problems the
+      // enforcement tests exist to assert.
+      'tests/fixtures/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {

@@ -492,15 +492,23 @@ K-13 AI GATEWAY   <== the only component that knows providers exist
 
 Boundary rules that are only written down get violated. Each rule below gets a mechanical check, delivered with the platform substrate in step B-0/B-1 and run in CI.
 
-| Check | Enforces | Delivered in |
-|---|---|---|
-| Import-boundary lint (layer and direction) | MR-1, MR-2, §10.1–10.3 | B-0 |
-| Kernel-purity check (kernel imports no module) | §10.6 | B-0 |
-| Financial-zone check (zone imports no K-13) | MR-3, F-1 | B-0 |
-| Provider-import check (only K-13 imports provider SDKs) | MR-4, A-1 | B-0 |
-| Table-ownership check (one writer per table) | §10.4 | B-1 |
-| Policy-literal scan (no hardcoded rate, percentage or day constants in the zone) | F-3 | B-1 |
-| Contract-presence check (module has a contract doc before merge) | MR-5 | B-1 |
-| Cycle detector over the declared dependency manifest | MR-2 | B-1 |
+| Check | Enforces | Delivered in | State |
+|---|---|---|---|
+| `layer-direction` (layer and direction, plus unregistered units) | MR-1, MR-2, §10.1–10.3 | B-0 | **Enforced** — `npm run check:boundaries` |
+| `kernel-purity` (kernel imports no module) | §10.6 | B-0 | **Enforced** |
+| `financial-zone-ai` (zone imports no K-13) | MR-3, F-1 | B-0 | **Enforced** (P0) |
+| `provider-import` (only K-13 imports provider SDKs) | MR-4, A-1 | B-0 | **Enforced** |
+| Table-ownership check (one writer per table) | §10.4 | B-1 | Not built — needs a database schema to check |
+| Policy-literal scan (no hardcoded rate, percentage or day constants in the zone) | F-3 | B-1 | Not built — needs policy values in source to scan |
+| Contract-presence check (module has a contract doc before merge) | MR-5 | B-1 | Not built — needs module contracts to exist |
+| Cycle detector over the declared dependency manifest | MR-2 | B-1 | Not built |
 
-**Current state of enforcement: none of these checks exist.** Until B-0 and B-1 land, every rule in this document is enforced by review only. That gap is tracked as risk **R-02 — boundary rules are unenforced** in [CURRENT_IMPLEMENTATION_STATUS.md](./CURRENT_IMPLEMENTATION_STATUS.md#5-current-risks).
+**Current state of enforcement: the four B-0 checks are executable; the four B-1 checks are not.**
+
+The first four are implemented in `platform/checks/boundaries.ts`, driven by `platform/architecture/manifest.ts` — the machine-readable encoding of this document — and exposed as `npm run check:boundaries`, which exits 1 on any violation and runs inside `npm run verify`. Each has a committed planted-violation fixture under `tests/fixtures/` asserted to be rejected, because a check that cannot fail is a placeholder (v3 §54).
+
+The remaining four wait on artefacts that do not exist yet: a database schema, policy values in source, and module contracts. Until B-1 delivers them, rules §10.4, F-3, MR-5 and cycle detection are enforced by review only. That residual gap is tracked as risk **R-02** in [CURRENT_IMPLEMENTATION_STATUS.md](./CURRENT_IMPLEMENTATION_STATUS.md#5-current-risks).
+
+Two limits worth stating plainly. The checks read **static imports only** — runtime indirection (a service locator, dependency injection by name, or raw SQL reaching another module's table) is invisible to them. And the kernel is treated as **one layer**: its internal ordering (K-01 → K-02/K-03 → K-04) is not checked.
+
+**When this document changes, `platform/architecture/manifest.ts` changes with it.** They are two representations of one decision; `tests/manifest.test.ts` guards the structural invariants, and an unregistered directory under `kernel/` or `modules/` fails the boundary check by design.

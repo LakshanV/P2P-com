@@ -3,6 +3,10 @@ dist/
 coverage/
 package-lock.json
 
+# Planted-violation fixtures are deliberately non-conforming source. Formatting them would
+# rewrite the very text the enforcement tests assert against.
+tests/fixtures/
+
 # Markdown is governed by docs/tools/validate-doc-links.mjs, not by Prettier. Reformatting the
 # planning baseline would churn hand-aligned tables for no verification benefit.
 *.md
