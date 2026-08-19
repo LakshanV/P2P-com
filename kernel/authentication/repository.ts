@@ -12,10 +12,17 @@
  *     because a general update is how a session acquires a longer absolute expiry.
  *
  * `rotateSession` and `revokeSession` return `false` rather than throwing when the guard does not
- * match. That is not a swallowed error: "somebody else got there first" is a normal outcome of a
- * race, and the service turns it into `stale-session-state` after re-reading to find out which race
- * it lost. A port that threw would make the two cases — lost a race, or the session never existed —
- * indistinguishable at the point where they most need telling apart.
+ * match *what the transaction can see*. That is not a swallowed error: "somebody else got there
+ * first" is a normal outcome of a race, and the service turns it into `stale-session-state` after
+ * re-reading to find out which race it lost. A port that threw would make the two cases — lost a
+ * race, or the session never existed — indistinguishable at the point where they most need telling
+ * apart.
+ *
+ * A guard that loses to a transaction that overlapped this one is a different matter, because by
+ * then the `true` has already been handed back. There is no answer to give the caller at that
+ * point, so the *transaction* is refused: the commit raises `stale-session-state` and writes
+ * nothing. A return value the caller has already acted on cannot be retracted; a transaction that
+ * never committed can.
  *
  * `assertionId` uniqueness is what makes replay detectable, so it is a repository-level constraint
  * rather than a service-level check: a check would be a read followed by a write, and two replays
@@ -99,9 +106,9 @@ export interface AuthenticationRepository {
  * against the store as it stands**, so two callers that overlap behave here as they would against a
  * server.
  *
- * The guarded updates are modelled the same way: a rotation re-reads at commit and refuses if the
- * hash it expected is no longer there. K-08 shipped without that parity and every concurrency
- * guarantee proved against it was worth less than it appeared (§11.15).
+ * The guarded updates are modelled the same way: a rotation re-reads at commit and refuses the
+ * whole transaction if the hash it expected is no longer there. K-08 shipped without that parity
+ * and every concurrency guarantee proved against it was worth less than it appeared (§11.15).
  */
 export class InMemoryAuthenticationRepository implements AuthenticationRepository {
   #bindings: AuthenticationBinding[] = [];
@@ -155,12 +162,21 @@ export class InMemoryAuthenticationRepository implements AuthenticationRepositor
   }
 
   /**
-   * Apply this transaction's writes to the store as it stands now, or refuse.
+   * Apply this transaction's writes to the store as it stands now, or refuse — all of it, or none.
    *
    * Conflicts are checked against the *current* store rather than the snapshot the transaction
    * read, which is what makes the races behave as they would against a server. Guarded updates are
    * re-evaluated here for the same reason: the hash a rotation expected may have been replaced
    * since it looked.
+   *
+   * A guard that loses is a **refusal**, not a skip. Skipping it — which is what the previous
+   * revision did — meant a rotation could be told `true`, hand its caller a fresh secret, and then
+   * have that secret quietly dropped at commit: the caller holds a token that authenticates
+   * nothing, the winner's secret is still live, and no error was raised anywhere. So every queued
+   * guard is preflighted against a temporary copy of the sessions as they stand now, and that copy
+   * becomes the store only once all of them have won. Nothing from a losing transaction is
+   * written, including its inserts — a session inserted alongside a lost rotation belongs to a
+   * decision that did not happen.
    */
   #commit(working: WorkingSet): void {
     for (const binding of working.newBindings) {
@@ -228,22 +244,22 @@ export class InMemoryAuthenticationRepository implements AuthenticationRepositor
       }
     }
 
-    // Guarded updates, re-evaluated against the current store. A rotation whose expected hash has
-    // been replaced since it looked has lost the race, and losing must not overwrite the winner.
-    const applied: AuthenticationSession[] = [];
+    // Guarded updates, re-evaluated against the current store — on a copy, so a guard that loses
+    // halfway through leaves the store exactly as it found it. Sessions this transaction inserted
+    // are part of the copy, because a transaction may insert a session and then act on it, and
+    // that is not a race with anybody.
+    const sessions = [...this.#sessions, ...working.newSessions.map(sealSession)];
     for (const update of working.updates) {
-      const index = this.#sessions.findIndex((held) => held.sessionId === update.next.sessionId);
-      const current = index === -1 ? undefined : this.#sessions[index];
-      if (current === undefined) continue;
-      if (!update.guard(current)) continue;
-      this.#sessions[index] = sealSession(update.next);
-      applied.push(update.next);
+      const index = sessions.findIndex((held) => held.sessionId === update.next.sessionId);
+      const current = index === -1 ? undefined : sessions[index];
+      if (current === undefined || !update.guard(current)) throw stale(update.next.sessionId);
+      sessions[index] = sealSession(update.next);
     }
-    working.recordApplied(applied);
 
+    // Published only now: every uniqueness check and every guard has won.
     this.#bindings = [...this.#bindings, ...working.newBindings.map(sealBinding)];
     this.#evidence = [...this.#evidence, ...working.newEvidence.map(sealEvidence)];
-    this.#sessions = [...this.#sessions, ...working.newSessions.map(sealSession)];
+    this.#sessions = sessions;
   }
 }
 
@@ -251,6 +267,16 @@ function conflict(code: AuthenticationError['code'], message: string): Authentic
   return new AuthenticationError(
     code,
     `${message}, written by another transaction while this one was open`,
+  );
+}
+
+/** A guarded update that lost after its transaction had already been told it won. */
+function stale(sessionId: string): AuthenticationError {
+  return new AuthenticationError(
+    'stale-session-state',
+    `session ${sessionId} changed while this transaction was open — another rotation or ` +
+      'revocation committed first, so this transaction is refused in full rather than applied ' +
+      'over the winner. Nothing it wrote has been kept. Re-read the session and retry',
   );
 }
 
@@ -267,7 +293,6 @@ class WorkingSet {
   readonly newEvidence: AuthenticationEvidence[] = [];
   readonly newSessions: AuthenticationSession[] = [];
   readonly updates: GuardedUpdate[] = [];
-  #appliedIds = new Set<string>();
 
   constructor(snapshot: {
     bindings: AuthenticationBinding[];
@@ -277,14 +302,6 @@ class WorkingSet {
     this.bindings = snapshot.bindings;
     this.evidence = snapshot.evidence;
     this.sessions = snapshot.sessions;
-  }
-
-  recordApplied(applied: readonly AuthenticationSession[]): void {
-    this.#appliedIds = new Set(applied.map((session) => session.sessionId));
-  }
-
-  wasApplied(sessionId: string): boolean {
-    return this.#appliedIds.has(sessionId);
   }
 }
 
@@ -484,11 +501,6 @@ class InMemoryAuthenticationTransaction implements AuthenticationTransaction {
     this.#state.sessions[index] = next;
     this.#state.updates.push({ guard: (live) => live.revokedAt === null, next });
     return Promise.resolve(true);
-  }
-
-  /** Whether a guarded update this transaction made actually survived commit. */
-  applied(sessionId: string): boolean {
-    return this.#state.wasApplied(sessionId);
   }
 }
 
