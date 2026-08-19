@@ -80,7 +80,7 @@ FILES:                  (paths that constitute the evidence)
 FOLLOW-UP:
 ```
 
-**Evidence links.** Where an item's evidence lives in the repository, the item records the path. Until code exists, evidence fields read `NONE — no implementation`, which is the honest value, not an omission.
+**Evidence links.** Where an item's evidence lives in the repository, the item records the path — and, where the evidence is a command, the command and its exit code. An item with nothing built against it still reads `NONE — no implementation`, which is the honest value, not an omission.
 
 ---
 
@@ -602,7 +602,7 @@ These are not owned by one phase. Each is verified per module and again at relea
 
 ## F. Test suites
 
-Testing is continuous across four levels (v3 §47): task, module, phase, release. **No test infrastructure exists.**
+Testing is continuous across four levels (v3 §47): task, module, phase, release. **A test runner exists and 32 substrate tests pass** (`npm test`, exit 0 — FND-001a and FND-001b). None of the mandatory test types below is satisfied for a business capability, because no business capability exists yet; the statuses in §F.1 and §F.3–§F.4 are unchanged.
 
 ### F.1 Mandatory test types (v3 §48)
 
@@ -770,7 +770,7 @@ Severity definitions from v3 §52.
 |---|---|---|---|---|
 | — | None | — | — | **0 open** |
 
-**Interpretation:** zero open defects reflects zero implementation, not verified quality. This register becomes meaningful only once code and tests exist. Each entry, when added, must carry: id, severity, description, owning module, reproduction, detection source, and the regression test that reproduces it (v3 §58).
+**Interpretation:** zero open defects reflects almost no implementation, not verified quality. The substrate delivered by FND-001a and FND-001b carries 32 passing tests and no known defect; this register stays close to meaningless until business capability exists to defect. Each entry, when added, must carry: id, severity, description, owning module, reproduction, detection source, and the regression test that reproduces it (v3 §58).
 
 ---
 

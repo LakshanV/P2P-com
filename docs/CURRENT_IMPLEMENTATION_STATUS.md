@@ -361,7 +361,7 @@ met is CI running the chain, and contributor documentation.
 
 ### The decision
 
-v3 §44 and v1 §3.1 ask for complete vertical slices. A vertical slice is the right unit **once a platform exists to slice through**. At this moment there is no runtime, no database, no test runner, and no CI, so the first user-visible vertical slice — "a user registers an account" — would have to invent all of them along the way, inside one task, with no way to test any of it. That is the failure mode v3 §54 and §56 are written to prevent: work that looks finished and cannot be shown to be.
+v3 §44 and v1 §3.1 ask for complete vertical slices. A vertical slice is the right unit **once a platform exists to slice through**. When this slice was selected there was no runtime, no database, no test runner and no CI, so the first user-visible vertical slice — "a user registers an account" — would have to invent all of them along the way, inside one task, with no way to test any of it. That is the failure mode v3 §54 and §56 are written to prevent: work that looks finished and cannot be shown to be.
 
 The first slice is therefore **horizontal by necessity and deliberately thin**: the minimum substrate that makes the *second* slice verifiable, and nothing more. It carries no business logic, so it cannot pre-empt or constrain any module boundary.
 
@@ -397,7 +397,7 @@ The first true vertical slice is scheduled as **build step B-5 / Phase 1**: *acc
 
 ## 11. Evidence register
 
-Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository. There are three, all documentation.
+Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository. There are six: four documentation artefacts from DOC-001, and the two delivered FND-001 subtasks, each backed by named commands with recorded exit codes (§11.1, §11.2).
 
 | Item | Status | Evidence type | Evidence |
 |---|---|---|---|
