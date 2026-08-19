@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 1,
+  "dataset": "planted-fingerprint-orphan",
+  "owner": "K-08",
+  "schema": "kernel_event_infrastructure",
+  "purpose": "test",
+  "description": "A planted-invalid fixture. It exists to be rejected; do not \"fix\" it.",
+  "dependsOn": [],
+  "tables": [
+    {
+      "table": "kernel_event_infrastructure.event",
+      "identity": [
+        "event_id"
+      ],
+      "rows": [
+        {
+          "event_id": "evt-planted-1",
+          "event_type": "configuration.version_published",
+          "schema_version": 1,
+          "occurred_at": "2026-02-01T00:00:00Z",
+          "recorded_at": "2026-02-01T00:00:00Z",
+          "producer": "K-05",
+          "correlation_id": "corr-planted-1",
+          "causation_id": null,
+          "payload_fingerprint": "f0dd5a8a762380a14b9e7e6851d193858da35ca88560b74bd3e9f5a96cc82844",
+          "idempotency_key": "planted-fp-1",
+          "origin": "system"
+        }
+      ]
+    }
+  ]
+}

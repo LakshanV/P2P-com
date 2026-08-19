@@ -29,7 +29,13 @@ import {
   databaseNameOf,
 } from '../db/test-database.ts';
 
-import { loadOrder, type FixtureManifest, type FixtureJson } from './manifest.ts';
+import {
+  loadOrder,
+  severityOf,
+  validateManifests,
+  type FixtureManifest,
+  type FixtureJson,
+} from './manifest.ts';
 
 export type SeedErrorCode =
   'unsafe-target' | 'confirmation-required' | 'invalid-fixtures' | 'sql-failed';
@@ -121,6 +127,51 @@ export function assertReplaceable(
   }
 }
 
+/**
+ * Validate, select and order — the one gate every public runner path goes through.
+ *
+ * The CLI validated before calling the runner, which meant the fixture contract was enforced by
+ * *the route taken to the runner* rather than by the runner. A programmatic caller passing
+ * hand-built manifests bypassed ownership, identity, determinism, credential, personal-data,
+ * fingerprint and dependency checks entirely — and a guarantee that holds only for polite callers
+ * is not a guarantee.
+ *
+ * Validation is complete rather than partial: the same `validateManifests` the CLI runs. Anything
+ * less would leave a caller guessing which subset applied to them.
+ */
+function plan(options: SeedOptions): readonly FixtureManifest[] {
+  const { manifests, violations } = validateManifests(options.manifests);
+
+  if (violations.length > 0) {
+    const detail = violations
+      .map(
+        (violation) =>
+          `  ${severityOf(violation.check)} ${violation.check}  ${violation.dataset}: ` +
+          violation.message,
+      )
+      .join('\n');
+    throw new SeedError(
+      'invalid-fixtures',
+      `refusing to touch the database: ${violations.length} fixture violation(s)\n${detail}`,
+    );
+  }
+
+  const selected =
+    options.purpose === undefined
+      ? manifests
+      : manifests.filter((manifest) => manifest.purpose === options.purpose);
+
+  const ordered = loadOrder(selected);
+  if (ordered.length !== selected.length) {
+    throw new SeedError(
+      'invalid-fixtures',
+      'the selected datasets contain a dependency cycle, so no load order exists. Run the ' +
+        'fixture validator for the details',
+    );
+  }
+  return ordered;
+}
+
 export interface SeedTableResult {
   readonly table: string;
   readonly rowsOffered: number;
@@ -157,19 +208,7 @@ export interface SeedOptions {
  * the database rather than halfway through.
  */
 export async function seed(database: Database, options: SeedOptions): Promise<SeedReport> {
-  const selected =
-    options.purpose === undefined
-      ? options.manifests
-      : options.manifests.filter((manifest) => manifest.purpose === options.purpose);
-
-  const ordered = loadOrder(selected);
-  if (ordered.length !== selected.length) {
-    throw new SeedError(
-      'invalid-fixtures',
-      'the selected datasets contain a dependency cycle, so no load order exists. Run the ' +
-        'fixture validator for the details',
-    );
-  }
+  const ordered = plan(options);
 
   const client = await database.connect();
   try {
@@ -180,32 +219,12 @@ export async function seed(database: Database, options: SeedOptions): Promise<Se
         datasets.push(await loadDataset(client, manifest));
       }
       await client.query('COMMIT;');
-
-      const rowsInserted = datasets
-        .flatMap((dataset) => dataset.tables)
-        .reduce((total, table) => total + table.rowsInserted, 0);
-      const rowsSkipped = datasets
-        .flatMap((dataset) => dataset.tables)
-        .reduce((total, table) => total + table.rowsSkipped, 0);
-
-      return {
-        datasets,
-        rowsInserted,
-        rowsSkipped,
-        idempotent: rowsInserted === 0 && rowsSkipped > 0,
-      };
+      return summarise(datasets, 'inserted');
     } catch (error) {
       // Every dataset shares one transaction, so this undoes all of them and not merely the one
       // that failed.
       await client.query('ROLLBACK;');
-      throw error instanceof SeedError
-        ? error
-        : new SeedError(
-            'sql-failed',
-            `seeding failed and the whole load was rolled back: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+      throw asSeedError(error, 'seeding failed and the whole load was rolled back');
     }
   } finally {
     await client.release();
@@ -265,11 +284,7 @@ function encode(value: FixtureJson, isJson: boolean): unknown {
  * created, and the fixture set does not own the tables it writes into.
  */
 export async function unseed(database: Database, options: SeedOptions): Promise<SeedReport> {
-  const selected =
-    options.purpose === undefined
-      ? options.manifests
-      : options.manifests.filter((manifest) => manifest.purpose === options.purpose);
-  const ordered = [...loadOrder(selected)].reverse();
+  const ordered = [...plan(options)].reverse();
 
   const client = await database.connect();
   try {
@@ -277,51 +292,136 @@ export async function unseed(database: Database, options: SeedOptions): Promise<
     try {
       const datasets: SeedDatasetResult[] = [];
       for (const manifest of ordered) {
-        const tables: SeedTableResult[] = [];
-        for (const table of [...manifest.tables].reverse()) {
-          let removed = 0;
-          for (const row of table.rows) {
-            const predicate = table.identity
-              .map((column, index) => `${column} = $${index + 1}`)
-              .join(' AND ');
-            const result = await client.query(
-              `DELETE FROM ${table.table} WHERE ${predicate};`,
-              table.identity.map((column) => row[column] ?? null),
-            );
-            removed += result.rowCount;
-          }
-          tables.push({
-            table: table.table,
-            rowsOffered: table.rows.length,
-            rowsInserted: removed,
-            rowsSkipped: table.rows.length - removed,
-          });
-        }
-        datasets.push({
-          dataset: manifest.dataset,
-          owner: manifest.owner,
-          schema: manifest.schema,
-          tables,
-        });
+        datasets.push(await deleteDataset(client, manifest));
       }
       await client.query('COMMIT;');
-
-      const rowsInserted = datasets
-        .flatMap((dataset) => dataset.tables)
-        .reduce((total, table) => total + table.rowsInserted, 0);
-      return { datasets, rowsInserted, rowsSkipped: 0, idempotent: rowsInserted === 0 };
+      return summarise(datasets, 'removed');
     } catch (error) {
       await client.query('ROLLBACK;');
-      throw error instanceof SeedError
-        ? error
-        : new SeedError(
-            'sql-failed',
-            `unseeding failed and was rolled back: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+      throw asSeedError(error, 'unseeding failed and was rolled back');
     }
   } finally {
     await client.release();
   }
+}
+
+export interface ReplaceReport {
+  /** What was deleted, in reverse load order. */
+  readonly removed: SeedReport;
+  /** What was inserted afterwards, in load order. */
+  readonly loaded: SeedReport;
+  readonly rowsRemoved: number;
+  readonly rowsInserted: number;
+}
+
+/**
+ * Delete the declared rows and load them again — one transaction, one commit.
+ *
+ * Previously the CLI called `unseed` and then `seed`. Each was individually atomic, which sounds
+ * like enough and is not: between the two commits the database held *no* fixture data, and if the
+ * reload failed there — a constraint the edited fixtures now violate, a connection dropped — the
+ * rows were already gone and the operator was left with an empty database and an error message.
+ * The operation says "replace"; a replacement that can leave nothing behind is not one.
+ *
+ * So the delete and the load share a transaction. Any failure in either half rolls the whole thing
+ * back and the original rows are still there. Deleting in reverse load order and inserting in load
+ * order keeps foreign keys satisfied at every point in between.
+ */
+export async function replace(database: Database, options: SeedOptions): Promise<ReplaceReport> {
+  const ordered = plan(options);
+
+  const client = await database.connect();
+  try {
+    await client.query('BEGIN;');
+    try {
+      const removed: SeedDatasetResult[] = [];
+      for (const manifest of [...ordered].reverse()) {
+        removed.push(await deleteDataset(client, manifest));
+      }
+
+      const loaded: SeedDatasetResult[] = [];
+      for (const manifest of ordered) {
+        loaded.push(await loadDataset(client, manifest));
+      }
+
+      await client.query('COMMIT;');
+
+      const removedReport = summarise(removed, 'removed');
+      const loadedReport = summarise(loaded, 'inserted');
+      return {
+        removed: removedReport,
+        loaded: loadedReport,
+        rowsRemoved: removedReport.rowsInserted,
+        rowsInserted: loadedReport.rowsInserted,
+      };
+    } catch (error) {
+      // One rollback for both halves. The alternative — two transactions — leaves the database
+      // empty when the second one fails.
+      await client.query('ROLLBACK;');
+      throw asSeedError(
+        error,
+        'replacement failed and was rolled back; the original rows are unchanged',
+      );
+    }
+  } finally {
+    await client.release();
+  }
+}
+
+/** Delete one dataset's declared rows, children first. */
+async function deleteDataset(
+  client: DatabaseClient,
+  manifest: FixtureManifest,
+): Promise<SeedDatasetResult> {
+  const tables: SeedTableResult[] = [];
+
+  for (const table of [...manifest.tables].reverse()) {
+    let removed = 0;
+    for (const row of table.rows) {
+      const predicate = table.identity
+        .map((column, index) => `${column} = $${index + 1}`)
+        .join(' AND ');
+      const result = await client.query(
+        `DELETE FROM ${table.table} WHERE ${predicate};`,
+        table.identity.map((column) => row[column] ?? null),
+      );
+      removed += result.rowCount;
+    }
+    tables.push({
+      table: table.table,
+      rowsOffered: table.rows.length,
+      rowsInserted: removed,
+      rowsSkipped: table.rows.length - removed,
+    });
+  }
+
+  return { dataset: manifest.dataset, owner: manifest.owner, schema: manifest.schema, tables };
+}
+
+function summarise(
+  datasets: readonly SeedDatasetResult[],
+  kind: 'inserted' | 'removed',
+): SeedReport {
+  const rowsInserted = datasets
+    .flatMap((dataset) => dataset.tables)
+    .reduce((total, table) => total + table.rowsInserted, 0);
+  const rowsSkipped = datasets
+    .flatMap((dataset) => dataset.tables)
+    .reduce((total, table) => total + table.rowsSkipped, 0);
+
+  return {
+    datasets,
+    rowsInserted,
+    rowsSkipped: kind === 'inserted' ? rowsSkipped : 0,
+    idempotent: kind === 'inserted' ? rowsInserted === 0 && rowsSkipped > 0 : rowsInserted === 0,
+  };
+}
+
+/** A domain refusal passes through; anything else becomes `sql-failed` with the context attached. */
+function asSeedError(error: unknown, context: string): SeedError {
+  if (error instanceof SeedError) return error;
+  return new SeedError(
+    'sql-failed',
+    `${context}: ${error instanceof Error ? error.message : String(error)}`,
+  );
 }

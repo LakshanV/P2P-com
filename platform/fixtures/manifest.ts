@@ -33,6 +33,8 @@ import path from 'node:path';
 
 import { ownerOfSchema, type SchemaOwner } from '../db/schema-namespaces.ts';
 
+import { FINGERPRINT_FORMAT, fingerprintPayload } from './fingerprint.ts';
+
 /** Repo-relative directory holding the real datasets. */
 export const FIXTURES_DIR = 'db/fixtures';
 
@@ -58,7 +60,8 @@ export type FixtureCheckId =
   | 'malformed-record'
   | 'nondeterministic-value'
   | 'credential-in-fixture'
-  | 'personal-data';
+  | 'personal-data'
+  | 'fingerprint-mismatch';
 
 /** Every check this module performs. The tests assert each has a planted-invalid fixture. */
 export const FIXTURE_CHECK_IDS: readonly FixtureCheckId[] = [
@@ -71,6 +74,7 @@ export const FIXTURE_CHECK_IDS: readonly FixtureCheckId[] = [
   'nondeterministic-value',
   'credential-in-fixture',
   'personal-data',
+  'fingerprint-mismatch',
 ];
 
 /** P0 stops progression: anything that could leak data or corrupt another unit's schema. */
@@ -86,6 +90,9 @@ const SEVERITY: Readonly<Record<FixtureCheckId, Severity>> = {
   'nondeterministic-value': 'P0',
   'credential-in-fixture': 'P0',
   'personal-data': 'P0',
+  // P0: a row whose own evidence contradicts it is worse than a missing row. Nothing notices until
+  // a consumer compares the two, which is the worst moment and the least related code.
+  'fingerprint-mismatch': 'P0',
 };
 
 export type FixtureScalar = string | number | boolean | null;
@@ -236,33 +243,133 @@ export function discoverFixtureFiles(directory: string): readonly string[] {
 export function validateFixtures(directory: string): FixtureValidation {
   const files = discoverFixtureFiles(directory);
   const violations: FixtureViolation[] = [];
-  const manifests: FixtureManifest[] = [];
-  const byDataset = new Map<string, string>();
+  const parsed: FixtureManifest[] = [];
+  const sources = new Map<string, string>();
 
   for (const file of files) {
     const relative = path.relative(process.cwd(), file).split(path.sep).join('/');
-    const parsed = parseManifest(file, relative, violations);
-    if (parsed === null) continue;
+    const manifest = parseManifest(file, relative, violations);
+    if (manifest === null) continue;
+    sources.set(manifest.dataset, relative);
+    parsed.push(manifest);
+  }
 
-    const existing = byDataset.get(parsed.dataset);
+  const checked = validateManifests(parsed, sources);
+  return {
+    manifests: checked.manifests,
+    violations: [...violations, ...checked.violations],
+    filesScanned: files.length,
+  };
+}
+
+/**
+ * Validate manifests that are already in memory — the same checks, minus the parsing.
+ *
+ * This exists because the CLI was not the only way to reach the runner. A programmatic caller
+ * passing hand-built manifests bypassed every ownership, identity, determinism, credential and
+ * personal-data check, which meant the contract was enforced by *the path taken to the runner*
+ * rather than by the runner. The guarantees the fixture contract makes have to hold for whoever
+ * calls, not for whoever calls politely.
+ *
+ * `sources` maps a dataset name to the file it came from, purely so a violation can name it. A
+ * caller with no files omits it and violations are reported against the dataset name.
+ */
+export function validateManifests(
+  manifests: readonly FixtureManifest[],
+  sources: ReadonlyMap<string, string> = new Map(),
+): {
+  readonly manifests: readonly FixtureManifest[];
+  readonly violations: readonly FixtureViolation[];
+} {
+  const violations: FixtureViolation[] = [];
+  const accepted: FixtureManifest[] = [];
+  const byDataset = new Map<string, string>();
+
+  for (const manifest of manifests) {
+    const where = sources.get(manifest.dataset) ?? manifest.dataset;
+
+    const shape = describeShapeProblem(manifest);
+    if (shape !== null) {
+      violations.push({
+        check: 'malformed-manifest',
+        severity: SEVERITY['malformed-manifest'],
+        file: where,
+        dataset: String(manifest.dataset ?? '(unnamed)'),
+        message: shape,
+      });
+      continue;
+    }
+
+    const existing = byDataset.get(manifest.dataset);
     if (existing !== undefined) {
       violations.push({
         check: 'duplicate-identity',
         severity: SEVERITY['duplicate-identity'],
-        file: relative,
-        dataset: parsed.dataset,
-        message: `dataset "${parsed.dataset}" is also declared by ${existing}; a dataset name is a stable identifier and must be unique`,
+        file: where,
+        dataset: manifest.dataset,
+        message: `dataset "${manifest.dataset}" is also declared by ${existing}; a dataset name is a stable identifier and must be unique`,
       });
       continue;
     }
-    byDataset.set(parsed.dataset, relative);
-    manifests.push(parsed);
-    validateManifest(parsed, relative, violations);
+
+    byDataset.set(manifest.dataset, where);
+    accepted.push(manifest);
+    validateManifest(manifest, where, violations);
   }
 
-  validateDependencies(manifests, byDataset, violations);
+  validateDependencies(accepted, byDataset, violations);
+  return { manifests: accepted, violations };
+}
 
-  return { manifests, violations, filesScanned: files.length };
+/**
+ * Structural problems in an in-memory manifest, or null.
+ *
+ * `parseManifest` already rejects these when reading a file. A programmatic caller has not been
+ * through that, and TypeScript types are not a runtime guard — a caller in JavaScript, or one that
+ * cast an `unknown`, can hand over anything at all.
+ */
+function describeShapeProblem(manifest: FixtureManifest): string | null {
+  const candidate = manifest as unknown as Record<string, unknown>;
+
+  if (candidate.manifestVersion !== MANIFEST_VERSION) {
+    return `declares manifestVersion ${JSON.stringify(candidate.manifestVersion)}; this code reads version ${MANIFEST_VERSION} only`;
+  }
+  for (const field of ['dataset', 'owner', 'schema', 'purpose', 'description'] as const) {
+    const value = candidate[field];
+    if (typeof value !== 'string' || value.trim() === '') {
+      return `is missing a non-empty "${field}"`;
+    }
+  }
+  if (!FIXTURE_PURPOSES.includes(candidate.purpose as FixturePurpose)) {
+    return `declares purpose ${JSON.stringify(candidate.purpose)}; expected one of ${FIXTURE_PURPOSES.join(', ')}`;
+  }
+  if (!DATASET_NAME.test(candidate.dataset as string)) {
+    return `dataset "${String(candidate.dataset)}" is not kebab-case`;
+  }
+  if (!Array.isArray(candidate.dependsOn)) return 'is missing a "dependsOn" array';
+  if (!Array.isArray(candidate.tables) || candidate.tables.length === 0) {
+    return 'is missing a non-empty "tables" array';
+  }
+  for (const [index, table] of (candidate.tables as unknown[]).entries()) {
+    if (typeof table !== 'object' || table === null || Array.isArray(table)) {
+      return `tables[${index}] is not an object`;
+    }
+    const entry = table as Record<string, unknown>;
+    if (typeof entry.table !== 'string' || !QUALIFIED_TABLE.test(entry.table)) {
+      return `tables[${index}].table is ${JSON.stringify(entry.table)}; expected schema.table`;
+    }
+    if (
+      !Array.isArray(entry.identity) ||
+      entry.identity.length === 0 ||
+      !(entry.identity as unknown[]).every((column) => typeof column === 'string')
+    ) {
+      return `tables[${index}].identity must be a non-empty array of column names`;
+    }
+    if (!Array.isArray(entry.rows) || entry.rows.length === 0) {
+      return `tables[${index}].rows must be a non-empty array`;
+    }
+  }
+  return null;
 }
 
 function parseManifest(
@@ -439,6 +546,8 @@ function validateManifest(
         checkValue(where, column, value, report);
       }
 
+      checkFingerprint(where, row, report);
+
       const identity = table.identity
         .map((column) => JSON.stringify(row[column] ?? null))
         .join('|');
@@ -453,6 +562,63 @@ function validateManifest(
         seenIdentities.set(identity, index);
       }
     }
+  }
+}
+
+/**
+ * A row that carries both a payload and its fingerprint must carry a fingerprint *of that payload*.
+ *
+ * Recomputed rather than trusted. K-08 writes a fingerprint at append and treats it as the evidence
+ * that the payload was never edited; a fixture that writes the two inconsistently has seeded a row
+ * whose own evidence contradicts it, and nothing notices until a consumer compares them — in code
+ * with no part in creating the problem, long after the fixture was written.
+ *
+ * The rule is expressed over column names rather than over K-08's table, so it applies to any
+ * future table that keeps the same pair. Recomputation happens here, before any database access, so
+ * an inconsistent fixture never reaches a connection.
+ */
+function checkFingerprint(
+  where: string,
+  row: Readonly<Record<string, FixtureJson>>,
+  report: (check: FixtureCheckId, message: string) => void,
+): void {
+  const declared = row.payload_fingerprint;
+  if (declared === undefined) return;
+
+  if (typeof declared !== 'string' || !FINGERPRINT_FORMAT.test(declared)) {
+    report(
+      'fingerprint-mismatch',
+      `${where} has payload_fingerprint ${JSON.stringify(declared)}, which is not 64 lower-case ` +
+        'hex characters. The database CHECK would refuse it too, but not until the load ran',
+    );
+    return;
+  }
+
+  const payload = row.payload;
+  if (payload === undefined) {
+    report(
+      'fingerprint-mismatch',
+      `${where} carries a payload_fingerprint but no payload, so nothing can confirm it. A ` +
+        'fingerprint of an absent payload is a claim about nothing',
+    );
+    return;
+  }
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    report(
+      'fingerprint-mismatch',
+      `${where} has a payload that is not a JSON object, so no fingerprint of it is meaningful`,
+    );
+    return;
+  }
+
+  const recomputed = fingerprintPayload(payload as Readonly<Record<string, unknown>>);
+  if (recomputed !== declared) {
+    report(
+      'fingerprint-mismatch',
+      `${where} declares payload_fingerprint ${declared} but its payload hashes to ${recomputed}. ` +
+        'Either the payload was edited without recomputing, or the fingerprint was copied from ' +
+        'another row — both seed a row whose evidence disagrees with its content',
+    );
   }
 }
 

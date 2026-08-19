@@ -205,6 +205,7 @@ test('every check has a planted fixture that it rejects', () => {
     { check: 'nondeterministic-value', files: ['nondeterministic-value'] },
     { check: 'credential-in-fixture', files: ['credential-in-fixture'] },
     { check: 'personal-data', files: ['personal-data'] },
+    { check: 'fingerprint-mismatch', files: ['fingerprint-mismatch'] },
   ];
 
   for (const scenario of cases) {
@@ -261,6 +262,7 @@ test('data-safety violations are P0 and the rest are P1', () => {
     'nondeterministic-value',
     'credential-in-fixture',
     'personal-data',
+    'fingerprint-mismatch',
   ] as const) {
     assert.equal(severityOf(check), 'P0', `${check} must be P0`);
   }

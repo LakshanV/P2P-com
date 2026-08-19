@@ -23,8 +23,13 @@ a connection string cannot end up in shell history or a process listing. Copy `.
 `.env` and run `npm run db:up && npm run db:ready && npm run db:migrate` first — fixtures write into
 schemas the migrations create.
 
-An invalid fixture set never reaches the database: `load` and `reset` both validate first and refuse
-to open a connection if anything fails.
+An invalid fixture set never reaches the database, and that is enforced by the **runner** rather
+than by the CLI. `seed`, `unseed` and `replace` each run the complete validation over whatever
+manifests they are handed and refuse before opening a connection. Validating only in the CLI would
+have meant the contract was enforced by the route taken to the runner: a programmatic caller passing
+hand-built manifests would have bypassed every ownership, identity, determinism, credential,
+personal-data, fingerprint and dependency check, and a guarantee that holds only for polite callers
+is not one.
 
 ---
 
@@ -36,6 +41,12 @@ Two different guards, because they refuse two different mistakes.
 |---|---|---|
 | `db:seed` | any host that is not this machine; any database whose name contains `prod`, `production`, `live`, `staging`, `stage`, `uat` or `preprod`; an unparseable connection string | `assertSeedableTarget` |
 | `db:seed:reset` | everything above, **plus** any database not ending in `_test`, **plus** a missing or wrong `--confirm=<database>` | `assertSafeTestTarget` (the existing provisioning guard) and an explicit confirmation |
+
+`reset` deletes and reloads in **one transaction**. It was previously an unseed followed by a
+seed — each atomic on its own, which sounds like enough and is not: between the two commits the
+database held no fixture data at all, and a reload that failed there left an empty database and an
+error message. Any failure in either half now rolls the whole replacement back, and the original
+rows are still there.
 
 The development database is loadable and **never replaceable**. `reset` deletes rows, and the
 database somebody has been working in all afternoon is not where that should be discovered. Only the
@@ -82,6 +93,7 @@ not own the tables it writes into, and a truncate would remove rows it never cre
 | `nondeterministic-value` | `now()`, `random()`, `gen_random_uuid()`, `DEFAULT` — a baseline whose content depends on when it loaded is not a baseline |
 | `credential-in-fixture` | a seeded API key, private key or connection string. Seed data gets copied; a seeded credential is a real one the moment it lands somewhere shared |
 | `personal-data` | a deliverable email address, a real-shaped phone number, or a 12–19 digit run. Use `example.com`, a `.test`/`.invalid` host, or a reserved `+1555…` range |
+| `fingerprint-mismatch` | a row carrying a `payload_fingerprint` that is not the fingerprint of its own `payload`. Recomputed with the same canonical SHA-256 K-08 uses, before any database access |
 
 Every rule has a planted-invalid fixture in `tests/fixtures/seed/` that the validator must reject.
 A check with no planted violation is a check nobody has ever seen fail.
@@ -101,7 +113,10 @@ one:
 3. Give every table an `identity`. Without one, the second load duplicates every row.
 4. Use fixed instants and literal identifiers throughout. Prefix ids with `fixture-` or similar so
    seeded rows are recognisable in a database somebody is debugging.
-5. Run `npm run check:fixtures`.
+5. If a table keeps a payload and a fingerprint of it, compute the fingerprint from the payload —
+   the validator recomputes and compares, so a copied or stale value is refused.
+6. Run `npm run check:fixtures`. Calling the runner directly runs the same checks, so there is no
+   route that skips them.
 
 Loading order is a topological sort of `dependsOn` with ties broken by dataset name, so the same
 manifests always produce the same plan. Within a dataset, tables load in declared order and rows in
@@ -148,10 +163,12 @@ development database with `npm run db:reset`.
   real `CHECK` constraints, foreign keys and unique indexes is **unverified**.
   `tests/integration/fixtures.integration.ts` makes exactly that check and skips, with its reason
   stated, when there is no server.
-- The K-08 fixtures carry hand-computed `payload_fingerprint` values matching K-08's algorithm.
-  Nothing recomputes them, so editing a payload without recomputing its fingerprint would produce a
-  row whose evidence disagrees with its content. That would be caught by the first real consumer and
-  by nothing before it.
+- The K-08 `payload_fingerprint` values are **recomputed and compared** by the validator, using
+  the same canonical SHA-256 `EventService` uses, so editing a payload without recomputing its
+  fingerprint is refused before any database access. The algorithm is duplicated in
+  `platform/fixtures/fingerprint.ts` rather than imported: `platform/` sits below `kernel/` and
+  may not import upward from it. `tests/seed-hardening.test.ts` runs both implementations over a
+  corpus — including every payload in these fixtures — and fails if they ever disagree.
 - There is no fixture versioning across schema changes. A migration that changes a column these
   datasets write leaves them invalid, and the validator will not notice — it checks the manifest
   contract, not the database schema. The live test above is what would catch it.

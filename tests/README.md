@@ -22,6 +22,7 @@
 | `events-repository.test.ts` | K-08 port conformance, adapter queries and module contract. |
 | `seed-fixtures.test.ts` | The fixture-manifest contract, and one planted-invalid fixture per check (FND-002d). |
 | `seed-runner.test.ts` | The seed runner: ordering, atomicity, idempotency and target safety. |
+| `seed-hardening.test.ts` | Validation that direct runner calls cannot bypass, single-transaction replacement, and recomputed payload fingerprints. |
 | `kernel-overview.test.ts` | The kernel README and K-05's public commentary must describe the kernel that is actually on disk. |
 | `events-concurrency.test.ts` | K-08 commit-time conflict parity, convergent concurrent retries, and appending inside a caller's transaction. |
 | `helpers/recording-database.ts` | Records the SQL the PostgreSQL adapter issues. Not a test. |

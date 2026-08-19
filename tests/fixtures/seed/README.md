@@ -22,3 +22,6 @@ because formatting them would rewrite the very text the tests assert against.
 | `nondeterministic-value.fixture.json` | `nondeterministic-value` | `now()` in a row, so the baseline depends on the clock |
 | `credential-in-fixture.fixture.json` | `credential-in-fixture` | a seeded API key |
 | `personal-data.fixture.json` | `personal-data` | a deliverable email address at a real domain |
+| `fingerprint-mismatch.fixture.json` | `fingerprint-mismatch` | a payload edited without recomputing its fingerprint |
+| `fingerprint-mismatch-altered-hash.fixture.json` | `fingerprint-mismatch` | a fingerprint edited without recomputing from the payload |
+| `fingerprint-mismatch-orphan.fixture.json` | `fingerprint-mismatch` | a fingerprint with no payload to confirm it |

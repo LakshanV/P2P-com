@@ -26,7 +26,7 @@ import {
   validateFixtures,
   type FixtureValidation,
 } from './manifest.ts';
-import { SeedError, assertReplaceable, assertSeedableTarget, seed, unseed } from './runner.ts';
+import { SeedError, assertReplaceable, assertSeedableTarget, replace, seed } from './runner.ts';
 
 const repoRoot = process.cwd();
 const directory = path.join(repoRoot, FIXTURES_DIR);
@@ -131,12 +131,18 @@ async function main(): Promise<number> {
   }
 
   // reset: destructive, and refused anywhere but the guarded derived _test database.
+  //
+  // One operation rather than an unseed followed by a seed. Between two commits the database would
+  // hold no fixture data at all, and a reload that failed there — a constraint the edited fixtures
+  // now violate, a dropped connection — would leave the operator with an empty database and an
+  // error message. `replace` deletes and reloads in one transaction, so a failure leaves the
+  // original rows exactly where they were.
   assertReplaceable(connectionString, argumentValue('confirm'));
-  const removed = await unseed(database, { manifests: validation.manifests });
-  const report = await seed(database, { manifests: validation.manifests });
+  const report = await replace(database, { manifests: validation.manifests });
   process.stdout.write(`target        : ${database.description}\n`);
   process.stdout.write(
-    `RESULT: ${removed.rowsInserted} row(s) removed, ${report.rowsInserted} re-inserted\n`,
+    `RESULT: ${report.rowsRemoved} row(s) removed and ${report.rowsInserted} re-inserted, ` +
+      'in one transaction\n',
   );
   return 0;
 }
