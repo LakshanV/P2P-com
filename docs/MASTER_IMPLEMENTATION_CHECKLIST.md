@@ -9,7 +9,9 @@
 - [CURRENT_IMPLEMENTATION_STATUS.md](./CURRENT_IMPLEMENTATION_STATUS.md)
 - [MODULE_MAP.md](./MODULE_MAP.md)
 
-> **Baseline truth: no implementation capability in this checklist is complete.** The repository contains specifications and this documentation baseline only. Every implementation item below is `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`. The only `COMPLETE` item is P0-01, the documentation artefacts produced by DOC-001, each backed by a file that exists at the recorded path.
+> **Baseline truth: no implementation capability in this checklist is complete.** The repository contains the specifications, the documentation baseline, and the pinned toolchain delivered by FND-001a. There is no CI, no boundary enforcement, no database, no kernel component, no business module and no UI.
+>
+> The only `COMPLETE` item is P0-01, the documentation artefacts produced by DOC-001. P0-03 through P0-08 are `IN PROGRESS` — advanced by FND-001a but deliberately not marked complete, because FND-001 as a whole is unfinished. Every other implementation item is `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`.
 
 ---
 
@@ -84,7 +86,7 @@ FOLLOW-UP:
 
 ## A. Phase 0 — Foundation
 
-Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests pass before Phase 1 begins.** Phase 0 is not complete and has not begun.
+Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests pass before Phase 1 begins.** Phase 0 has begun (toolchain only) and is far from complete.
 
 ### A.1 Repository, toolchain and CI
 
@@ -92,12 +94,12 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 |---|---|---|---|
 | P0-01 | `/docs` planning baseline created, with reproducible link validation | `[x]` COMPLETE | `docs/CURRENT_IMPLEMENTATION_STATUS.md`, `docs/MASTER_IMPLEMENTATION_CHECKLIST.md`, `docs/MODULE_MAP.md`, `docs/tools/validate-doc-links.mjs` — created by DOC-001. Validated by `node docs/tools/validate-doc-links.mjs` → 68 internal links across 3 files, 0 broken, exit 0. Full evidence block: [CURRENT_IMPLEMENTATION_STATUS.md §11](./CURRENT_IMPLEMENTATION_STATUS.md#11-evidence-register). Documentation artefact, not an implementation capability. |
 | P0-02 | Remaining `/docs` set from v3 §42 (ARCHITECTURE, DATABASE_SCHEMA, API_CONTRACTS, EVENT_CATALOG, AI_ARCHITECTURE, AI_MODEL_REGISTRY, SECURITY_MODEL, PERMISSIONS_MATRIX, POLICY_CATALOG, TEST_STRATEGY, UX_SYSTEM, DEPLOYMENT_GUIDE, OPERATIONS_RUNBOOK, DECISIONS_LEDGER, KNOWN_LIMITATIONS, CHANGELOG, MASTER_PRODUCT_SPEC) | `[ ]` NOT STARTED | NONE — files do not exist |
-| P0-03 | Repository source structure (`/platform`, `/kernel`, `/modules`, `/design-system`, `/apps`, `/tests`) | `[ ]` NOT STARTED | NONE — no source tree |
-| P0-04 | Runtime and package manifest chosen and committed | `[ ]` NOT STARTED | NONE — no package manifest |
-| P0-05 | Build pipeline (compile/bundle) | `[ ]` NOT STARTED | NONE |
-| P0-06 | Type checking | `[ ]` NOT STARTED | NONE |
-| P0-07 | Lint and format configuration | `[ ]` NOT STARTED | NONE |
-| P0-08 | Test framework and runner | `[ ]` NOT STARTED | NONE — no test infrastructure |
+| P0-03 | Repository source structure (`/platform`, `/kernel`, `/modules`, `/design-system`, `/apps`, `/tests`) | `[~]` IN PROGRESS | Partial (FND-001a): `platform/` and `tests/` exist. `kernel/`, `modules/`, `design-system/` and `apps/` do not. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
+| P0-04 | Runtime and package manifest chosen and committed | `[~]` IN PROGRESS | Satisfied by FND-001a — `.nvmrc` 26.7.0, `engines.node >=22.18.0`, exact devDependency pins, committed lockfile, `npm ci` exit 0. Held at IN PROGRESS until FND-001 completes. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
+| P0-05 | Build pipeline (compile/bundle) | `[~]` IN PROGRESS | `npm run build` exit 0, emits `dist/`. Compilation check only — no runnable entry point exists yet. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
+| P0-06 | Type checking | `[~]` IN PROGRESS | `npm run typecheck` exit 0, strict with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
+| P0-07 | Lint and format configuration | `[~]` IN PROGRESS | `npm run lint` and `npm run format:check` both exit 0. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
+| P0-08 | Test framework and runner | `[~]` IN PROGRESS | `npm test` exit 0 — tests 7, pass 7, fail 0. Runner proven to report failure (exit 1) on a deliberately failing assertion. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-09 | CI pipeline running build + typecheck + lint + tests + `node docs/tools/validate-doc-links.mjs` on every change | `[ ]` NOT STARTED | NONE — no CI configuration |
 | P0-10 | Import-boundary / layering enforcement checks ([MODULE_MAP.md](./MODULE_MAP.md) §13) | `[ ]` NOT STARTED | NONE |
 | P0-11 | Financial-zone and AI-provider-import enforcement checks | `[ ]` NOT STARTED | NONE |
@@ -811,12 +813,12 @@ The v1.0 guide is subordinate to v3 (see the hierarchy decision in [CURRENT_IMPL
 
 ## K. Baseline counts
 
-**474 tracked items** carry an explicit status at baseline. Counts verified mechanically over this file.
+**474 tracked items** carry an explicit status. Counts verified mechanically over this file after FND-001a.
 
 | Status | Count | Notes |
 |---|---:|---|
-| `[ ]` NOT STARTED | 459 | |
-| `[~]` IN PROGRESS | 1 | X-52 only — the standing obligation to keep the status document current. Not an implementation capability. |
+| `[ ]` NOT STARTED | 453 | |
+| `[~]` IN PROGRESS | 7 | X-52 (standing documentation obligation) plus P0-03…P0-08, advanced by FND-001a. |
 | `[?]` NEEDS REVIEW | 0 | Nothing has been submitted for review. |
 | `[x]` COMPLETE | 1 | P0-01 only — the three documentation artefacts of DOC-001, each backed by a file that exists. Not an implementation capability. |
 | `[!]` BLOCKED | 8 | P0-19, P0-22, P0-24, P0-26, P0-28, P0-40, P6-04, P14-04 — all external credentials or legal decisions (§I). |

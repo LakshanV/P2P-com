@@ -21,7 +21,9 @@ const SKIP_DIRS = new Set(['tools']);
 
 /** Recursively collect Markdown files under /docs, excluding tooling directories. */
 function collectMarkdown(dir, acc = []) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of fs
+    .readdirSync(dir, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name))) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) collectMarkdown(full, acc);
@@ -44,7 +46,7 @@ function slugify(heading, seen) {
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // links render as their text
     .toLowerCase()
     .trim()
-    .replace(/[^\p{L}\p{N} \-]/gu, '')
+    .replace(/[^\p{L}\p{N} -]/gu, '')
     .replace(/ /g, '-');
   const n = seen.get(base) ?? 0;
   seen.set(base, n + 1);
@@ -57,7 +59,10 @@ function anchorsOf(file) {
   const seen = new Map();
   let inFence = false;
   for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
     if (inFence) continue;
     const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
     if (m) anchors.add(slugify(m[2], seen));
@@ -71,25 +76,34 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-const anchorIndex = new Map(files.map(f => [path.resolve(f), anchorsOf(f)]));
+const anchorIndex = new Map(files.map((f) => [path.resolve(f), anchorsOf(f)]));
 
-const rel = f => path.relative(DOCS_DIR, f).split(path.sep).join('/');
+const rel = (f) => path.relative(DOCS_DIR, f).split(path.sep).join('/');
 const broken = [];
 const perFile = [];
-let internal = 0, external = 0;
+let internal = 0,
+  external = 0;
 
 for (const file of files) {
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-  let inFence = false, fileLinks = 0;
+  let inFence = false,
+    fileLinks = 0;
 
   lines.forEach((line, idx) => {
-    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return; }
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      return;
+    }
     if (inFence) return;
 
     for (const m of line.matchAll(/(?<!!)\[(?:[^\]]*)\]\(\s*([^)\s]+?)\s*\)/g)) {
       const target = m[1];
-      if (/^(https?:|mailto:|tel:)/i.test(target)) { external++; continue; }
-      internal++; fileLinks++;
+      if (/^(https?:|mailto:|tel:)/i.test(target)) {
+        external++;
+        continue;
+      }
+      internal++;
+      fileLinks++;
 
       const hashAt = target.indexOf('#');
       const filePart = hashAt === -1 ? target : target.slice(0, hashAt);
@@ -108,7 +122,10 @@ for (const file of files) {
         if (!anchorIndex.has(resolved)) {
           // Anchor into a file outside the scanned set: index it on demand.
           if (resolved.endsWith('.md')) anchorIndex.set(resolved, anchorsOf(resolved));
-          else { broken.push(`${where}  ANCHOR ON NON-MARKDOWN TARGET  ${target}`); continue; }
+          else {
+            broken.push(`${where}  ANCHOR ON NON-MARKDOWN TARGET  ${target}`);
+            continue;
+          }
         }
         if (!anchorIndex.get(resolved).has(anchor)) {
           broken.push(`${where}  MISSING ANCHOR  ${target}`);
@@ -117,7 +134,11 @@ for (const file of files) {
     }
   });
 
-  perFile.push({ file: rel(file), links: fileLinks, anchors: anchorIndex.get(path.resolve(file)).size });
+  perFile.push({
+    file: rel(file),
+    links: fileLinks,
+    anchors: anchorIndex.get(path.resolve(file)).size,
+  });
 }
 
 console.log('JAYA documentation link validation');
@@ -125,7 +146,9 @@ console.log('==================================');
 console.log(`docs root      : ${rel(DOCS_DIR) || '.'}  (${DOCS_DIR})`);
 console.log(`files scanned  : ${files.length}`);
 for (const r of perFile) {
-  console.log(`  ${r.file.padEnd(38)} internal links: ${String(r.links).padStart(3)}   headings/anchors: ${String(r.anchors).padStart(3)}`);
+  console.log(
+    `  ${r.file.padEnd(38)} internal links: ${String(r.links).padStart(3)}   headings/anchors: ${String(r.anchors).padStart(3)}`,
+  );
 }
 console.log(`internal links : ${internal}`);
 console.log(`external links : ${external} (skipped — out of scope)`);

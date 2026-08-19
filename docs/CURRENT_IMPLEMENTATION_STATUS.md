@@ -1,7 +1,8 @@
 # JAYA — CURRENT IMPLEMENTATION STATUS
 
-**Overall status:** `SPECIFICATION ONLY — NO IMPLEMENTATION`
+**Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
+**Last updated:** 2026-08-19 by task FND-001a (first FND-001 subtask: pinned toolchain and test harness)
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -9,7 +10,11 @@
 - [MASTER_IMPLEMENTATION_CHECKLIST.md](./MASTER_IMPLEMENTATION_CHECKLIST.md)
 - [MODULE_MAP.md](./MODULE_MAP.md)
 
-> **Read this first.** The repository contains two specification documents and this planning baseline. There is no application, no database, no CI, no application tests, and no deployment — only the documentation link validator described in §2. Nothing has been built. Every implementation capability in the checklist is `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`. No implementation item is `COMPLETE` or `IN PROGRESS`.
+> **Read this first.** The repository now installs, builds, type-checks, lints, format-checks and tests from a clean dependency state. That is the whole of what exists in code.
+>
+> There is **no CI, no boundary enforcement, no database, no kernel component, no business module and no UI**. FND-001 is **not complete** — this is its first subtask only (FND-001a). Nothing in the checklist is marked `COMPLETE`: P0-03 through P0-08 are `IN PROGRESS`, and P0-09 through P0-13 remain `NOT STARTED`.
+>
+> Exact commands and results: §11.1.
 
 ---
 
@@ -34,25 +39,25 @@
 
 | Dimension | State |
 |---|---|
-| Phase | Phase 0 — Foundation. **Not started.** |
-| Application code | None |
+| Phase | Phase 0 — Foundation. **In progress**, early. Toolchain only. |
+| Application code | None. Substrate only: one module (`platform/runtime/node-version.ts`) making the runtime pin checkable. |
 | Database | None |
 | Migrations | None |
-| Tests | None |
-| CI | None |
+| Tests | 7 passing (`npm test`, exit 0) — substrate only; no business logic exists to test |
+| CI | None — deliberately out of scope for this subtask |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
 | Monitoring | None |
 | Modules implemented | 0 of 62 (15 kernel components + 47 business modules) |
 | Module contracts written | 0 of 62 |
-| Tracked requirements | 474, each with an explicit status; **0 of 472 implementation items complete** |
+| Tracked requirements | 474, each with an explicit status; **0 of 472 implementation items complete**. 6 are `IN PROGRESS` (P0-03…P0-08). |
 | Release gates met | 0 of 26 |
-| Open P0 defects | 0 (no code exists to defect) |
-| Open P1 defects | 0 (no code exists to defect) |
+| Open P0 defects | 0 |
+| Open P1 defects | 0 |
 | Open blockers | 9, none on the current critical path |
-| Permitted completion language | *"Planning baseline established."* Not "phase complete", not "MVP candidate", not "release candidate". |
+| Permitted completion language | *"Planning baseline established; toolchain substrate in progress."* Not "FND-001 complete", not "Phase 0 complete", not "MVP candidate". |
 
-**Per v3 §64**, no completion claim beyond documentation may be made. Per v3 §54, nothing containing a placeholder may be called complete. The accurate description of this repository is: **a specification with a planning baseline and no build.**
+**Per v3 §64**, no completion claim beyond the toolchain may be made. Per v3 §54, nothing containing a placeholder may be called complete. The accurate description of this repository is: **a specification with a planning baseline and a working build/test harness, and no product.**
 
 ---
 
@@ -70,9 +75,20 @@ Verified by direct inspection of the working tree at baseline time.
 | `docs/MODULE_MAP.md` | Planning baseline | Created by DOC-001. |
 | `docs/tools/validate-doc-links.mjs` | Documentation tooling | Link and anchor validator for the `/docs` Markdown set. Created by DOC-001. Not application code, not part of any module; requires only a Node runtime and no package manifest. |
 
-**That is the entire repository.** There is no `package.json` or equivalent manifest, no source directory, no test directory, no CI configuration, no migration directory, no environment configuration, and no lockfile. `git log` shows two seed commits only.
+**Added by FND-001a:**
 
-DOC-001 was explicitly scoped to documentation and **did not scaffold application code**. No source file was created.
+| Path | Type | Description |
+|---|---|---|
+| `package.json`, `package-lock.json`, `.nvmrc` | Toolchain | Pinned runtime (`.nvmrc` = 26.7.0, `engines.node >=22.18.0`, `engines.npm >=10`) and six devDependencies pinned to exact versions. |
+| `tsconfig.json`, `tsconfig.build.json` | Toolchain | Strict TypeScript; erasable-syntax-only so Node runs the sources directly with no build step between editing and testing. |
+| `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitattributes`, `.gitignore` | Toolchain | Type-aware lint, formatting, line-ending and ignore rules. |
+| `platform/runtime/node-version.ts` | Substrate | Version parsing, comparison and minimum-range checking, so the `engines.node` pin is verifiable from code instead of only declared. |
+| `platform/README.md` | Substrate | Ownership note for the substrate root. |
+| `tests/node-version.test.ts` | Tests | 7 tests, including one asserting the running Node satisfies the declared `engines.node`. |
+
+**That is the entire repository.** There is no CI configuration, no boundary enforcement, no database, no migration directory, no environment configuration, no kernel component, no business module and no UI. The `kernel/`, `modules/`, `design-system/` and `apps/` roots do not exist yet.
+
+DOC-001 was scoped to documentation and created no source file. FND-001a was scoped to the toolchain and created **no CI, boundary-enforcement, database, kernel, business-module or UI functionality**.
 
 ---
 
@@ -123,21 +139,22 @@ Modular monolith first; AI recommends while deterministic systems execute; expli
 
 ## 4. Absent infrastructure
 
-Everything in this table is absent. This is the honest inventory, not a backlog summary.
+This is the honest inventory, not a backlog summary. Items delivered by FND-001a are marked present; everything else is absent.
 
 ### 4.1 Development infrastructure
 
 | Item | State | Checklist ID |
 |---|---|---|
-| Runtime / language toolchain | Absent | P0-04 |
-| Package manifest and lockfile | Absent | P0-04 |
-| Source directory structure | Absent | P0-03 |
-| Build pipeline | Absent | P0-05 |
-| Type checking | Absent | P0-06 |
-| Lint and formatting | Absent | P0-07 |
-| Test framework | Absent | P0-08 |
-| CI pipeline | Absent | P0-09 |
-| Boundary / layering enforcement | Absent | P0-10, P0-11 |
+| Runtime / language toolchain | **Present** (FND-001a) | P0-04 |
+| Package manifest and lockfile | **Present** | P0-04 |
+| Source directory structure | **Partial** — `platform/`, `tests/` only; `kernel/`, `modules/`, `design-system/`, `apps/` not created | P0-03 |
+| Build pipeline | **Present** — compilation to `dist/`; no runnable entry point exists yet | P0-05 |
+| Type checking | **Present** | P0-06 |
+| Lint and formatting | **Present** | P0-07 |
+| Test framework | **Present** (7 tests) | P0-08 |
+| CI pipeline | Absent — out of scope for this subtask | P0-09 |
+| Boundary / layering enforcement | Absent — out of scope for this subtask | P0-10, P0-11 |
+| Contributor documentation | Absent | P0-12 |
 | Git workflow conventions | Absent | P0-13 |
 
 ### 4.2 Data infrastructure
@@ -249,7 +266,24 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 ### TASK FND-001 — Platform substrate, boundary enforcement, and test harness
 
-**Status:** READY. Not started. No blocker applies.
+**Status:** IN PROGRESS. Subtask FND-001a delivered; the remaining subtasks are not started. No blocker applies.
+
+### Subtask breakdown
+
+FND-001 is being delivered in bounded increments so each one is committed against a verified,
+reproducible result rather than as a single large change.
+
+| Subtask | Scope | Checklist items | State |
+|---|---|---|---|
+| **FND-001a** | Pinned Node/TypeScript/npm toolchain, lockfile, minimal `platform/` and `tests/` structure, working clean-install `build` / `typecheck` / `lint` / `format:check` / `test` | P0-04 fully; P0-03, P0-05…P0-08 partially | **Delivered** — evidence §11.1. Nothing marked COMPLETE. |
+| FND-001b | Remaining source roots (`kernel/`, `modules/`, `design-system/`, `apps/`), architecture manifest, and the four executable boundary checks with planted-violation tests | P0-03, P0-10, P0-11 | Not started |
+| FND-001c | GitHub Actions CI running every command, plus dependency audit | P0-09 | Not started |
+| FND-001d | Contributor documentation and git workflow conventions | P0-12, P0-13 | Not started |
+
+**No item is COMPLETE.** P0-03 through P0-08 are `IN PROGRESS`; P0-09 through P0-13 remain
+`NOT STARTED`. FND-001 itself cannot be complete until FND-001b, FND-001c and FND-001d land and
+its acceptance criteria — including a planted violation being rejected by each boundary check —
+are met.
 
 | Field | Value |
 |---|---|
@@ -346,6 +380,7 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | P0-01b — checklist baseline | COMPLETE | File | [`docs/MASTER_IMPLEMENTATION_CHECKLIST.md`](./MASTER_IMPLEMENTATION_CHECKLIST.md) |
 | P0-01c — module map baseline | COMPLETE | File | [`docs/MODULE_MAP.md`](./MODULE_MAP.md) |
 | P0-01d — link validator | COMPLETE | File + reproducible command | `docs/tools/validate-doc-links.mjs`, run as `node docs/tools/validate-doc-links.mjs` |
+| FND-001a — pinned toolchain and test harness | DELIVERED, not COMPLETE | Commands + exit codes | See §11.1. P0-04 satisfied; P0-03, P0-05…P0-08 partial and `IN PROGRESS`; P0-09…P0-13 `NOT STARTED`. |
 
 **Evidence block for DOC-001:**
 
@@ -401,7 +436,111 @@ FOLLOW-UP:          FND-001 (§8). Then FND-002…FND-006, DOC-002. FND-001 shou
 
 **Every other item in the checklist records `NONE — no implementation`.** That is the accurate value.
 
-### 11.1 Corrections applied after first review
+### 11.1 Evidence — FND-001a (pinned toolchain and test harness)
+
+Every command below was run from a **clean dependency state**: `node_modules/` and `dist/`
+deleted, then `npm ci` against the committed lockfile.
+
+```text
+ITEM ID:            FND-001a (first subtask of FND-001)
+MODULE / PHASE:     Platform substrate / Phase 0, build step B-0
+STATUS:             DELIVERED — but no checklist item is marked COMPLETE.
+                    P0-04 is satisfied; P0-03, P0-05..P0-08 are partial; all are IN PROGRESS.
+                    FND-001 as a whole is IN PROGRESS.
+
+IMPLEMENTED:        Pinned toolchain: .nvmrc = 26.7.0; engines.node >=22.18.0, engines.npm >=10;
+                    six devDependencies pinned to exact versions (no carets) with a committed
+                    package-lock.json.
+                    Strict TypeScript: strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes,
+                    noUnusedLocals/Parameters, verbatimModuleSyntax, erasableSyntaxOnly — the last
+                    of which lets Node run the sources directly, so there is no build step between
+                    editing and testing.
+                    ESLint 10 flat config with type-aware typescript-eslint; Prettier.
+                    platform/runtime/node-version.ts — parseVersion, compareVersions,
+                    satisfiesMinimum. Makes the engines.node pin checkable from code rather than
+                    merely declared in a manifest. Refuses version ranges it does not understand
+                    instead of silently accepting them.
+                    tests/node-version.test.ts — 7 tests.
+
+TESTED:             7 tests, all real assertions: version parsing including prerelease and build
+                    metadata; rejection of six malformed inputs; ordering that is numeric rather
+                    than lexicographic (22.18.0 > 22.9.0); inclusive minimum boundary; refusal of
+                    five unsupported range forms; and one test that reads engines.node from
+                    package.json and asserts the running Node satisfies it.
+
+TEST COMMANDS:      npm ci
+                    npm run typecheck
+                    npm run lint
+                    npm run format:check
+                    npm run build
+                    npm test
+                    (npm run verify chains the last five in order)
+
+TEST RESULTS:       npm ci                exit 0   added 91 packages
+                    npm run typecheck     exit 0   tsc -p tsconfig.json --noEmit
+                    npm run lint          exit 0   eslint .
+                    npm run format:check  exit 0   All matched files use Prettier code style!
+                    npm run build         exit 0   tsc -p tsconfig.build.json
+                                                   emitted dist/runtime/node-version.js,
+                                                   .d.ts and .js.map
+                    npm test              exit 0   tests 7, pass 7, fail 0, cancelled 0,
+                                                   skipped 0, todo 0
+                    npm run verify        exit 0   full chain, clean dependency state
+
+                    Harness failure proof: node --test over a throwaway failing assertion,
+                    run outside the repository, exits 1 and reports the failure — so a green
+                    suite is a real signal, not a runner that cannot fail.
+
+SECURITY:           No secrets committed; .env* git-ignored. No authentication, permissions,
+                    network access or data handling exists to review. Dependency audit is NOT
+                    configured — that belongs to FND-001c.
+
+UI/UX REVIEW:       N/A — no user-facing surface.
+
+MIGRATIONS:         None. No database, no migration system. Out of scope; FND-002.
+
+EVENTS:             None. No event infrastructure exists.
+
+CONFIG / POLICY:    No business constants introduced. No policy values.
+
+KNOWN LIMITATIONS:  1. No CI. Every command was verified locally only; nothing runs automatically
+                       on a change. FND-001c.
+                    2. No boundary enforcement. Every architectural rule in MODULE_MAP is still
+                       advisory, enforced by review only. Risk R-02 is unmitigated. FND-001b.
+                    3. Source layout is partial: platform/ and tests/ only. kernel/, modules/,
+                       design-system/ and apps/ do not exist, so P0-03 is not satisfied.
+                    4. build is a compilation check. Nothing executable is emitted yet, because
+                       no entry point exists — so the build proves the code compiles, not that a
+                       shipped artefact runs.
+                    5. satisfiesMinimum supports only the ">=x.y.z" form actually used by this
+                       repository. Deliberate: a range checker that silently accepts syntax it
+                       does not understand is worse than none.
+                    6. No contributor documentation and no git workflow conventions. FND-001d.
+
+DEFERRED:           P0-03 completion, P0-09, P0-10, P0-11, P0-12, P0-13 to FND-001b/c/d.
+                    P0-14..P0-18 (data layer) to FND-002.
+
+COMMITS:            Recorded at commit time for this branch.
+
+FILES:              .nvmrc, .gitignore, .gitattributes, .editorconfig, .prettierrc.json,
+                    .prettierignore, package.json, package-lock.json, tsconfig.json,
+                    tsconfig.build.json, eslint.config.mjs, platform/README.md,
+                    platform/runtime/node-version.ts, tests/node-version.test.ts
+                    Also modified: docs/tools/validate-doc-links.mjs — one redundant regex
+                    escape removed so that "npm run lint" passes across the repository.
+                    Behaviour unchanged: validator output identical before and after
+                    (68 internal links, 0 broken).
+
+FOLLOW-UP:          FND-001b (source roots + boundary enforcement), then FND-001c (CI),
+                    then FND-001d (contributor docs). FND-001 stays IN PROGRESS until all land.
+```
+
+**Reproducing it:** `npm ci && npm run verify` from a clean clone. Exit 0 means every claim above
+still holds.
+
+---
+
+### 11.2 Corrections applied to the DOC-001 baseline after first review
 
 Two defects were found in the DOC-001 baseline by review and corrected. Recorded here per v3 §58 rather than silently patched.
 

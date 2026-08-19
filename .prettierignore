@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+package-lock.json
+
+# Markdown is governed by docs/tools/validate-doc-links.mjs, not by Prettier. Reformatting the
+# planning baseline would churn hand-aligned tables for no verification benefit.
+*.md
+
+# Orchestration state owned by the supervisor, not by this repository's tooling.
+.conductor/
