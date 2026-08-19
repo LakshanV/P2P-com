@@ -15,14 +15,14 @@
     {
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
-      "status": "blocked",
-      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent despite repeated instructions; execution/push capability must now be diagnosed before reissuing implementation. FND-001d remains afterward."
+      "status": "in_progress",
+      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated implementation instructions; execution/environment diagnosis is now required before another attempt. FND-001d remains afterward."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "FND-001b has documented local evidence and planted negative fixtures. GitHub still reports no checks, so CI-related acceptance requires a provider-observed passing workflow."
+      "notes": "FND-001b has documented local evidence and planted negative fixtures. GitHub still reports no checks, so CI acceptance requires a provider-observed passing workflow."
     },
     {
       "id": 5,
@@ -49,7 +49,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Repeated FND-001c implementation instructions produced neither repository changes nor a blocker report, suggesting an unresolved execution, branch, authentication, or push-capability problem."
+    "Repeated FND-001c instructions have produced neither repository changes nor exact failure evidence, suggesting an unreported execution, environment, or push blocker."
   ],
-  "last_instruction": "Do not change repository files yet; diagnose why the previous FND-001c instruction was not executed by reporting the current branch, `git status --short`, configured remotes, push/authentication capability, whether `.github/workflows` can be created locally, and the exact blocker or failure that prevented implementation and push."
+  "last_instruction": "Investigate why the immediately preceding FND-001c instruction produced no repository changes: do not modify files; report the current branch and working-tree status, whether `.github/workflows` can be created, the exact outputs of `node --version`, `npm --version`, `git remote -v`, and `git push --dry-run`, and identify the concrete blocker (if any) that prevented implementation and push."
 }
