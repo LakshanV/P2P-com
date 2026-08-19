@@ -116,8 +116,8 @@ v3 §1 defines the hierarchy of authority and places `JAYA_MASTER_AUTONOMOUS_DEV
 4. `docs/ARCHITECTURE.md` *(not yet created)*
 5. Module specifications — [`docs/MODULE_MAP.md`](./MODULE_MAP.md) and the per-module contracts *(not yet created)*
 6. API / database / event contracts *(not yet created)*
-7. Existing tests *(none)*
-8. Existing implementation *(none)*
+7. Existing tests — `tests/node-version.test.ts`, `tests/toolchain.test.ts` (15 tests, substrate only)
+8. Existing implementation — `platform/runtime/node-version.ts`, `platform/runtime/package-manager.ts` (substrate only; no kernel component, module or UI)
 9. Temporary chat / run instructions
 10. `JAYA___Autonomous_Build_Master_Development_Guide___Completion_Checklist_v1.0.md` — **compatible detail only**
 
@@ -153,7 +153,7 @@ This is the honest inventory, not a backlog summary. Items delivered by FND-001a
 | Build pipeline | **Present** — compilation to `dist/`; no runnable entry point exists yet | P0-05 |
 | Type checking | **Present** | P0-06 |
 | Lint and formatting | **Present** | P0-07 |
-| Test framework | **Present** (7 tests) | P0-08 |
+| Test framework | **Present** (15 tests) | P0-08 |
 | CI pipeline | Absent — out of scope for this subtask | P0-09 |
 | Boundary / layering enforcement | Absent — out of scope for this subtask | P0-10, P0-11 |
 | Contributor documentation | Absent | P0-12 |
@@ -615,4 +615,4 @@ Neither defect changed any status, count or gate: the baseline remains 474 track
 4. **Defects are recorded when found, not when fixed.** A P0 stops all progression the moment it is identified.
 5. **New requirements are classified before implementation** (v3 §67): new module, module extension, policy change, configuration change, UI/UX change, AI change, data change, or security/risk change — then impact-analysed against the owning module and its contracts.
 6. **Nothing is deleted.** Superseded requirements move to `OUT OF SCOPE WITH REASON` and remain visible (v3 §53).
-7. **Language discipline.** Use only accurate status words: phase complete, module complete, MVP candidate, release candidate, partially complete, blocked (v3 §64). Today the only accurate description is *planning baseline established*.
+7. **Language discipline.** Use only accurate status words: phase complete, module complete, MVP candidate, release candidate, partially complete, blocked (v3 §64). Today the only accurate description is *"planning baseline established; FND-001a toolchain substrate delivered"* — not "FND-001 complete", not "Phase 0 complete", not "MVP candidate" (matching §10).
