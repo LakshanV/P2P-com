@@ -16,7 +16,7 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001 remains selected. FND-001a and FND-001b are accepted. FND-001c is absent from the repository and GitHub checks; its repeated non-delivery is now under investigation. FND-001d remains afterward."
+      "notes": "FND-001 remains selected. FND-001a and FND-001b are accepted. FND-001c remains absent after repeated instructions; delivery-path diagnostics are required before another implementation attempt. FND-001d remains afterward."
     },
     {
       "id": 4,
@@ -49,7 +49,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Repeated FND-001c instructions have produced no visible repository changes, suggesting a local execution, git, push, ignore, or permissions blocker that must be identified before another delivery attempt."
+    "Repeated FND-001c instructions have produced no visible repository changes or requested error report, indicating an unresolved execution or delivery-path issue."
   ],
-  "last_instruction": "Investigate why the previous FND-001c instruction produced no repository changes or GitHub workflow run, without modifying files: inspect the local branch/worktree, git remotes and push capability, ignored/untracked files under `.github`, and any command or permission failures, then report the precise root cause with the relevant command outputs and the smallest corrective action needed."
+  "last_instruction": "Diagnose why FND-001c has produced neither repository changes nor a blocker report: without modifying files, run and report verbatim the outputs of `git status --short --branch`, `git log -3 --oneline --decorate`, `git remote -v`, `git branch -vv`, `find .github -maxdepth 3 -type f -print 2>&1`, and `git push --dry-run`; conclude with the specific root cause or, if all diagnostics succeed, explicitly state that no delivery-path blocker exists."
 }
