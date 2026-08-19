@@ -38,7 +38,10 @@ export class FakeDatabase implements Database {
   sessionsReleased = 0;
 
   ledger: LedgerEntry[] = [];
+  /** True once a COMMIT has made the ledger table visible. */
   bootstrapped = false;
+  /** True once a COMMIT has made the platform schema visible. */
+  schemaCreated = false;
   lockHeld: boolean;
   lockAcquisitions = 0;
   lockReleases = 0;
@@ -47,6 +50,9 @@ export class FakeDatabase implements Database {
   #inTransaction = false;
   #pendingLedger: LedgerEntry[] = [];
   #pendingBootstrap = false;
+  #pendingSchema = false;
+  /** Versions deleted inside the open transaction, applied only on COMMIT. */
+  #pendingDeletes: string[] = [];
 
   constructor(options: FakeOptions = {}) {
     this.description = options.description ?? 'postgres://jaya:***@localhost:5432/jaya_test';
@@ -54,6 +60,7 @@ export class FakeDatabase implements Database {
     this.lockHeld = options.lockHeldByAnother ?? false;
     if (options.ledger !== undefined) {
       this.bootstrapped = true;
+      this.schemaCreated = true;
       this.ledger = options.ledger.map((row) => ({ ...row, durationMs: null }));
     }
   }
@@ -88,6 +95,12 @@ export class FakeDatabase implements Database {
   private execute<Row>(sql: string, params?: readonly unknown[]): QueryResult<Row> {
     this.statements.push(sql.trim());
 
+    // to_regclass is how the runner asks whether the ledger exists without creating it. Returning
+    // the committed state here is what makes "status must not mutate" a real assertion.
+    if (/to_regclass/.test(sql)) {
+      return this.rows<Row>([{ present: this.bootstrapped } as Row]);
+    }
+
     if (/pg_try_advisory_lock/.test(sql)) {
       if (this.lockHeld) return this.rows<Row>([{ locked: false } as Row]);
       this.lockHeld = true;
@@ -104,20 +117,28 @@ export class FakeDatabase implements Database {
       this.#inTransaction = true;
       this.#pendingLedger = [];
       this.#pendingBootstrap = false;
+      this.#pendingSchema = false;
+      this.#pendingDeletes = [];
       return this.rows<Row>([]);
     }
     if (/^COMMIT\s*;?$/i.test(sql.trim())) {
+      this.ledger = this.ledger.filter((row) => !this.#pendingDeletes.includes(row.version));
       this.ledger.push(...this.#pendingLedger);
       if (this.#pendingBootstrap) this.bootstrapped = true;
+      if (this.#pendingSchema) this.schemaCreated = true;
       this.#inTransaction = false;
       this.#pendingLedger = [];
       this.#pendingBootstrap = false;
+      this.#pendingSchema = false;
+      this.#pendingDeletes = [];
       return this.rows<Row>([]);
     }
     if (/^ROLLBACK\s*;?$/i.test(sql.trim())) {
       this.#inTransaction = false;
       this.#pendingLedger = [];
       this.#pendingBootstrap = false;
+      this.#pendingSchema = false;
+      this.#pendingDeletes = [];
       return this.rows<Row>([]);
     }
 
@@ -129,6 +150,12 @@ export class FakeDatabase implements Database {
 
     if (/CREATE TABLE IF NOT EXISTS platform\.schema_migrations/i.test(sql)) {
       this.#pendingBootstrap = true;
+      this.#pendingSchema = true;
+      return this.rows<Row>([]);
+    }
+
+    if (/CREATE SCHEMA IF NOT EXISTS platform/i.test(sql)) {
+      this.#pendingSchema = true;
       return this.rows<Row>([]);
     }
 
@@ -154,7 +181,10 @@ export class FakeDatabase implements Database {
 
     if (/^DELETE FROM platform\.schema_migrations/i.test(sql)) {
       const [version] = params ?? [];
-      this.ledger = this.ledger.filter((row) => row.version !== String(version));
+      // Buffered like the INSERT: a rollback whose body fails must leave the history row in
+      // place, and a fake that deleted eagerly would report that guarantee as met when it is not.
+      if (this.#inTransaction) this.#pendingDeletes.push(String(version));
+      else this.ledger = this.ledger.filter((row) => row.version !== String(version));
       return this.rows<Row>([]);
     }
 

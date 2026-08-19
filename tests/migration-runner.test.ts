@@ -76,19 +76,88 @@ test('bootstraps a fresh database, then applies every migration in version order
   assert.deepEqual(db.appliedVersions(), ['0001', '0002']);
 });
 
-test('the bootstrap runs inside its own transaction, before any migration', async () => {
+test('on a fresh database the bootstrap shares the first migration transaction', async () => {
   const db = new FakeDatabase();
   await migrateUp(db, { directory });
 
+  const firstBegin = indexOf(db.statements, /^BEGIN;$/i);
   const bootstrapAt = indexOf(
     db.statements,
     /CREATE TABLE IF NOT EXISTS platform\.schema_migrations/i,
   );
-  const firstBegin = indexOf(db.statements, /^BEGIN;$/i);
-  const firstRead = indexOf(db.statements, /^SELECT version, slug, checksum/i);
+  const firstInsert = indexOf(db.statements, /^INSERT INTO platform\.schema_migrations/i);
+  const firstCommit = indexOf(db.statements, /^COMMIT;$/i);
 
-  assert.ok(bootstrapAt > firstBegin && firstBegin !== -1, 'bootstrap must be wrapped in BEGIN');
-  assert.ok(bootstrapAt < firstRead, 'the ledger must be created before it is read');
+  assert.ok(
+    firstBegin !== -1 && bootstrapAt > firstBegin,
+    'the bootstrap must be inside a transaction',
+  );
+  assert.ok(firstInsert > bootstrapAt, 'the first history row is written after the bootstrap');
+  assert.ok(firstCommit > firstInsert, 'schema, ledger and first history row must commit together');
+  assert.equal(
+    db.statements.slice(firstBegin + 1, firstInsert).some((s) => /^COMMIT;$/i.test(s)),
+    false,
+    'nothing may commit between creating the ledger and recording the first migration',
+  );
+});
+
+test('a run that applies nothing creates neither schema nor ledger', async () => {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'jaya-empty-'));
+  try {
+    const db = new FakeDatabase();
+    const report = await migrateUp(db, { directory: empty });
+    assert.deepEqual(report.applied, []);
+    assert.equal(db.bootstrapped, false, 'no work means no ledger');
+    assert.equal(db.schemaCreated, false, 'no work means no schema');
+  } finally {
+    fs.rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+test('status on an empty database creates nothing', async () => {
+  const db = new FakeDatabase();
+  const report = await migrationStatus(db, { directory });
+
+  assert.deepEqual(report.applied, [], 'an absent ledger means nothing has been applied');
+  assert.deepEqual(report.pending, ['0001', '0002']);
+  assert.equal(db.bootstrapped, false, 'status must not create the ledger');
+  assert.equal(db.schemaCreated, false, 'status must not create the schema');
+  assert.equal(
+    db.statements.some((s) => /^(CREATE|INSERT|DELETE|ALTER|DROP)/i.test(s)),
+    false,
+    `status issued a mutating statement: ${db.statements.join(' | ')}`,
+  );
+  assert.equal(db.lockHeld, false, 'the lock is still released');
+});
+
+test('a refused rollback on an empty database creates nothing', async () => {
+  const db = new FakeDatabase();
+
+  await assert.rejects(
+    migrateDown(db, { directory, version: '0001' }),
+    (error: unknown) => error instanceof MigrationError && error.code === 'rollback-unapplied',
+  );
+
+  assert.equal(db.bootstrapped, false, 'a refusal must not create the ledger');
+  assert.equal(db.schemaCreated, false, 'a refusal must not create the schema');
+  assert.equal(
+    db.statements.some((s) => /^(CREATE|INSERT|DELETE|ALTER|DROP)/i.test(s)),
+    false,
+    `a refused rollback issued a mutating statement: ${db.statements.join(' | ')}`,
+  );
+});
+
+test('a first-migration failure leaves neither schema, ledger nor history row', async () => {
+  const db = new FakeDatabase({ failOn: /COMMENT ON SCHEMA platform/i });
+
+  await assert.rejects(
+    migrateUp(db, { directory }),
+    (error: unknown) => error instanceof MigrationError && error.code === 'sql-failed',
+  );
+
+  assert.equal(db.bootstrapped, false, 'the bootstrap must roll back with the migration');
+  assert.equal(db.schemaCreated, false, 'the schema must roll back with the migration');
+  assert.deepEqual(db.ledger, [], 'no history row may survive');
 });
 
 test('a failed bootstrap rolls back, leaving neither schema nor ledger, and releases the lock', async () => {
@@ -330,8 +399,57 @@ test('rolls back the most recently applied migration and removes its ledger row'
   const report = await migrateDown(db, { directory, version: '0002' });
 
   assert.equal(report.rolledBack, '0002');
-  assert.deepEqual(db.appliedVersions(), ['0001']);
-  assert.ok(db.statements.some((s) => /DROP TABLE IF EXISTS platform\.schema_migrations/i.test(s)));
+  assert.deepEqual(db.appliedVersions(), ['0001'], 'only the rolled-back row is removed');
+  assert.ok(
+    db.statements.some((s) =>
+      /DROP INDEX IF EXISTS platform\.schema_migrations_applied_at_idx/i.test(s),
+    ),
+    'the rollback body must actually run',
+  );
+});
+
+test('rolling back 0002 leaves the ledger intact, and the earlier history with it', async () => {
+  const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002] });
+  await migrateDown(db, { directory, version: '0002' });
+
+  assert.equal(
+    db.statements.some((s) => /DROP TABLE[\s\S]*schema_migrations/i.test(s)),
+    false,
+    'the ledger table is bootstrap-owned; no rollback may drop it',
+  );
+  assert.equal(db.bootstrapped, true, 'the ledger must survive its own migration being reversed');
+  assert.deepEqual(
+    db.appliedVersions(),
+    ['0001'],
+    'reversing one migration must not erase the history of the others',
+  );
+
+  const after = await migrationStatus(db, { directory });
+  assert.deepEqual(
+    after.applied.map((row) => row.version),
+    ['0001'],
+    'the database is still readable and its history still coherent',
+  );
+  assert.deepEqual(after.pending, ['0002'], '0002 becomes pending again, not lost');
+});
+
+test('the ledger row is deleted before the rollback body runs', async () => {
+  const db = new FakeDatabase({ ledger: [LEDGER_0001, LEDGER_0002] });
+  await migrateDown(db, { directory, version: '0002' });
+
+  const deleteAt = indexOf(db.statements, /^DELETE FROM platform\.schema_migrations/i);
+  const bodyAt = indexOf(
+    db.statements,
+    /DROP INDEX IF EXISTS platform\.schema_migrations_applied_at_idx/i,
+  );
+
+  assert.ok(deleteAt !== -1 && bodyAt !== -1);
+  assert.ok(
+    deleteAt < bodyAt,
+    'history first: a body that removes what the DELETE depends on would otherwise fail against ' +
+      'a relation it had just dropped — which is how the original 0002 rollback became ' +
+      'unexecutable',
+  );
 });
 
 test('refuses to roll back anything other than the latest applied migration', async () => {
@@ -370,7 +488,7 @@ test('refuses to roll back on inconsistent checksum evidence', async () => {
 test('a failing rollback leaves the ledger row in place', async () => {
   const db = new FakeDatabase({
     ledger: [LEDGER_0001, LEDGER_0002],
-    failOn: /DROP TABLE IF EXISTS platform\.schema_migrations/i,
+    failOn: /DROP INDEX IF EXISTS platform\.schema_migrations_applied_at_idx/i,
   });
 
   await assert.rejects(

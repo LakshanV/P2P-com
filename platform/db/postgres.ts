@@ -5,17 +5,17 @@
  * to the `Database` interface, which is what makes the runner's behaviour testable without a
  * server.
  *
- * `pg` is imported dynamically rather than declared as a dependency. The repository ships no
- * runtime dependencies at all — `npm ci` installs a toolchain and nothing else — and adding a
- * driver for a runner that no environment can yet point at would put an unused package in every
- * install and every audit. A contributor who wants to apply a migration installs it explicitly;
- * the error below says so. When a real environment exists, this becomes a declared dependency and
- * this comment goes away.
+ * `pg` is a declared, version-locked dependency. An earlier revision imported it dynamically to
+ * keep the repository dependency-free, which meant a clean `npm ci` produced a runner that could
+ * not run — a migration tool that needs an undocumented extra install is not a migration tool.
+ * The driver and its typings are pinned exactly, like everything else here.
  *
  * Owned by: FND-002b (data foundation).
  */
 
 import process from 'node:process';
+
+import pg from 'pg';
 
 import {
   redactConnectionString,
@@ -26,35 +26,10 @@ import {
   type QueryResult,
 } from './client.ts';
 
-/** Shape of the slice of `pg` this adapter uses, so the dynamic import stays typed. */
-interface PgQueryResult {
-  readonly rows?: unknown[];
-  readonly rowCount?: number | null;
-}
-interface PgClient {
-  connect(): Promise<void>;
-  query(sql: string, params?: readonly unknown[]): Promise<PgQueryResult>;
-  end(): Promise<void>;
-}
-interface PgModule {
-  readonly Client: new (config: { connectionString: string }) => PgClient;
-}
-
 export const DATABASE_URL_ENV = 'DATABASE_URL';
 
-/** The optional driver. Not a declared dependency — see the module comment. */
+/** The declared driver, named once so tests and documentation can refer to it. */
 export const DRIVER_MODULE = 'pg';
-
-export class MissingDriverError extends Error {
-  constructor(detail: string) {
-    super(
-      'the PostgreSQL driver is not installed. It is deliberately not a declared dependency — ' +
-        'install it explicitly to run migrations:\n\n    npm install --no-save pg\n\n' +
-        `underlying error: ${detail}`,
-    );
-    this.name = 'MissingDriverError';
-  }
-}
 
 export class MissingConnectionError extends Error {
   constructor() {
@@ -98,17 +73,6 @@ export class PostgresDatabase implements Database {
   }
 
   async connect(): Promise<DatabaseClient> {
-    let pg: PgModule;
-    try {
-      // Specifier held in a variable on purpose: `pg` is not a declared dependency, so a literal
-      // here would fail type resolution in an install that does not have it — which is every
-      // ordinary install.
-      const specifier = DRIVER_MODULE;
-      pg = (await import(specifier)) as PgModule;
-    } catch (error) {
-      throw new MissingDriverError(error instanceof Error ? error.message : String(error));
-    }
-
     const client = new pg.Client({ connectionString: this.#connectionString });
     try {
       await client.connect();
@@ -130,9 +94,11 @@ export class PostgresDatabase implements Database {
         params?: readonly unknown[],
       ): Promise<QueryResult<Row>> {
         try {
-          const result = await client.query(sql, params);
+          // QueryConfig form rather than (text, values): with an optional `params` the
+          // positional overload resolves to the callback signature instead.
+          const result = await client.query({ text: sql, values: params ? [...params] : [] });
           return {
-            rows: (result.rows ?? []) as readonly Row[],
+            rows: (result.rows ?? []) as unknown as readonly Row[],
             rowCount: result.rowCount ?? 0,
           };
         } catch (error) {

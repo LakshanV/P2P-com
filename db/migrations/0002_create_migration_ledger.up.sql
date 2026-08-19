@@ -2,9 +2,13 @@
 -- direction: up
 -- owner: platform
 --
--- The ledger of applied migrations. A migration runner reads this table to decide what still
--- needs applying, and writes one row per forward migration inside the same transaction as the
--- migration itself, so a failed migration leaves no row claiming it succeeded.
+-- The ledger of applied migrations, plus the index used to read it in recency order.
+--
+-- The table is BOOTSTRAP-OWNED. The runner creates it before it can record anything, because a
+-- ledger that is created by a migration cannot record the migration that created it. This file
+-- states the same definition so that applying the set by hand with psql produces the same schema,
+-- and so the definition lives with the migrations rather than only in code. Both are IF NOT
+-- EXISTS, so whichever runs second is a no-op.
 --
 -- checksum records the hash of the forward file as applied. A mismatch on a later run means the
 -- file was edited after it ran somewhere, which is the single most common cause of environments

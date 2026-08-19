@@ -42,8 +42,11 @@ Delivered by task **FND-001d** (checklist items P0-12 and P0-13).
 | Git | any recent version | — |
 
 Nothing else is needed to run `npm run verify`. The repository contains a platform substrate,
-its tests and the database migration contract, and none of them opens a connection: the migration
-validator reads SQL as text, so every gate passes on a machine with no PostgreSQL installed.
+its tests, the database migration contract and the migration runner, and no gate opens a
+connection: the migration validator reads SQL as text and the runner's tests use an injected fake,
+so `npm run verify` passes on a machine with no PostgreSQL installed. The `pg` driver is a
+declared dependency, so `npm ci` installs it — you need a *server* to apply a migration, not an
+extra install.
 
 **PostgreSQL 16 or later** is the selected database (FND-002a). It is a prerequisite only for
 actually applying a migration — `npm run db:migrate` (FND-002b) — which is opt-in and needs both a
@@ -158,9 +161,9 @@ Supporting commands:
 | `node docs/tools/validate-doc-links.mjs` | Validate every relative file link and Markdown anchor under `/docs`. Exit 1 on any broken link. |
 | `npm audit --audit-level=high` | Fail on any high or critical dependency advisory. |
 | `npm run db:status` | Report applied and pending migrations against `DATABASE_URL`. Changes nothing. |
-| `npm run db:migrate` | Apply pending migrations. Needs `DATABASE_URL` and the `pg` driver — see [6.6](#66-applying-migrations--the-runner). |
+| `npm run db:migrate` | Apply pending migrations. Needs `DATABASE_URL` and a running server — see [6.6](#66-applying-migrations--the-runner). |
 | `npm run db:rollback -- --version NNNN --yes` | Reverse exactly one migration. Operator-invoked only. |
-| `npm run test:integration` | The opt-in live-PostgreSQL suite. Skips with a reason when there is no database — see [6.7](#67-the-integration-test). |
+| `npm run test:integration` | The opt-in live-PostgreSQL suite. Skips with a reason when `DATABASE_URL` is unset — see [6.7](#67-the-integration-test). |
 
 `npm run check:boundaries` runs four checks, each of which fails the build on violation:
 
@@ -230,7 +233,7 @@ financial zone will need.
 | Migration file format, versioning and pairing | **Delivered and enforced** — `db/migrations/`, `npm run check:migrations` |
 | Schema-namespace ownership convention | **Delivered and enforced** — `platform/db/schema-namespaces.ts` |
 | Local provisioning (container, service, init script) | **Not delivered.** Nothing here starts a database |
-| Migration runner (applying files to a live server) | **Delivered** (FND-002b) — `npm run db:migrate`, see [6.6](#66-applying-migrations--the-runner). **Never executed against a live server from this repository**; its logic is covered by deterministic tests against an injected fake |
+| Migration runner (applying files to a live server) | **Delivered** (FND-002b) — `npm run db:migrate`, see [6.6](#66-applying-migrations--the-runner). The `pg` driver is declared and locked, so a clean `npm ci` can run it. **Never executed against a live server from this repository**; its logic is covered by deterministic tests against an injected fake |
 | Connection configuration | `DATABASE_URL`, read from the environment and never logged. **No pooling, no secret storage** |
 | Seed and fixture data | **Not delivered** |
 | Business-module or kernel tables | **None.** FND-002a establishes the contract only |
@@ -267,6 +270,11 @@ manifest** rather than maintained as a second list:
 Kebab-case directory slugs become snake_case schema names. Add a unit to
 `platform/architecture/manifest.ts` and its namespace exists; misspell a schema in a migration and
 the validator rejects it, because the name resolves to no owner.
+
+**The `platform` schema and `platform.schema_migrations` are bootstrap-owned**, not
+migration-owned: the runner creates them, migrations may add to them, and no rollback drops them.
+A ledger created by a migration could not record the migration that created it, and a rollback
+that dropped the ledger would erase the history of every other migration with it.
 
 **`public` is forbidden for unit data.** It sits on the default `search_path`, so anything in it
 is reachable by every unit and owned by none — precisely the coupling
@@ -356,21 +364,20 @@ cannot land in shell history or a process listing. It is never printed either: t
 only a redacted description — `postgres://jaya:***@localhost:5432/jaya_dev` — and every message it
 emits, including errors quoted back from the driver, passes through redaction first.
 
-The driver is **not** a declared dependency. `npm ci` installs a toolchain and nothing else, and
-adding a database driver for a runner no environment yet points at would put an unused package in
-every install and every audit. Install it explicitly when you need it:
-
-```bash
-npm install --no-save pg
-```
+The driver (`pg`) and its typings are declared and version-locked, so a clean `npm ci` produces
+a runner that can actually run. An earlier revision imported the driver dynamically to keep the
+repository dependency-free; that made `npm ci` produce a migration tool that needed an
+undocumented extra install before it would work, which is not a migration tool.
 
 **What the runner guarantees:**
 
 | Guarantee | How |
 |---|---|
 | Nothing commits before its ledger row | The migration body and its `INSERT` into `platform.schema_migrations` share one transaction. |
+| No schema or ledger without history | On a fresh database the bootstrap DDL joins the **first migration's** transaction, so the schema, the ledger and the first history row become visible together or not at all. A run with nothing to apply creates nothing. |
+| `status` never writes | It asks `to_regclass` whether the ledger exists and treats absence as "nothing applied". A refused rollback is equally read-only. |
 | One runner at a time | A session-level advisory lock, taken with `pg_try_advisory_lock` so a second runner fails immediately rather than interleaving. Released on every exit path. |
-| A fresh database bootstraps cleanly | The schema and ledger are created in one transaction before anything is applied, so a failed bootstrap leaves neither behind. Migrations 0001 and 0002 then apply as no-ops and record their rows. |
+| A fresh database bootstraps cleanly | A failed first migration rolls the bootstrap back with it. Migrations 0001 and 0002 carry the same `IF NOT EXISTS` definitions, so applying the set by hand with psql produces the same schema. |
 | An applied migration is immutable | A SHA-256 checksum of the forward file is persisted on application and re-checked on every run. |
 | Ambiguity stops the run | A drifted checksum, a ledger row with no file on disk, or a pending version that sorts before an applied one each abort before anything is applied. |
 
@@ -386,6 +393,17 @@ boundaries it has not understood.
 the ledger and the files disagree — rolling back on evidence the runner cannot verify is how a
 recovery becomes an outage.
 
+Inside the transaction the **history row is deleted first**, then the rollback body runs. The
+original 0002 rollback dropped the ledger table and the runner then tried to DELETE from a
+relation that no longer existed, so rolling back 0002 was simply unexecutable. Ordering the DELETE
+first removes that whole class of self-referential failure.
+
+**The `platform` schema and `platform.schema_migrations` are bootstrap-owned.** No rollback drops
+them. Reversing 0002 removes its index and comment and leaves the ledger — and with it the history
+row for 0001 — intact, because reversing one migration must not erase the record of the others. To
+remove the platform schema entirely, do it by hand as a deliberate act outside the migration
+history.
+
 ### 6.7 The integration test
 
 The runner's logic is covered by deterministic tests against an injected fake database
@@ -394,17 +412,17 @@ PostgreSQL or that advisory locks behave as assumed. Only a server can, so there
 opt-in suite:
 
 ```bash
-npm install --no-save pg
 createdb jaya_integration
 DATABASE_URL=postgres://localhost:5432/jaya_integration npm run test:integration
 ```
 
 It applies the whole set, checks the ledger and checksums, reruns to prove idempotency, rolls back
-and re-applies, and confirms a second runner is excluded — then rolls everything back so a rerun
-starts clean. **Point it at a disposable database.**
+and re-applies, confirms a second runner is excluded, proves `status` and a refused rollback create
+nothing on a completely empty database, and proves rolling back 0002 leaves the ledger and the
+0001 history row intact — then rolls everything back so a rerun starts clean. **Point it at a
+disposable database.**
 
-Without `DATABASE_URL` or without the driver it **skips with the reason printed**, and a skipped
-run is not evidence. It is deliberately outside `npm test`, so `npm run verify` contains only tests
+Without `DATABASE_URL` it **skips with the reason printed**, and a skipped run is not evidence. It is deliberately outside `npm test`, so `npm run verify` contains only tests
 that need no live service.
 
 ---

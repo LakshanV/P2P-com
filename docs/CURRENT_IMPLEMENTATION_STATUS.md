@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-002b (migration runner, PostgreSQL adapter, advisory locking, checksum reconciliation). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-002b, as corrected (declared `pg` driver, read-only `status` and refused rollback, bootstrap folded into the first migration transaction, executable 0002 rollback). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -48,10 +48,10 @@
 | Dimension | State |
 |---|---|
 | Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement and the migration contract; no database server, no kernel. |
-| Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. |
+| Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected, not provisioned.** PostgreSQL 16+ chosen (FND-002a). No server, no connection string, no runner; nothing in this repository opens a connection. |
 | Migrations | 2 forward + 2 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema and the migration ledger; no kernel or module tables exist. |
-| Tests | 132 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract and migration runner; no business logic exists to test. A further 2 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 138 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract and migration runner; no business logic exists to test. A further 4 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -188,7 +188,8 @@ This is the honest inventory, not a backlog summary. Items delivered by FND-001a
 | Database selection | **Decided** — PostgreSQL 16+ (FND-002a) | P0-14 |
 | Local database provisioning | Absent — no container, service or init script | P0-14 |
 | Migration file contract and validator | **Present** — `db/migrations/`, `npm run check:migrations`, ten checks with planted-invalid fixtures | P0-15 |
-| Migration runner | **Present** — `npm run db:migrate`/`db:status`/`db:rollback` (FND-002b), with advisory locking, checksum reconciliation and ledger-atomic application. **Never run against a live server** | P0-15 |
+| Migration runner | **Present** — `npm run db:migrate`/`db:status`/`db:rollback` (FND-002b), with advisory locking, checksum reconciliation and ledger-atomic application. Driver `pg` declared and locked, so `npm ci` yields a runnable runner. **Never run against a live server** | P0-15 |
+| Connection configuration | `DATABASE_URL` only, read from the environment and never logged. **No pooling, no secret storage, no provisioning** | P0-14 |
 | Schema-namespace ownership convention | **Present and enforced for migrations** — `platform/db/schema-namespaces.ts`, derived from the architecture manifest | P0-16 |
 | Seed and fixture data | Absent | P0-17 |
 | Object / file storage | Absent | P0-18 |
@@ -236,7 +237,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 132 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 138 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -284,7 +285,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 35 more, for 132 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more, for 138 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -1287,6 +1288,65 @@ FOLLOW-UP:          Provision a PostgreSQL for development, run `npm run test:in
                     against it, and record the result. That single piece of evidence is what
                     P0-14 and P0-15 are waiting on; everything else for them is built.
                     Then FND-002c (seed and fixture strategy, P0-17).
+```
+
+---
+
+### 11.7 Correction — FND-002b production readiness and transaction model
+
+Three defects in the FND-002b delivery were found by review and corrected. Recorded here per v3
+§58 rather than silently patched, because two of them were guarantees the previous evidence block
+claimed and did not have.
+
+| # | Defect | Failed invariant | Correction |
+|---|---|---|---|
+| 1 | **The runner could not run from a clean install.** `pg` was imported dynamically and deliberately left undeclared, so `npm ci` produced a migration tool that failed at the first connection with an instruction to install something. | A repository's declared install must produce working software. "Run this extra command first" is a defect, not a design. | `pg` 8.16.3 and `@types/pg` 8.15.5 declared and version-locked; the adapter now imports the driver statically. Verified by deleting `node_modules`, running `npm ci`, and reaching a real `ECONNREFUSED` from the driver — proof the driver loads and the connection is genuinely attempted. |
+| 2 | **`status` and refused rollbacks created objects.** Both called the bootstrap, so asking an empty database what was applied created the schema and the ledger, and a rollback that was about to be refused did the same. | A command that reports on a database must not be the thing that changes it. | Both now ask `to_regclass` whether the ledger exists and treat absence as "nothing applied". Neither issues a mutating statement on an empty database, asserted deterministically and against a live server. |
+| 3 | **An initial run could commit schema and ledger with no history, and the 0002 rollback was unexecutable.** The bootstrap committed in its own transaction, so a crash between it and the first migration left objects no history explained. Separately, `0002…down.sql` dropped `platform.schema_migrations` while the runner deleted that migration's row from the same table in the same transaction — the DELETE ran against a relation that no longer existed, and had it succeeded it would have erased the row for 0001 too. | Objects and the history that explains them commit together. Reversing one migration must not erase the record of the others. | The bootstrap DDL now joins the **first migration's** transaction, so schema, ledger and the first history row commit together or not at all; a run with nothing to apply creates nothing. The ledger is bootstrap-owned: `0002…down.sql` drops its index and comment and leaves the table, `0001…down.sql` resets the schema comment and leaves the schema. The runner deletes the history row **before** running the rollback body, removing the self-referential ordering hazard generally rather than only for this pair. |
+
+**Tests added for the corrected guarantees** (deterministic, plus live equivalents that skip):
+
+```text
+status on an empty database creates nothing                            (asserts no CREATE/INSERT/DELETE/ALTER/DROP issued)
+a refused rollback on an empty database creates nothing                (same assertion, refusal path)
+a run that applies nothing creates neither schema nor ledger
+on a fresh database the bootstrap shares the first migration transaction
+a first-migration failure leaves neither schema, ledger nor history row
+rolling back 0002 leaves the ledger intact, and the earlier history with it
+the ledger row is deleted before the rollback body runs
+```
+
+The live suite gained two cases covering the same ground against a real server — an
+empty-database probe of `information_schema.schemata` and `to_regclass` before and after
+`status` and a refused rollback, and a 0002 rollback-then-reapply cycle. **Both skipped**, for
+want of a PostgreSQL runtime.
+
+```text
+STATUS AFTER CORRECTION:
+                    P0-14 IN PROGRESS — provisioning still absent, nothing executed
+                    P0-15 IN PROGRESS — runner still never run against a live server
+                    Nothing is marked COMPLETE.
+
+TEST RESULTS:       npm run verify                 exit 0   tests 138, pass 138, fail 0
+                    npm ci from a deleted node_modules
+                                                   exit 0   0 vulnerabilities
+                    node platform/db/migrate-cli.ts status (unreachable host)
+                                                   exit 1   "could not connect to
+                                                            postgres://jaya:***@127.0.0.1:1/jaya:
+                                                            connect ECONNREFUSED 127.0.0.1:1"
+                                                            — driver loaded from a clean install,
+                                                            password redacted on a real driver error
+                    npm run test:integration       exit 0   tests 4, pass 0, SKIPPED 4
+                    node docs/tools/validate-doc-links.mjs
+                                                   exit 0   4 files, 0 broken
+                    npm audit --audit-level=high   exit 0   found 0 vulnerabilities
+                    git diff --check               exit 0
+
+STILL NOT VERIFIED: Every one of these corrections is proved against an injected fake and a
+                    clean install. None has been proved against PostgreSQL, because no server is
+                    available here. Transactional DDL semantics, advisory-lock behaviour and the
+                    validity of the SQL itself remain unverified, which is why P0-14 and P0-15
+                    are unchanged.
 ```
 
 ---

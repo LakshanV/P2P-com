@@ -2,12 +2,19 @@
 -- direction: down
 -- owner: platform
 --
--- Reverses 0001. Deliberately RESTRICT rather than CASCADE: if anything still lives in the
--- schema, the rollback should fail loudly rather than silently destroy objects a later migration
--- created.
+-- Reverses what is reversible: the schema comment.
+--
+-- It deliberately does NOT drop the `platform` schema. The schema holds
+-- platform.schema_migrations, which is the record of what has been applied — dropping it would
+-- destroy the history that tells an operator what state the database is in, and would leave the
+-- runner unable to answer `db:status` at all. The schema is bootstrap-owned infrastructure, not
+-- migration-owned data.
+--
+-- To remove the platform schema entirely, drop the database or drop the schema by hand, as a
+-- deliberate act outside the migration history.
 
 BEGIN;
 
-DROP SCHEMA IF EXISTS platform RESTRICT;
+COMMENT ON SCHEMA platform IS NULL;
 
 COMMIT;

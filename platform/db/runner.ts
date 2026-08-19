@@ -23,10 +23,16 @@
  * refuses the file rather than executing an unwrapped body.
  *
  * Bootstrap. On an empty database the ledger does not exist yet, so it cannot record migration
- * 0001. The runner creates the schema and the ledger itself, in one transaction, before applying
- * anything — a failure therefore leaves neither behind. The bootstrap statements are the same
- * `IF NOT EXISTS` DDL as migrations 0001 and 0002, so those two then apply as no-ops and record
- * their rows like any other.
+ * 0001 — a ledger created by a migration cannot record the migration that created it. The runner
+ * therefore owns the schema and the ledger, and creates them **inside the first migration's own
+ * transaction**. Either the schema, the ledger and the first history row all commit together, or
+ * none of them do; there is no window in which the objects exist with no history to explain them.
+ * The bootstrap DDL is the same `IF NOT EXISTS` definition migrations 0001 and 0002 carry, so
+ * applying the set by hand with psql produces the same result.
+ *
+ * Read-only means read-only. `status` and a refused rollback never create anything. They ask
+ * whether the ledger exists and treat its absence as "nothing applied", because a command that
+ * reports on a database must not be the thing that changes it.
  *
  * Owned by: FND-002b (data foundation). Talks to the injected Database interface only; contains
  * no driver import and no business logic.
@@ -242,18 +248,16 @@ CREATE TABLE IF NOT EXISTS ${LEDGER_TABLE} (
 `;
 
 /**
- * Create the schema and ledger if they are absent, in one transaction so a failure leaves neither
- * behind. Idempotent: on an already-migrated database this is a no-op.
+ * Does the ledger exist? Asked with to_regclass, which returns NULL rather than raising, so the
+ * question can be put to a completely empty database without creating anything or handling an
+ * error as control flow.
  */
-async function bootstrap(client: DatabaseClient): Promise<void> {
-  await client.query('BEGIN;');
-  try {
-    await client.query(BOOTSTRAP_SQL);
-    await client.query('COMMIT;');
-  } catch (error) {
-    await client.query('ROLLBACK;');
-    throw error;
-  }
+async function ledgerExists(client: DatabaseClient): Promise<boolean> {
+  const result = await client.query<{ present: boolean }>(
+    'SELECT to_regclass($1) IS NOT NULL AS present;',
+    [LEDGER_TABLE],
+  );
+  return result.rows[0]?.present === true;
 }
 
 async function acquireLock(client: DatabaseClient): Promise<void> {
@@ -326,17 +330,24 @@ function reconcile(
   return pending;
 }
 
-/** Apply one migration and its ledger row in a single transaction. */
+/**
+ * Apply one migration and its ledger row in a single transaction.
+ *
+ * On a fresh database the bootstrap DDL joins that same transaction, so the schema, the ledger and
+ * the first history row become visible together or not at all.
+ */
 async function applyOne(
   client: DatabaseClient,
   migration: DiscoveredMigration,
   now: () => number,
+  includeBootstrap: boolean,
 ): Promise<AppliedMigration> {
   const body = unwrapTransaction(migration.upSql, migration.upFile);
   const startedAt = now();
 
   await client.query('BEGIN;');
   try {
+    if (includeBootstrap) await client.query(BOOTSTRAP_SQL);
     await client.query(body);
     const durationMs = Math.max(0, now() - startedAt);
     await client.query(
@@ -397,17 +408,22 @@ export async function migrateUp(
   const discovered = discover(options.directory);
 
   return withLockedSession(db, async (client) => {
-    await bootstrap(client);
-    const applied = await readLedger(client);
+    const bootstrapped = await ledgerExists(client);
+    const applied = bootstrapped ? await readLedger(client) : [];
     const pending = reconcile(applied, discovered);
 
     log(`target: ${db.description}`);
     log(`applied: ${applied.length}, pending: ${pending.length}`);
+    if (!bootstrapped && pending.length === 0) {
+      // Nothing to apply and nothing to record. Creating the ledger here would leave objects
+      // behind for a command that did no work.
+      log('no migrations to apply; nothing created');
+    }
 
     const results: AppliedMigration[] = [];
-    for (const migration of pending) {
+    for (const [index, migration] of pending.entries()) {
       log(`applying ${migration.upFile}`);
-      results.push(await applyOne(client, migration, now));
+      results.push(await applyOne(client, migration, now, !bootstrapped && index === 0));
     }
 
     return {
@@ -423,8 +439,9 @@ export async function migrateUp(
 export async function migrationStatus(db: Database, options: RunnerOptions): Promise<StatusReport> {
   const discovered = discover(options.directory);
   return withLockedSession(db, async (client) => {
-    await bootstrap(client);
-    const applied = await readLedger(client);
+    // Strictly read-only: an absent ledger means nothing has been applied, not that something
+    // needs creating.
+    const applied = (await ledgerExists(client)) ? await readLedger(client) : [];
     const pending = reconcile(applied, discovered);
     return {
       target: db.description,
@@ -450,8 +467,8 @@ export async function migrateDown(
   const discovered = discover(options.directory);
 
   return withLockedSession(db, async (client) => {
-    await bootstrap(client);
-    const applied = await readLedger(client);
+    // A refused rollback must change nothing, including creating a ledger to refuse against.
+    const applied = (await ledgerExists(client)) ? await readLedger(client) : [];
 
     // Reconcile first: a rollback decided on unverified history is worse than no rollback.
     reconcile(applied, discovered);
@@ -493,8 +510,12 @@ export async function migrateDown(
 
     await client.query('BEGIN;');
     try {
-      await client.query(body);
+      // The history row goes first. A rollback that drops something the DELETE depends on would
+      // otherwise fail against a relation it had just removed — which is exactly how the original
+      // 0002 rollback became unexecutable. Order inside the transaction costs nothing and removes
+      // a whole class of self-referential failure.
       await client.query(`DELETE FROM ${LEDGER_TABLE} WHERE version = $1;`, [migration.version]);
+      await client.query(body);
       await client.query('COMMIT;');
     } catch (error) {
       await client.query('ROLLBACK;');
