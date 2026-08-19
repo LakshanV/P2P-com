@@ -14,9 +14,11 @@
 >
 > Four of the eight architectural checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are now executable and run inside `npm run verify`, each proven by a committed planted-violation fixture.
 >
-> There is still **no CI, no database, no kernel component, no business module and no UI**. FND-001 is **not complete** — subtasks FND-001c (CI) and FND-001d (contributor docs, git conventions) remain. `kernel/`, `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**.
+> Contributor documentation and git conventions are delivered (FND-001d) and are themselves under an executable contract: [docs/CONTRIBUTING.md](./CONTRIBUTING.md) is read by `tests/docs-contract.test.ts`, which fails the build if a documented guarantee is deleted or softened.
 >
-> Exact commands and results: §11.1 (FND-001a) and §11.2 (FND-001b).
+> There is still **no CI, no database, no kernel component, no business module and no UI**. FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `kernel/`, `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**.
+>
+> Exact commands and results: §11.1 (FND-001a), §11.2 (FND-001b) and §11.4 (FND-001d).
 
 ---
 
@@ -45,8 +47,8 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules) and `platform/architecture/` + `platform/checks/` (3 modules) — version pins and boundary enforcement. |
 | Database | None |
 | Migrations | None |
-| Tests | 32 passing (`npm test`, exit 0) — substrate and boundary enforcement only; no business logic exists to test |
-| CI | None — FND-001c. Every check runs locally via `npm run verify`, nothing runs automatically on a change. |
+| Tests | 68 passing (`npm test`, exit 0) — substrate, boundary enforcement and the documentation contract only; no business logic exists to test |
+| CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
 | Monitoring | None |
@@ -132,7 +134,7 @@ v3 §1 defines the hierarchy of authority and places `JAYA_MASTER_AUTONOMOUS_DEV
 4. `docs/ARCHITECTURE.md` *(not yet created)*
 5. Module specifications — [`docs/MODULE_MAP.md`](./MODULE_MAP.md) and the per-module contracts *(not yet created)*
 6. API / database / event contracts *(not yet created)*
-7. Existing tests — `tests/` (32 tests: version pins, reproducibility contract, manifest integrity, boundary enforcement)
+7. Existing tests — `tests/` (68 tests: version pins, reproducibility contract, manifest integrity, boundary enforcement, documentation contract)
 8. Existing implementation — `platform/runtime/`, `platform/architecture/`, `platform/checks/` (substrate only; no kernel component, module or UI)
 9. Temporary chat / run instructions
 10. `JAYA___Autonomous_Build_Master_Development_Guide___Completion_Checklist_v1.0.md` — **compatible detail only**
@@ -169,11 +171,11 @@ This is the honest inventory, not a backlog summary. Items delivered by FND-001a
 | Build pipeline | **Present** — compilation to `dist/`; no runnable entry point exists yet | P0-05 |
 | Type checking | **Present** | P0-06 |
 | Lint and formatting | **Present** | P0-07 |
-| Test framework | **Present** (32 tests) | P0-08 |
-| CI pipeline | Absent — FND-001c | P0-09 |
+| Test framework | **Present** (68 tests) | P0-08 |
+| CI pipeline | Absent — FND-001c, **blocked by BL-10** (credential lacks the Workflows permission) | P0-09 |
 | Boundary / layering enforcement | **Present for 4 of 8 checks** (FND-001b); the other 4 need a schema, policy values or module contracts | P0-10, P0-11 |
-| Contributor documentation | Absent | P0-12 |
-| Git workflow conventions | Absent | P0-13 |
+| Contributor documentation | **Present** — [docs/CONTRIBUTING.md](./CONTRIBUTING.md), enforced by `tests/docs-contract.test.ts` (FND-001d) | P0-12 |
+| Git workflow conventions | **Present** — [docs/CONTRIBUTING.md §10–§12](./CONTRIBUTING.md#10-atomic-changes) (FND-001d) | P0-13 |
 
 ### 4.2 Data infrastructure
 
@@ -227,7 +229,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains six gates and 32 tests, all green from a clean install. The residues close as CI lands (FND-001c) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains six gates and 68 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -243,7 +245,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 ## 6. Blockers
 
-Nine blockers are open. **None is on the current critical path** — every one concerns an external account, credential or legal decision that Phase 0 local foundation work does not require.
+Ten blockers are open. **One — BL-10 — is now on the critical path**; the other nine concern an external account, credential or legal decision that Phase 0 local foundation work does not require.
 
 | ID | Blocker | Blocks | Escalation category |
 |---|---|---|---|
@@ -256,10 +258,13 @@ Nine blockers are open. **None is on the current critical path** — every one c
 | BL-07 | No email/SMS provider credentials | K-14 live delivery | Credentials / access |
 | BL-08 | Jurisdiction and legal decisions (tax identifiers, guarantee instruments, hold periods, finance licensing) | P3-02, P7-04, P14-04 | Legal / regulatory |
 | BL-09 | No deployment target or domain | P0-28 | Credentials / access |
+| BL-10 | **Repository credential lacks the Workflows permission** — pushes touching `.github/workflows/` are refused by the remote, and the Contents API rejects the same file with 403 | P0-09, FND-001c, every CI-dependent gate | Credentials / access |
 
 Full detail: [MASTER_IMPLEMENTATION_CHECKLIST.md §I](./MASTER_IMPLEMENTATION_CHECKLIST.md#i-blocker-register).
 
-**Escalation posture (v3 §65):** these are recorded, not escalated as urgent. Each is genuinely a human-owner decision (credentials or legal), but none stops work today. The first that will actually block progress is **BL-04**, at build step B-3 when the AI Gateway needs one live adapter to be verifiable end to end. **BL-05** follows at build step B-10. Recommended action for the human owner, in that order, with no work paused meanwhile.
+**Escalation posture (v3 §65):** **BL-10 is escalated now.** It is the only blocker stopping work today: FND-001c has been authored and validated repeatedly, and each attempt is rejected by the remote, so P0-09 cannot progress and FND-001 cannot complete by any local means. Clearing it needs one action from the human owner — grant **Workflows: Read and write** on the fine-grained token for `LakshanV/P2P-com`, or paste the workflow through the GitHub web editor.
+
+The remaining nine are recorded, not escalated as urgent. Each is genuinely a human-owner decision (credentials or legal), but none stops work today. The first that will actually block progress is **BL-04**, at build step B-3 when the AI Gateway needs one live adapter to be verifiable end to end. **BL-05** follows at build step B-10. Recommended action for the human owner, in that order, with no work paused meanwhile.
 
 ---
 
@@ -272,7 +277,7 @@ Full detail: [MASTER_IMPLEMENTATION_CHECKLIST.md §I](./MASTER_IMPLEMENTATION_CH
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b together added five substrate modules and 32 passing tests, and no defect was found in them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more, for 68 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -284,9 +289,9 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 ### TASK FND-001 — Platform substrate, boundary enforcement, and test harness
 
-**Status:** IN PROGRESS. Subtasks FND-001a and FND-001b delivered; FND-001c and FND-001d are not started. No blocker applies.
+**Status:** IN PROGRESS. Subtasks FND-001a, FND-001b and FND-001d delivered. **FND-001c is BLOCKED by BL-10** — it is the only remaining subtask, and it cannot be delivered by any local means.
 
-**Next subtask: FND-001c — GitHub Actions CI.** It is the only remaining item on the critical path to a boundary rule that holds without somebody remembering to run a command.
+**Next subtask: FND-001c — GitHub Actions CI.** It is the only remaining item on the critical path to a boundary rule that holds without somebody remembering to run a command, and it is stalled on a credential permission rather than on any technical question. The workflow has been authored and validated locally on several occasions; every attempt to land it is rejected by the remote because the token lacks the Workflows permission (BL-10, §6). Until that is granted, FND-001 stays IN PROGRESS and no CI-dependent gate may be marked complete.
 
 ### Subtask breakdown
 
@@ -297,18 +302,19 @@ reproducible result rather than as a single large change.
 |---|---|---|---|
 | **FND-001a** | Pinned Node/TypeScript/npm toolchain, lockfile, minimal `platform/` and `tests/` structure, working clean-install `build` / `typecheck` / `lint` / `format:check` / `test` | P0-04 fully; P0-03, P0-05…P0-08 partially | **Delivered** — evidence §11.1. Nothing marked COMPLETE. |
 | **FND-001b** | Remaining source roots (`kernel/`, `modules/`, `design-system/`, `apps/`), architecture manifest, and the four executable boundary checks with planted-violation fixtures | P0-03 and P0-11 fully; P0-10 partially | **Delivered** — evidence §11.2 |
-| **FND-001c** | GitHub Actions CI running every command, plus dependency audit | P0-09 | **Next** — not started |
-| FND-001d | Contributor documentation and git workflow conventions | P0-12, P0-13 | Not started |
+| **FND-001c** | GitHub Actions CI running every command, plus dependency audit | P0-09 | **BLOCKED — BL-10.** Authored and locally validated; cannot reach the remote |
+| **FND-001d** | Contributor documentation and git workflow conventions, under an executable documentation contract | P0-12, P0-13 | **Delivered** — evidence §11.4 |
 
-**Two items are COMPLETE: P0-03 and P0-11**, each backed by a checklist evidence row and the
-§11.2 evidence block. P0-04 through P0-08 remain `IN PROGRESS` — satisfied by FND-001a but held
+**Four items are COMPLETE: P0-03, P0-11, P0-12 and P0-13**, each backed by a checklist evidence row
+and an evidence block (§11.2 for the first two, §11.4 for the last two). P0-04 through P0-08 remain `IN PROGRESS` — satisfied by FND-001a but held
 there while FND-001 is unfinished — and P0-10 is `IN PROGRESS` because it references
 [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification), which lists eight checks of
-which four are built. P0-09, P0-12 and P0-13 remain `NOT STARTED`.
+which four are built. P0-09 is `BLOCKED` (BL-10).
 
-FND-001 itself cannot be complete until FND-001c and FND-001d land. Its acceptance criterion that
-each boundary check demonstrably rejects a planted violation **is** now met (§11.2); what is not
-met is CI running the chain, and contributor documentation.
+FND-001 itself cannot be complete until FND-001c lands, and FND-001c cannot land while BL-10 is
+open. Its acceptance criterion that each boundary check demonstrably rejects a planted violation
+**is** met (§11.2), and contributor documentation **is** delivered (§11.4). What is not met is CI
+running the chain — and that is now a credential problem, not an engineering one.
 
 | Field | Value |
 |---|---|
@@ -318,7 +324,7 @@ met is CI running the chain, and contributor documentation.
 | **PHASE** | Phase 0 — Foundation |
 | **OBJECTIVE** | Establish a repository that builds, type-checks, lints, tests, and mechanically enforces the module boundaries — so that every subsequent claim of completion is verifiable by running a command. |
 | **BUSINESS PURPOSE** | Nothing in this programme can be honestly marked complete until a test can run. This is the single dependency shared by all 62 owned units. |
-| **CURRENT STATE** | Subtasks FND-001a and FND-001b delivered. Pinned toolchain (Node 26.7.0 via `.nvmrc`, npm 11.19.0 via `packageManager`, exact devDependency pins, committed lockfile); all six source roots tracked and documented; architecture manifest encoding 15 kernel components and 47 modules; four executable boundary checks wired into `npm run verify`, each proven by a committed planted-violation fixture. 32 tests passing from a clean install. Still absent: **CI** (FND-001c), **contributor documentation and git conventions** (FND-001d), and the four B-1 checks that need a schema, policy values or module contracts to exist. |
+| **CURRENT STATE** | Subtasks FND-001a, FND-001b and FND-001d delivered. Pinned toolchain (Node 26.7.0 via `.nvmrc`, npm 11.19.0 via `packageManager`, exact devDependency pins, committed lockfile); all six source roots tracked and documented; architecture manifest encoding 15 kernel components and 47 modules; four executable boundary checks wired into `npm run verify`, each proven by a committed planted-violation fixture; contributor documentation under an executable contract. 68 tests passing from a clean install. Still absent: **CI** (FND-001c, blocked by BL-10) and the four B-1 checks that need a schema, policy values or module contracts to exist. |
 | **IN SCOPE** | Runtime and package manifest (P0-04); source directory structure per [MODULE_MAP.md §2](./MODULE_MAP.md#2-architectural-shape--modular-monolith) (P0-03); build (P0-05); type checking (P0-06); lint and format (P0-07); test framework with at least one real assertion exercising the harness (P0-08); CI running build + typecheck + lint + test on every change, plus the existing documentation link validator (P0-09); import-boundary and layering checks (P0-10); financial-zone and AI-provider-import checks (P0-11); contributor documentation (P0-12); git workflow conventions (P0-13). |
 | **OUT OF SCOPE** | Database, migrations, authentication, permissions, any kernel component, any business module, any UI, the design system, deployment, cloud environments. Those are FND-002 and later. |
 | **DEPENDENCIES** | None. This is the root of the build order. |
@@ -397,7 +403,7 @@ The first true vertical slice is scheduled as **build step B-5 / Phase 1**: *acc
 
 ## 11. Evidence register
 
-Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository. There are six: four documentation artefacts from DOC-001, and the two delivered FND-001 subtasks, each backed by named commands with recorded exit codes (§11.1, §11.2).
+Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository. There are seven: four documentation artefacts from DOC-001, and the three delivered FND-001 subtasks, each backed by named commands with recorded exit codes (§11.1, §11.2, §11.4).
 
 | Item | Status | Evidence type | Evidence |
 |---|---|---|---|
@@ -407,6 +413,7 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | P0-01d — link validator | COMPLETE | File + reproducible command | `docs/tools/validate-doc-links.mjs`, run as `node docs/tools/validate-doc-links.mjs` |
 | FND-001a — pinned toolchain and test harness | DELIVERED | Commands + exit codes | See §11.1. P0-04 satisfied; P0-05…P0-08 satisfied but held `IN PROGRESS` while FND-001 is unfinished. |
 | FND-001b — source roots, architecture manifest, boundary enforcement | DELIVERED | Commands + exit codes + planted fixtures | See §11.2. **P0-03 and P0-11 COMPLETE**; P0-10 `IN PROGRESS` (four of the eight MODULE_MAP §13 checks are built). |
+| FND-001d — contributor documentation and git conventions | DELIVERED | Commands + exit codes + planted erosions | See §11.4. **P0-12 and P0-13 COMPLETE**, each guarantee covered by a planted-erosion test. |
 
 **Evidence block for DOC-001:**
 
@@ -784,6 +791,132 @@ Two defects were found in the DOC-001 baseline by review and corrected. Recorded
 | 2 | **Wrong risk reference.** [MODULE_MAP.md](./MODULE_MAP.md) §13 attributed the unenforced-boundary-rules gap to risk R-05, which is scope-to-verification mismatch. | Cross-document references must resolve to the thing they name. | Corrected to **R-02 — boundary rules are unenforced**, and made a deep link to [§5](#5-current-risks) so the reference is now machine-checkable by the validator rather than only by eye. |
 
 Neither defect changed any status, count or gate: the baseline remains 474 tracked requirements with 0 of 472 implementation items complete.
+
+---
+
+### 11.4 Evidence — FND-001d (contributor documentation and git conventions)
+
+Documentation is the one deliverable that can be wrong without anything failing. So this subtask
+delivers the document **and** the mechanism that stops it rotting:
+`platform/checks/docs-contract.ts` states each guarantee the document must keep, and
+`tests/docs-contract.test.ts` — run by `npm test`, and so by `npm run verify` — deletes or softens
+each one in turn and requires the contract to catch it. The expectations are read from the
+repository (`.nvmrc`, the `verify` script, `CHECK_IDS`, the architecture manifest, the fixture
+directory) rather than restated, so when the repository changes the contract follows it and the
+document is what has to catch up.
+
+```text
+ITEM ID:            P0-12, P0-13 (FND-001d)
+MODULE / PHASE:     Platform substrate — documentation / Phase 0
+STATUS:             COMPLETE (both items)
+
+IMPLEMENTED:        docs/CONTRIBUTING.md — 13 sections covering: exact prerequisites
+                    (Node 26.7.0, npm 11.19.0) and how to obtain them; clean-clone setup via
+                    npm ci, with the reason npm install is not used; the pinned toolchain and
+                    its distinction from the supported ranges; every verification command,
+                    including the six gates npm run verify chains, the link validator and the
+                    dependency audit; the six planted-violation fixtures and why they must not
+                    be "fixed"; module ownership and the six dependency rules; the prohibition
+                    on AI holding financial authority, with the zone enumerated; the
+                    confinement of provider SDK imports to K-13; secrets handling; the
+                    atomic-change convention; the six review questions; and branch, commit and
+                    Conductor-managed Git conventions.
+
+                    platform/checks/docs-contract.ts — 15 named guarantees
+                    (prerequisites, clean-clone, toolchain-pins, verification-commands,
+                    boundary-checks, planted-fixtures, module-ownership, dependency-rules,
+                    financial-ai-prohibition, provider-import-restriction, secrets-handling,
+                    atomic-changes, review, branch-conventions, link-integrity), each
+                    returning a named violation. Fenced code blocks are stripped before prose
+                    checks, so a command quoted in an example cannot satisfy a prose rule.
+
+                    tests/docs-contract.test.ts — 36 cases: 5 asserting the document as
+                    written, 30 planted erosions, and 1 asserting every declared guarantee has
+                    at least one erosion covering it.
+
+TESTED:             68 tests (32 from FND-001a and FND-001b, 36 added here). The erosion cases
+                    each mutate a copy of the REAL document, not a fixture, so they stay honest
+                    as the document evolves; the mutation helper asserts its own pattern still
+                    matches, so a stale test fails loudly instead of passing vacuously.
+
+TEST COMMANDS:      npm run verify
+                    node docs/tools/validate-doc-links.mjs
+                    npm audit --audit-level=high
+                    git diff --check
+
+TEST RESULTS:       npm run verify          exit 0
+                      typecheck             exit 0
+                      lint                  exit 0
+                      format:check          exit 0   All matched files use Prettier code style
+                      build                 exit 0   postbuild: PASS, 5 files, 8 imports,
+                                                     0 violations
+                      check:boundaries      exit 0   layer-direction PASS, kernel-purity PASS,
+                                                     financial-zone-ai PASS,
+                                                     provider-import PASS
+                      test                  exit 0   tests 68, pass 68, fail 0, cancelled 0,
+                                                     skipped 0, todo 0
+                    node docs/tools/validate-doc-links.mjs   exit 0
+                      files scanned  : 4
+                      internal links : 115
+                      broken         : 0
+                    npm audit --audit-level=high   exit 0   found 0 vulnerabilities
+                    git diff --check               exit 0   no whitespace errors
+
+                    Negative test, recorded because a documentation check that cannot fail is
+                    worthless: while this subtask was in progress the link validator reported
+                    broken = 2 and exited 1 against the checklist forward references to this
+                    very section, before the section existed. It caught the defect that was
+                    actually present, unprompted, and passed only once the defect was fixed.
+
+SECURITY:           No credentials, tokens or endpoints introduced. Section 9 of the new
+                    document states the secrets rules the repository already relies on: nothing
+                    committed, .env and .env.* ignored, .env.example carries names only,
+                    rotate-then-remove for a leaked secret. No secret-management infrastructure
+                    exists yet, and the document says so rather than implying one.
+
+UI/UX REVIEW:       N/A — no user-facing surface.
+MIGRATIONS:         None.
+EVENTS:             None.
+
+CONFIG / POLICY:    None. No business constants introduced. The document restates existing
+                    architectural policy; it does not create any.
+
+KNOWN LIMITATIONS:  1. The contract is textual. It proves a guarantee is still STATED, not that
+                       it is still TRUE — a document could keep every required phrase while the
+                       surrounding prose contradicts it. The boundary checks, not this contract,
+                       are what make the architectural rules true.
+                    2. Canonical phrasing. Several guarantees are keyed to a specific sentence
+                       ("AI never decides money", "No secret is ever committed"). A faithful
+                       paraphrase fails the contract and has to be applied in both places. That
+                       is the deliberate trade for mutation-testability.
+                    3. The default branch is stated in the test rather than derived, because
+                       deriving it from the document under test would make the assertion
+                       vacuous. A second case cross-checks it against origin/HEAD where that ref
+                       is available, and returns early where it is not.
+                    4. Setup instructions are only as current as the repository. They describe a
+                       substrate with no database, no services and no environment variables;
+                       FND-002 will require sections 1 and 2 to be revisited.
+                    5. NOT VERIFIED BY CI. Like every other check here, this contract runs only
+                       when somebody runs it. P0-09, blocked by BL-10.
+
+DEFERRED:           P0-09 (CI) remains BLOCKED on BL-10 — not deferred. FND-001 stays IN
+                    PROGRESS until it lands.
+
+COMMITS:            Recorded at commit time for this branch.
+
+FILES:              docs/CONTRIBUTING.md,
+                    platform/checks/docs-contract.ts,
+                    tests/docs-contract.test.ts,
+                    modified: docs/CURRENT_IMPLEMENTATION_STATUS.md,
+                    docs/MASTER_IMPLEMENTATION_CHECKLIST.md
+
+FOLLOW-UP:          FND-001c is the only remaining FND-001 subtask and is blocked by BL-10.
+                    Escalate the credential permission; nothing else in Phase 0 waits on it,
+                    but FND-001 cannot be marked complete until it clears.
+                    When CI does land, section 4 of the contributor document and the
+                    verification-commands guarantee should be extended to name the CI workflow,
+                    and X-44 and X-46 can move from IN PROGRESS to COMPLETE.
+```
 
 ---
 

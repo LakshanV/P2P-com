@@ -92,19 +92,19 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
-| P0-01 | `/docs` planning baseline created, with reproducible link validation | `[x]` COMPLETE | `docs/CURRENT_IMPLEMENTATION_STATUS.md`, `docs/MASTER_IMPLEMENTATION_CHECKLIST.md`, `docs/MODULE_MAP.md`, `docs/tools/validate-doc-links.mjs` — created by DOC-001. Validated by `node docs/tools/validate-doc-links.mjs` → 79 internal links across 3 files, 0 broken, exit 0 (count as of the FND-001b reconciliation; re-run the command for the current figure). Full evidence block: [CURRENT_IMPLEMENTATION_STATUS.md §11](./CURRENT_IMPLEMENTATION_STATUS.md#11-evidence-register). Documentation artefact, not an implementation capability. |
+| P0-01 | `/docs` planning baseline created, with reproducible link validation | `[x]` COMPLETE | `docs/CURRENT_IMPLEMENTATION_STATUS.md`, `docs/MASTER_IMPLEMENTATION_CHECKLIST.md`, `docs/MODULE_MAP.md`, `docs/tools/validate-doc-links.mjs` — created by DOC-001. Validated by `node docs/tools/validate-doc-links.mjs` → 115 internal links across 4 files, 0 broken, exit 0 (count as of the FND-001d reconciliation, which added [`docs/CONTRIBUTING.md`](./CONTRIBUTING.md) to the validated set; re-run the command for the current figure). Full evidence block: [CURRENT_IMPLEMENTATION_STATUS.md §11](./CURRENT_IMPLEMENTATION_STATUS.md#11-evidence-register). Documentation artefact, not an implementation capability. |
 | P0-02 | Remaining `/docs` set from v3 §42 (ARCHITECTURE, DATABASE_SCHEMA, API_CONTRACTS, EVENT_CATALOG, AI_ARCHITECTURE, AI_MODEL_REGISTRY, SECURITY_MODEL, PERMISSIONS_MATRIX, POLICY_CATALOG, TEST_STRATEGY, UX_SYSTEM, DEPLOYMENT_GUIDE, OPERATIONS_RUNBOOK, DECISIONS_LEDGER, KNOWN_LIMITATIONS, CHANGELOG, MASTER_PRODUCT_SPEC) | `[ ]` NOT STARTED | NONE — files do not exist |
 | P0-03 | Repository source structure (`/platform`, `/kernel`, `/modules`, `/design-system`, `/apps`, `/tests`) | `[x]` COMPLETE | All six roots exist, are tracked and carry an ownership README (FND-001b). `kernel/`, `modules/`, `design-system/` and `apps/` are empty of implementation by design — this item is about structure, not content. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
 | P0-04 | Runtime and package manifest chosen and committed | `[~]` IN PROGRESS | Satisfied by FND-001a. **Pinned toolchain:** Node 26.7.0 (`.nvmrc`), npm 11.19.0 (`packageManager`). **Supported ranges:** `engines.node >=22.18.0`, `engines.npm >=10.0.0`. Exact devDependency pins, committed lockfile, `npm ci` exit 0. Automated assertions bind each pin to its range. Held at IN PROGRESS until FND-001 completes. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-05 | Build pipeline (compile/bundle) | `[~]` IN PROGRESS | `npm run build` exit 0, emits `dist/`. Compilation check only — no runnable entry point exists yet. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-06 | Type checking | `[~]` IN PROGRESS | `npm run typecheck` exit 0, strict with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
 | P0-07 | Lint and format configuration | `[~]` IN PROGRESS | `npm run lint` and `npm run format:check` both exit 0. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
-| P0-08 | Test framework and runner | `[~]` IN PROGRESS | `npm test` exit 0 — tests 32, pass 32, fail 0. Runner proven to report failure (exit 1) on a deliberately failing assertion. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness), [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
-| P0-09 | CI pipeline running build + typecheck + lint + tests + `node docs/tools/validate-doc-links.mjs` on every change | `[ ]` NOT STARTED | NONE — no CI configuration |
+| P0-08 | Test framework and runner | `[~]` IN PROGRESS | `npm test` exit 0 — tests 68, pass 68, fail 0 (32 at FND-001b, 36 added by the FND-001d documentation contract). Runner proven to report failure (exit 1) on a deliberately failing assertion. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness), [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
+| P0-09 | CI pipeline running build + typecheck + lint + tests + `node docs/tools/validate-doc-links.mjs` on every change | `[!]` BLOCKED | NONE — no CI configuration exists in the repository. FND-001c is blocked by **BL-10**: the repository credential is a fine-grained token without the **Workflows** permission, so any change touching `.github/workflows/` is rejected by the remote and never lands. The item stays incomplete until BL-10 clears; it is not deferred, and no CI-dependent gate may be marked complete meanwhile. |
 | P0-10 | Import-boundary / layering enforcement checks ([MODULE_MAP.md](./MODULE_MAP.md) §13) | `[~]` IN PROGRESS | `layer-direction` and `kernel-purity` delivered (FND-001b), wired into `npm run verify`, each proven by a committed planted-violation fixture. **Held at IN PROGRESS: §13 lists eight checks and four are built** — table ownership, policy-literal scan, contract presence and cycle detection need a schema, policy values and module contracts to exist. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
 | P0-11 | Financial-zone and AI-provider-import enforcement checks | `[x]` COMPLETE | `financial-zone-ai` (severity P0) and `provider-import` in `platform/checks/boundaries.ts`, wired into `npm run verify`, exit 1 on violation. Planted fixtures rejected, including the control proving the zone matches on path boundaries — `modules/rewards/ledger` restricted, `modules/rewards/ui` not. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
-| P0-12 | Contributor and development documentation | `[ ]` NOT STARTED | NONE |
-| P0-13 | Git workflow conventions (atomic commits, branch policy) | `[ ]` NOT STARTED | NONE |
+| P0-12 | Contributor and development documentation | `[x]` COMPLETE | [`docs/CONTRIBUTING.md`](./CONTRIBUTING.md) (FND-001d) — exact prerequisites (Node 26.7.0, npm 11.19.0), clean-clone setup, the pinned-vs-supported toolchain distinction, every verification command, the planted-violation fixtures, module ownership and dependency rules, the financial-zone AI prohibition, provider confinement to K-13, and secrets handling. Enforced, not merely written: `platform/checks/docs-contract.ts` + `tests/docs-contract.test.ts` run under `npm test` and fail the build if any guarantee is deleted or softened — 36 cases, 30 of them planted erosions. Evidence [§11.4](./CURRENT_IMPLEMENTATION_STATUS.md#114-evidence--fnd-001d-contributor-documentation-and-git-conventions). |
+| P0-13 | Git workflow conventions (atomic commits, branch policy) | `[x]` COMPLETE | [`docs/CONTRIBUTING.md` §10–§12](./CONTRIBUTING.md#10-atomic-changes) (FND-001d) — atomic-change definition, no-completion-without-evidence rule, the six review questions, branch roles (default `conductor/p2p-com-03af26`, per-session `conductor/<session>` working branches), commit-message convention, and the Conductor-managed Git operations contributors must not run. The `branch-conventions`, `atomic-changes` and `review` guarantees are each covered by planted-erosion tests. Evidence [§11.4](./CURRENT_IMPLEMENTATION_STATUS.md#114-evidence--fnd-001d-contributor-documentation-and-git-conventions). |
 
 ### A.2 Data layer
 
@@ -602,7 +602,7 @@ These are not owned by one phase. Each is verified per module and again at relea
 
 ## F. Test suites
 
-Testing is continuous across four levels (v3 §47): task, module, phase, release. **A test runner exists and 32 substrate tests pass** (`npm test`, exit 0 — FND-001a and FND-001b). None of the mandatory test types below is satisfied for a business capability, because no business capability exists yet; the statuses in §F.1 and §F.3–§F.4 are unchanged.
+Testing is continuous across four levels (v3 §47): task, module, phase, release. **A test runner exists and 68 substrate tests pass** (`npm test`, exit 0 — FND-001a, FND-001b and FND-001d). None of the mandatory test types below is satisfied for a business capability, because no business capability exists yet; the statuses in §F.1 and §F.3–§F.4 are unchanged.
 
 ### F.1 Mandatory test types (v3 §48)
 
@@ -770,7 +770,7 @@ Severity definitions from v3 §52.
 |---|---|---|---|---|
 | — | None | — | — | **0 open** |
 
-**Interpretation:** zero open defects reflects almost no implementation, not verified quality. The substrate delivered by FND-001a and FND-001b carries 32 passing tests and no known defect; this register stays close to meaningless until business capability exists to defect. Each entry, when added, must carry: id, severity, description, owning module, reproduction, detection source, and the regression test that reproduces it (v3 §58).
+**Interpretation:** zero open defects reflects almost no implementation, not verified quality. The substrate delivered by FND-001a, FND-001b and FND-001d carries 68 passing tests and no known defect; this register stays close to meaningless until business capability exists to defect. Each entry, when added, must carry: id, severity, description, owning module, reproduction, detection source, and the regression test that reproduces it (v3 §58).
 
 ---
 
@@ -789,8 +789,9 @@ A blocker prevents work that cannot proceed by any local means. Per v3 §65, esc
 | BL-07 | No email/SMS delivery provider credentials | K-14 live delivery | Credentials / access | Human owner (abstraction is unblocked) |
 | BL-08 | Jurisdiction and legal decisions: tax identifier schemes, legality of guarantee instruments, finance licensing, permitted hold periods | P3-02 detail, P7-04, P14-04 | Legal / regulatory | Human owner |
 | BL-09 | No deployment target or domain | P0-28 | Credentials / access | Human owner |
+| BL-10 | **Repository credential lacks the Workflows permission.** The token is a fine-grained PAT with repository write (`push`, `admin`), but pushes whose diff touches `.github/workflows/` are refused by the remote — `refusing to allow a Personal Access Token to create or update workflow ... without 'workflow' scope`. The Contents API rejects the identical file with `403 Resource not accessible by personal access token`, so this is the permission and not the transport. | P0-09, FND-001c, and every CI-dependent gate (G-*, X-44, X-46 promotion to CI checks) | Credentials / access | Human owner — grant **Workflows: Read and write** on the fine-grained token for `LakshanV/P2P-com`, or add the workflow through the GitHub web editor |
 
-**Work that continues regardless of every blocker above:** all of §A.1 (repository, toolchain, CI, boundary checks), §A.2 except P0-19, §A.4 conventions, the entire kernel except live provider adapters, the design system, and all test infrastructure. Blockers are therefore recorded but are **not** currently on the critical path.
+**Work that continues regardless of every blocker above:** all of §A.1 except P0-09, §A.2 except P0-19, §A.4 conventions, the entire kernel except live provider adapters, the design system, and all test infrastructure. **BL-10 is the first blocker to sit on the critical path** — it stops P0-09 and therefore stops FND-001 from completing. Every other blocker remains off the critical path.
 
 ---
 
@@ -813,15 +814,15 @@ The v1.0 guide is subordinate to v3 (see the hierarchy decision in [CURRENT_IMPL
 
 ## K. Baseline counts
 
-**474 tracked items** carry an explicit status. Counts verified mechanically over this file after FND-001b.
+**474 tracked items** carry an explicit status. Counts verified mechanically over this file after FND-001d.
 
 | Status | Count | Notes |
 |---|---:|---|
-| `[ ]` NOT STARTED | 449 | |
+| `[ ]` NOT STARTED | 446 | |
 | `[~]` IN PROGRESS | 9 | X-52 (standing documentation obligation); P0-04…P0-08 (satisfied by FND-001a, held while FND-001 is unfinished); P0-10 (four of eight MODULE_MAP §13 checks built); X-44 and X-46 (the checks exist but are not yet **CI** checks). |
 | `[?]` NEEDS REVIEW | 0 | Nothing has been submitted for review. |
-| `[x]` COMPLETE | 3 | P0-01 (DOC-001 documentation artefacts), P0-03 (all six source roots tracked and documented) and P0-11 (financial-zone and provider-import checks, proven by planted fixtures). |
-| `[!]` BLOCKED | 8 | P0-19, P0-22, P0-24, P0-26, P0-28, P0-40, P6-04, P14-04 — all external credentials or legal decisions (§I). |
+| `[x]` COMPLETE | 5 | P0-01 (DOC-001 documentation artefacts), P0-03 (all six source roots tracked and documented), P0-11 (financial-zone and provider-import checks, proven by planted fixtures), P0-12 and P0-13 (contributor documentation and git conventions, enforced by the FND-001d documentation contract). |
+| `[!]` BLOCKED | 9 | P0-09 (CI — BL-10, the credential lacks the Workflows permission), P0-19, P0-22, P0-24, P0-26, P0-28, P0-40, P6-04, P14-04. All external credentials or legal decisions (§I). |
 | `[-]` DEFERRED WITH REASON | 3 | RC-03, RC-04, RC-05. |
 | `[o]` OUT OF SCOPE WITH REASON | 2 | RC-01, RC-02. |
 | **Total** | **474** | |
