@@ -16,7 +16,7 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "blocked",
-      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated explicit creation instructions; command-level diagnosis is now required before another creation attempt. Anti-weakening tests and FND-001d remain afterward."
+      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated explicit creation instructions; exact filesystem, Git, ignore, and permissions diagnostics are required before another creation attempt. Anti-weakening tests and FND-001d remain afterward."
     },
     {
       "id": 4,
@@ -51,7 +51,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Multiple workflow-creation instructions have produced no tracked workflow artifact or command-level evidence, suggesting an unidentified execution or tooling-policy constraint."
+    "Multiple workflow-creation instructions have produced no tracked workflow artifact, and the prior requested diagnostic yielded no reported evidence; the exact command sequence must now establish whether the cause is path state, ignore rules, permissions, or agent/tooling behavior."
   ],
-  "last_instruction": "Investigate the repeated inability to create `.github/workflows/ci.yml` without changing repository files and return complete raw command evidence identifying the supported root cause."
+  "last_instruction": "Without changing any repository file, run the exact listed filesystem and Git diagnostic commands and return complete raw output and exit codes."
 }
