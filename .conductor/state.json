@@ -16,13 +16,13 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001 remains selected. FND-001a is accepted. FND-001b implementation appears technically sufficient, but two stale documentation statements and missing fresh commit/command evidence prevent acceptance."
+      "notes": "FND-001 remains selected. FND-001a and FND-001b are accepted. FND-001c is absent from the repository and GitHub checks; its repeated non-delivery is now under investigation. FND-001d remains afterward."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "Accept FND-001b after the final bounded documentation correction and clean verification evidence, then proceed to FND-001c where GitHub CI execution evidence is mandatory."
+      "notes": "FND-001b has documented local evidence and planted negative fixtures. GitHub still reports no checks, so CI-related acceptance requires a provider-observed passing workflow."
     },
     {
       "id": 5,
@@ -38,16 +38,18 @@
     "DOC-001 planning baseline is accepted; FND-001 is the first implementation task.",
     "FND-001 will be delivered as separately reviewable subtasks, beginning with the local executable toolchain before CI and boundary enforcement.",
     "The exact .nvmrc value is the pinned development runtime, while engines.node may remain a compatible supported-runtime range; packageManager must identify an exact npm version.",
-    "FND-001a is accepted as delivered, not as completion of FND-001 or Phase 0."
+    "FND-001a is accepted as delivered, not as completion of FND-001 or Phase 0.",
+    "FND-001b is accepted as delivered: all source roots, the architecture manifest, four static boundary checks, and planted violation proofs are present; P0-10 remains partial because four specified checks are deferred to schema/contracts/policy artefacts.",
+    "FND-001c must use immutable action SHAs, least-privilege permissions, exact toolchain pins, full verification, and a high/critical dependency-audit gate with an automated anti-weakening contract test."
   ],
   "concerns": [
-    "There is no CI, database, authentication, deployment, or monitoring foundation yet.",
+    "There is no database, authentication, deployment, or monitoring foundation yet.",
     "The eventual production/staging environments and external provider credentials may require later human or cloud-access escalation, but do not block local foundation work.",
     "The baseline requirement count is extensive and must remain mechanically verifiable as statuses change.",
-    "Boundary enforcement must not be bypassable through unresolved path forms, runtime indirection, re-exports, dynamic imports, or unregistered source units.",
-    "GitHub currently reports no checks, so CI workflow execution evidence will be required before P0-09 can be accepted.",
-    "The provider SDK denylist is configuration-based and must be maintained whenever providers are adopted; broad provider scopes reduce but do not eliminate this maintenance risk.",
-    "The reconciliation still contains two demonstrably stale present-tense statements, and the requested final commit SHA and clean verification output were not supplied."
+    "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
+    "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
+    "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
+    "Repeated FND-001c instructions have produced no visible repository changes, suggesting a local execution, git, push, ignore, or permissions blocker that must be identified before another delivery attempt."
   ],
-  "last_instruction": "Finish the FND-001b documentation reconciliation only: correct the stale evidence-register introduction in docs/CURRENT_IMPLEMENTATION_STATUS.md §11 and the stale test-infrastructure statement in docs/MASTER_IMPLEMENTATION_CHECKLIST.md §F, then search both documents for any equivalent present-tense claims contradicted by FND-001a/b and correct only those contradictions without changing completion statuses. Run `node docs/tools/validate-doc-links.mjs` and, from a clean dependency/build state, `npm ci && npm run verify`; commit the corrections and report the commit SHA plus exact exit codes and test/link/boundary counts, without starting FND-001c."
+  "last_instruction": "Investigate why the previous FND-001c instruction produced no repository changes or GitHub workflow run, without modifying files: inspect the local branch/worktree, git remotes and push capability, ignored/untracked files under `.github`, and any command or permission failures, then report the precise root cause with the relevant command outputs and the smallest corrective action needed."
 }
