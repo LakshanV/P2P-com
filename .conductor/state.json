@@ -15,8 +15,8 @@
     {
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
-      "status": "in_progress",
-      "notes": "FND-001 remains selected. FND-001a and FND-001b are accepted. FND-001c remains absent after repeated instructions; delivery-path diagnostics are required before another implementation attempt. FND-001d remains afterward."
+      "status": "blocked",
+      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent despite repeated instructions; execution/push capability must now be diagnosed before reissuing implementation. FND-001d remains afterward."
     },
     {
       "id": 4,
@@ -49,7 +49,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Repeated FND-001c instructions have produced no visible repository changes or requested error report, indicating an unresolved execution or delivery-path issue."
+    "Repeated FND-001c implementation instructions produced neither repository changes nor a blocker report, suggesting an unresolved execution, branch, authentication, or push-capability problem."
   ],
-  "last_instruction": "Diagnose why FND-001c has produced neither repository changes nor a blocker report: without modifying files, run and report verbatim the outputs of `git status --short --branch`, `git log -3 --oneline --decorate`, `git remote -v`, `git branch -vv`, `find .github -maxdepth 3 -type f -print 2>&1`, and `git push --dry-run`; conclude with the specific root cause or, if all diagnostics succeed, explicitly state that no delivery-path blocker exists."
+  "last_instruction": "Do not change repository files yet; diagnose why the previous FND-001c instruction was not executed by reporting the current branch, `git status --short`, configured remotes, push/authentication capability, whether `.github/workflows` can be created locally, and the exact blocker or failure that prevented implementation and push."
 }
