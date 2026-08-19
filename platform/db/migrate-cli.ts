@@ -21,6 +21,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { loadEnvFile } from './env-file.ts';
 import { MIGRATIONS_DIR } from './migrations.ts';
 import { PostgresDatabase, connectionStringFromEnv } from './postgres.ts';
 import { MigrationError, migrateDown, migrateUp, migrationStatus } from './runner.ts';
@@ -35,6 +36,9 @@ const option = (name: string): string | undefined => {
 };
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+// `cp .env.example .env` supplies DATABASE_URL. A shell export still takes precedence.
+loadEnvFile(repoRoot);
 const directory = path.resolve(option('dir') ?? path.join(repoRoot, MIGRATIONS_DIR));
 
 const log = (message: string): void => {

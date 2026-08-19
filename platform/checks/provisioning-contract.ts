@@ -37,6 +37,7 @@ export type ProvisioningContractId =
   | 'commands'
   | 'destructive-confirmation'
   | 'safe-target-guard'
+  | 'env-autoload'
   | 'development-only';
 
 export const PROVISIONING_CONTRACT_IDS: readonly ProvisioningContractId[] = [
@@ -50,6 +51,7 @@ export const PROVISIONING_CONTRACT_IDS: readonly ProvisioningContractId[] = [
   'commands',
   'destructive-confirmation',
   'safe-target-guard',
+  'env-autoload',
   'development-only',
 ];
 
@@ -66,6 +68,7 @@ export interface ProvisioningArtifacts {
   /** package.json as raw text, so a missing script is a textual absence like everything else. */
   readonly packageJson: string;
   readonly provisionCli: string;
+  readonly migrateCli: string;
   readonly testDatabase: string;
   /** Repo-relative paths git reports as tracked. Used to catch a committed .env. */
   readonly trackedPaths: readonly string[];
@@ -109,7 +112,8 @@ export function checkProvisioningContract(
     violations.push({ id, message });
   };
 
-  const { compose, envExample, gitignore, packageJson, provisionCli, testDatabase } = artifacts;
+  const { compose, envExample, gitignore, packageJson, provisionCli, migrateCli, testDatabase } =
+    artifacts;
 
   // --- the service itself ----------------------------------------------------------------------
   if (!/^\s{2}postgres:\s*$/m.test(compose)) {
@@ -272,6 +276,24 @@ export function checkProvisioningContract(
         'safe-target-guard',
         `${lifecycle} no longer calls assertSafeTestTarget before acting — a lifecycle function ` +
           'that trusts its caller is not a guard',
+      );
+    }
+  }
+
+  // --- copying the example must be sufficient ------------------------------------------------------
+  // Every documented command has to work from `.env` alone. An undocumented `export` step does not
+  // merely inconvenience: an unset DATABASE_URL looks exactly like "no database configured", so
+  // the live suites skip and report that as an honest result while the real cause is a missing
+  // line of setup.
+  for (const [name, source] of [
+    ['the provisioning CLI', provisionCli],
+    ['the migration CLI', migrateCli],
+  ] as const) {
+    if (!/loadEnvFile\(/.test(source)) {
+      report(
+        'env-autoload',
+        `${name} no longer loads .env, so copying the example would stop being sufficient and a ` +
+          'contributor would need an undocumented shell export',
       );
     }
   }

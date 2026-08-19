@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-002c (local PostgreSQL provisioning, isolated test-database lifecycle, provisioning contract). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-002c, as corrected (live migration coverage moved inside the guarded `_test` lifecycle; `.env` made sufficient for every documented command). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -53,7 +53,7 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Migrations | 2 forward + 2 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema and the migration ledger; no kernel or module tables exist. |
-| Tests | 175 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract and migration runner; no business logic exists to test. A further 7 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 198 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract and migration runner; no business logic exists to test. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -193,7 +193,7 @@ This is the honest inventory, not a backlog summary. Items delivered by FND-001a
 | Migration runner | **Present** — `npm run db:migrate`/`db:status`/`db:rollback` (FND-002b), with advisory locking, checksum reconciliation and ledger-atomic application. Driver `pg` declared and locked, so `npm ci` yields a runnable runner. **Never run against a live server** | P0-15 |
 | Connection configuration | `DATABASE_URL` only, read from the environment and never logged. **No pooling, no secret storage, no provisioning** | P0-14 |
 | Schema-namespace ownership convention | **Present and enforced for migrations** — `platform/db/schema-namespaces.ts`, derived from the architecture manifest | P0-16 |
-| Isolated test-database lifecycle | **Present, never exercised** — derived from `DATABASE_URL`, guarded against non-loopback hosts, non-test names and shared-environment names (FND-002c) | T-21 |
+| Isolated test-database lifecycle | **Present, never exercised** — derived from `DATABASE_URL`, guarded against non-loopback hosts, non-test names and shared-environment names, and the **only** path any live suite has to a database (FND-002c) | T-21 |
 | Seed and fixture data | Absent | P0-17 |
 | Object / file storage | Absent | P0-18 |
 | Search index | Absent | K-15 |
@@ -240,7 +240,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 175 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 198 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -288,7 +288,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added three more and 37 more, for 175 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 60 more, for 198 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -1521,6 +1521,64 @@ FOLLOW-UP:          On any machine with Docker: `npm run db:up && npm run db:rea
                     evidence, and P0-14, P0-15 and T-21 can be argued for COMPLETE against it.
                     Until then they stay IN PROGRESS. The next genuinely unblocked engineering
                     task is FND-003 (kernel build step B-1) — see §8.
+```
+
+---
+
+### 11.9 Correction — FND-002c integration-test targeting and `.env` sufficiency
+
+Two defects in the FND-002c delivery were found by review and corrected. Recorded here per v3 §58.
+The first is the more serious kind: the delivery added a guarded, isolated test-database lifecycle
+and then left the older suite migrating the development database beside it, so the repository
+simultaneously proved that one suite was safe and shipped another that was not.
+
+| # | Defect | Failed invariant | Correction |
+|---|---|---|---|
+| 1 | **The live migration suite ran against `DATABASE_URL` directly.** `postgres-migration.integration.ts` called `migrateUp`, `migrateDown` and a `DROP SCHEMA platform CASCADE` against whatever the contributor had configured — their development database. Running the tests destroyed local work, silently, with everything green. | A test suite may not destroy the data of the person running it. An isolated lifecycle that sits beside an unguarded suite protects nothing. | That file is deleted. Its coverage moved into `tests/integration/migrations.integration.ts`, where every case runs inside `withTestDatabase` — a derived `_test` database created for the test and dropped afterwards on success and failure alike. The configured database is now connection input only: the sole operation aimed at it is `migrationStatus`, which creates nothing, used to measure before and after that it was untouched. |
+| 2 | **`cp .env.example .env` was not sufficient.** Every `db:*` command and every live suite read `process.env` directly, so a contributor who followed the documented setup still got "DATABASE_URL is not set" — and, worse, the live suites reported that as an honest skip. The real cause was a missing, undocumented `export`. | Documented setup must be complete setup. A misconfiguration that presents as a legitimate skip is worse than one that fails. | `platform/db/env-file.ts` loads `.env` at the entry points — both CLIs and the integration harness — without overriding anything already set, so a shell export or CI secret still wins. The provisioning contract gained an `env-autoload` guarantee with planted weakenings, so a future entry point that forgets to load it fails the build. |
+
+**The rule is now executable.** `platform/checks/integration-safety.ts` and
+`tests/integration-safety.test.ts` run inside `npm run verify`, with no database in sight, and fail
+the build if any file under `tests/integration`:
+
+- constructs a `PostgresDatabase` outside the harness;
+- reads `DATABASE_URL` outside the harness, by constant, literal or property access;
+- calls `migrateUp`/`migrateDown` without entering `withTestDatabase`;
+- or if the harness itself stops deriving, guarding, creating, dropping-in-`finally`, loading
+  `.env`, or offering an honest skip.
+
+Comments are blanked before analysis, so a file cannot satisfy a rule by mentioning it. Eleven
+planted mistakes cover the four guarantees, including the exact mistake this correction repairs.
+
+```text
+STATUS AFTER CORRECTION:
+                    P0-14 IN PROGRESS — provisioning delivered, never started
+                    P0-15 IN PROGRESS — runner delivered, never run against a live server
+                    T-21  IN PROGRESS — lifecycle delivered, never run against a server
+                    T-02, T-04, T-05, T-20 unchanged and NOT STARTED
+                    Nothing is marked COMPLETE.
+
+TEST RESULTS:       npm run verify                 exit 0   tests 198, pass 198, fail 0
+                                                            (175 before; +23 for integration
+                                                            safety, .env loading and env-autoload)
+                    node --test tests/provisioning-contract.test.ts
+                                                   exit 0   tests 39, pass 39, fail 0
+                    node --test tests/integration-safety.test.ts
+                                                   exit 0   tests 21, pass 21, fail 0
+                    npm run test:integration       exit 0   tests 12, pass 0, SKIPPED 12
+                      reason: "DATABASE_URL is not set and no .env supplied it — run
+                      `cp .env.example .env`, then `npm run db:up && npm run db:ready`"
+                    npm audit --audit-level=high   exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs
+                                                   exit 0   4 files, 0 broken
+                    git diff --check               exit 0
+
+STILL NOT VERIFIED: No Docker runtime and no PostgreSQL are available here, so the live suites
+                    have never run — the twelve above are skipped, not passing. Both corrections
+                    are proved statically: by the integration-safety contract, which needs no
+                    database, and by the .env loader's own tests. Whether the derived database
+                    behaves as intended against a real server remains unproven, which is why every
+                    live-database gate stays incomplete.
 ```
 
 ---

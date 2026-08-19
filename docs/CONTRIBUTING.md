@@ -417,17 +417,32 @@ PostgreSQL or that advisory locks behave as assumed. Only a server can, so there
 opt-in suite:
 
 ```bash
-createdb jaya_integration
-DATABASE_URL=postgres://localhost:5432/jaya_integration npm run test:integration
+cp .env.example .env          # if you have not already
+npm run db:up && npm run db:ready
+npm run test:integration
 ```
 
-It applies the whole set, checks the ledger and checksums, reruns to prove idempotency, rolls back
-and re-applies, confirms a second runner is excluded, proves `status` and a refused rollback create
-nothing on a completely empty database, and proves rolling back 0002 leaves the ledger and the
-0001 history row intact — then rolls everything back so a rerun starts clean. **Point it at a
-disposable database.**
+Copying `.env` is the whole configuration. Every `db:*` command and every live suite reads it —
+no shell export is required, and one still wins if you set it.
 
-Without `DATABASE_URL` it **skips with the reason printed**, and a skipped run is not evidence. It is deliberately outside `npm test`, so `npm run verify` contains only tests
+**Nothing here ever migrates the database `DATABASE_URL` names.** An earlier revision did, which
+meant running the tests cost you your local data. The configured database is now treated as what
+it is — connection and configuration input — and every migration, rollback and schema assertion
+runs inside the derived `_test` database described in [6.9](#69-the-isolated-test-database),
+created for the test and dropped afterwards on success and on failure alike.
+
+`tests/integration-safety.test.ts` enforces that. It runs in `npm run verify`, with no database in
+sight, and fails the build if any file under `tests/integration` builds its own connection, reads
+`DATABASE_URL`, or calls `migrateUp`/`migrateDown` outside `withTestDatabase`. Prose in a header
+comment did not prevent this mistake the first time; an executable rule does.
+
+The suites apply the whole set, check the ledger and checksums, rerun to prove idempotency, roll
+back and re-apply, confirm a second runner is excluded, prove `status` and a refused rollback
+create nothing on an empty database, prove rolling back 0002 leaves the ledger and the 0001 row
+intact, and measure the development database before and after to prove it was untouched.
+
+Without `DATABASE_URL` — from `.env` or the shell — they **skip with the reason printed**, and a
+skipped run is not evidence. It is deliberately outside `npm test`, so `npm run verify` contains only tests
 that need no live service.
 
 ### 6.8 Local provisioning — running a database

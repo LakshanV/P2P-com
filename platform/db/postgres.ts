@@ -34,9 +34,9 @@ export const DRIVER_MODULE = 'pg';
 export class MissingConnectionError extends Error {
   constructor() {
     super(
-      `${DATABASE_URL_ENV} is not set. The runner takes its target from the environment and ` +
-        'never from an argument, so a connection string cannot end up in shell history or in a ' +
-        'process listing.',
+      `${DATABASE_URL_ENV} is not set, and no .env supplied it.\n\n    cp .env.example .env\n\n` +
+        'The runner takes its target from the environment and never from an argument, so a ' +
+        'connection string cannot end up in shell history or in a process listing.',
     );
     this.name = 'MissingConnectionError';
   }

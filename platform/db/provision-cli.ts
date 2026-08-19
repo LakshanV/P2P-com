@@ -25,6 +25,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { loadEnvFile, missingEnvMessage } from './env-file.ts';
+
 /** Commands that can destroy data and therefore require --yes. */
 export const DESTRUCTIVE_COMMANDS: readonly string[] = ['reset', 'destroy'];
 
@@ -41,6 +43,9 @@ export const DATA_VOLUME = 'jaya-postgres-data';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const composeFile = path.join(repoRoot, 'compose.yaml');
+
+// `cp .env.example .env` has to be the whole setup, so the CLI reads it. A shell export wins.
+loadEnvFile(repoRoot);
 
 const argv = process.argv.slice(2);
 const command = argv[0] ?? '';
@@ -75,16 +80,10 @@ function run(binary: string, args: readonly string[]): number {
 const compose = (...args: readonly string[]): number =>
   run('docker', ['compose', '--file', composeFile, ...args]);
 
-/** Read a variable out of the environment, or explain that .env has not been created. */
+/** Read a variable out of the environment, or explain exactly how to supply it. */
 function required(name: string): string {
   const value = process.env[name];
-  if (value === undefined || value.trim() === '') {
-    return fail(
-      `${name} is not set. Copy the committed example and edit it if you want different ` +
-        'values:\n\n    cp .env.example .env\n',
-      2,
-    );
-  }
+  if (value === undefined || value.trim() === '') return fail(missingEnvMessage(name), 2);
   return value.trim();
 }
 

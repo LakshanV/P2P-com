@@ -68,6 +68,7 @@ const artifacts = (): ProvisioningArtifacts => ({
   gitignore: read('.gitignore'),
   packageJson: read('package.json'),
   provisionCli: read('platform/db/provision-cli.ts'),
+  migrateCli: read('platform/db/migrate-cli.ts'),
   testDatabase: read('platform/db/test-database.ts'),
   trackedPaths: trackedPaths(),
 });
@@ -267,6 +268,16 @@ const WEAKENINGS: ReadonlyArray<{
     name: 'the local-host allowlist is removed',
     id: 'safe-target-guard',
     mutate: () => weaken('testDatabase', 'export const LOCAL_HOSTS', 'const LOCAL_HOSTS'),
+  },
+  {
+    name: 'the provisioning CLI stops loading .env',
+    id: 'env-autoload',
+    mutate: () => weaken('provisionCli', /loadEnvFile\(repoRoot\);/, ';'),
+  },
+  {
+    name: 'the migration CLI stops loading .env',
+    id: 'env-autoload',
+    mutate: () => weaken('migrateCli', /loadEnvFile\(repoRoot\);/, ';'),
   },
   {
     name: 'the development-only statement is deleted from the service definition',
