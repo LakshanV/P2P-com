@@ -27,15 +27,8 @@ import { InvalidInstantError, parseInstant } from '../../platform/time/instant.t
 
 import { sealSubject } from './immutable.ts';
 import type { IdentityRepository, IdentityTransaction } from './repository.ts';
-import {
-  IdentityError,
-  ORIGIN_KINDS,
-  SUBJECT_KINDS,
-  type IdentityErrorCode,
-  type IdentitySubject,
-  type OriginKind,
-  type SubjectKind,
-} from './types.ts';
+import { validateSubject } from './validate.ts';
+import { IdentityError, type IdentityErrorCode, type IdentitySubject } from './types.ts';
 
 export const IDENTITY_SCHEMA = 'kernel_identity';
 export const IDENTITY_TABLE = `${IDENTITY_SCHEMA}.identity_subject`;
@@ -144,17 +137,6 @@ function text(value: unknown, column: string): string {
   return value;
 }
 
-function oneOf<T extends string>(value: unknown, permitted: readonly T[], column: string): T {
-  const candidate = text(value, column);
-  if (!(permitted as readonly string[]).includes(candidate)) {
-    throw new IdentityError(
-      'malformed-record',
-      `${column} holds "${candidate}"; expected one of ${permitted.join(', ')}`,
-    );
-  }
-  return candidate as T;
-}
-
 interface Row {
   readonly subject_id: unknown;
   readonly kind: unknown;
@@ -164,29 +146,34 @@ interface Row {
   readonly idempotency_key: unknown;
 }
 
+/**
+ * Decode one row into a subject, or refuse.
+ *
+ * Two stages, and the split is the point.
+ *
+ * **Shape** is this file's job, because only the adapter knows what the driver hands back: is the
+ * column text at all, and is `created_at` exactly what the `to_char` projection emits. Nothing else
+ * in the component can ask those questions.
+ *
+ * **Domain** is `validateSubject`'s job, and it is the *same function the service calls on the way
+ * in*. That is the correction FND-004a needed: the first revision asked only whether each column
+ * was non-empty text and whether two of them held a known enum value, so a row written around the
+ * adapter — by hand, by a restore, by a migration script — decoded cleanly and came back as a real
+ * party while holding exactly the natural key, personal name or credential that creation refuses.
+ * A row that would not have been accepted as a request is not accepted as a subject.
+ */
 export function toSubject(row: Row): IdentitySubject {
-  const subjectId = text(row.subject_id, 'subject_id');
-  const originKind = oneOf<OriginKind>(row.origin_kind, ORIGIN_KINDS, 'origin_kind');
-
-  if (originKind === 'ai') {
-    // The service refuses this and so does the `CHECK`, so a row holding it was written by
-    // something that reached the table another way. Refusing on read as well means a doctored row
-    // cannot become a real party merely by being selected.
-    throw new IdentityError(
-      'ai-not-permitted',
-      `subject ${subjectId} is stored with origin_kind "ai". AI may not author an identity, and ` +
-        'this row was not written by this component. Refusing it rather than treating a ' +
-        'fabricated party as real',
-    );
-  }
-
-  return sealSubject({
-    subjectId,
-    kind: oneOf<SubjectKind>(row.kind, SUBJECT_KINDS, 'kind'),
+  const decoded = {
+    subjectId: text(row.subject_id, 'subject_id'),
+    // Not narrowed here. Membership of the kind registry and of ORIGIN_KINDS is a domain question,
+    // and asking it twice in two places is how the two answers drift apart.
+    kind: text(row.kind, 'kind'),
     createdAt: instant(row.created_at, 'created_at'),
-    origin: { kind: originKind, id: text(row.origin_id, 'origin_id') },
+    origin: { kind: text(row.origin_kind, 'origin_kind'), id: text(row.origin_id, 'origin_id') },
     idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
-  });
+  };
+
+  return sealSubject(validateSubject(decoded, 'stored row'));
 }
 
 /** Statements that begin, end or subdivide a transaction. An enlisted path may issue none of them. */

@@ -24,17 +24,14 @@
  * Owned by: K-01 Identity. No API, no UI — see CONTRACT.md for why.
  */
 
-import { InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
-
 import { sealSubject } from './immutable.ts';
-import { FOREIGN_FIELDS, assertOpaqueIdentifier, requireSubjectKind } from './registry.ts';
+import { FOREIGN_FIELDS, assertOpaqueIdentifier } from './registry.ts';
 import type { IdentityRepository, IdentityTransaction } from './repository.ts';
+import { validateSubject } from './validate.ts';
 import {
   IdentityError,
-  ORIGIN_KINDS,
   type IdentityOrigin,
   type IdentitySubject,
-  type OriginKind,
   type SubjectKind,
 } from './types.ts';
 
@@ -62,8 +59,6 @@ const PERMITTED_REQUEST_KEYS: readonly string[] = [
   'idempotencyKey',
 ];
 
-const PERMITTED_ORIGIN_KEYS: readonly string[] = ['kind', 'id'];
-
 export class IdentityService {
   readonly #repository: IdentityRepository;
 
@@ -78,19 +73,26 @@ export class IdentityService {
    * occupies a connection.
    */
   async create(request: CreateSubjectRequest): Promise<CreateSubjectResult> {
+    // Two checks, and they are different jobs. The first refuses fields belonging to K-02, K-03
+    // and K-04 — only a *request* can carry those. The second is the shared judgement of a
+    // finished subject, and the PostgreSQL decoder runs the very same function on every row it
+    // reads, so a stored subject is held to exactly what creation would have demanded.
     assertNoForeignConcerns(request);
-
-    const kind = requireSubjectKind((request as { kind?: unknown }).kind).kind;
-    const origin = assertOrigin(request.origin);
-
-    const subjectId = assertOpaqueIdentifier(request.subjectId, 'subjectId');
-    const idempotencyKey = assertOpaqueIdentifier(request.idempotencyKey, 'idempotencyKey');
-    const createdAt = assertInstant(request.createdAt, 'createdAt');
+    const validated = validateSubject(
+      {
+        subjectId: request.subjectId,
+        kind: request.kind,
+        createdAt: request.createdAt,
+        origin: request.origin,
+        idempotencyKey: request.idempotencyKey,
+      },
+      'request',
+    );
 
     // Sealed before it is stored *and* before it is returned: the same boundary in both
     // directions. A caller that keeps the origin object it passed cannot reach into the store
-    // through it, because it was copied here.
-    const subject = sealSubject({ subjectId, kind, createdAt, origin, idempotencyKey });
+    // through it, because `validateSubject` rebuilt it field by field.
+    const subject = sealSubject(validated);
 
     try {
       return await this.#insert(subject);
@@ -191,67 +193,6 @@ function assertNoForeignConcerns(request: CreateSubjectRequest): void {
         `${PERMITTED_REQUEST_KEYS.join(', ')}; anything else would be accepted and silently ` +
         'dropped, leaving the caller believing it had been stored',
     );
-  }
-}
-
-/** The origin, validated, with AI refused by name. */
-function assertOrigin(origin: unknown): IdentityOrigin {
-  if (origin === null || typeof origin !== 'object') {
-    throw new IdentityError(
-      'malformed-record',
-      `origin must be an object, got ${origin === null ? 'null' : typeof origin}`,
-    );
-  }
-  for (const key of Object.keys(origin)) {
-    if (!PERMITTED_ORIGIN_KEYS.includes(key)) {
-      throw new IdentityError(
-        'foreign-concern',
-        `origin carried "${key}"; the permitted fields are ${PERMITTED_ORIGIN_KEYS.join(', ')}. ` +
-          'An origin is who caused the creation, not a record of how they were authenticated — ' +
-          'K-02 does not exist and nothing has verified anybody',
-      );
-    }
-  }
-
-  const candidate = origin as { kind?: unknown; id?: unknown };
-  if (
-    typeof candidate.kind !== 'string' ||
-    !(ORIGIN_KINDS as readonly string[]).includes(candidate.kind)
-  ) {
-    throw new IdentityError(
-      'malformed-record',
-      `origin.kind is "${String(candidate.kind)}"; expected one of ${ORIGIN_KINDS.join(', ')}`,
-    );
-  }
-
-  if (candidate.kind === 'ai') {
-    // AI may draft the request, prompt an operator, or propose that a party should exist. It may
-    // not be the authority that says one does. An identity is the root of attribution for every
-    // account, order and ledger entry that follows, so a fabricated one is indistinguishable from
-    // a real party to everybody downstream — including the financial modules, where AI is barred
-    // from authority outright (MODULE_MAP §11).
-    throw new IdentityError(
-      'ai-not-permitted',
-      `origin.kind is "ai", and AI may not author an identity. An identity subject is the root ` +
-        'of attribution for every account, order and ledger entry that references it; a ' +
-        'fabricated one is indistinguishable from a real party to everything downstream. AI may ' +
-        'prompt a human or a deterministic system to create it, and that actor owns the record',
-    );
-  }
-
-  const id = assertOpaqueIdentifier(candidate.id, 'origin.id');
-  return { kind: candidate.kind as Exclude<OriginKind, 'ai'>, id };
-}
-
-/** Instants are validated in this component's own vocabulary, not the platform utility's. */
-function assertInstant(value: string, field: string): string {
-  try {
-    return parseInstant(value).source;
-  } catch (error) {
-    if (error instanceof InvalidInstantError) {
-      throw new IdentityError('malformed-instant', `${field}: ${error.message}`);
-    }
-    throw error;
   }
 }
 

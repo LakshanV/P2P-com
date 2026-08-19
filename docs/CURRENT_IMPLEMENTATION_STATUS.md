@@ -54,7 +54,7 @@
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures` and by every runner path (FND-002d, as corrected). **Never loaded into a live server.** No business-module, financial-policy or production data. |
 | Migrations | 6 forward + 6 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, and the `kernel_identity` schema with K-01's write-once subject table. The last two each carry a trigger that refuses to update or delete a row. No business-module tables exist. |
-| Tests | 604 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-05 Configuration, K-08 Event Infrastructure and K-09 Audit Foundation suites. A further 25 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 617 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-05 Configuration, K-08 Event Infrastructure and K-09 Audit Foundation suites. A further 25 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -208,7 +208,7 @@ a live server** — a foundation is not a finished component.
 
 | Item | State | Checklist ID |
 |---|---|---|
-| Identity | **Foundation only** — FND-004a, §11.21. No consumer | K-01 |
+| Identity | **Foundation only** — FND-004a, §11.21–§11.22. No consumer | K-01 |
 | Authentication | Absent | K-02 |
 | Accounts | Absent | K-03 |
 | Permissions framework | Absent | K-04 |
@@ -249,7 +249,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 604 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 617 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -297,7 +297,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction); FND-004a added a fourth and 67 more, for 604 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable; none has yet been found in FND-004a, which is not evidence of quality — it is evidence that nobody has reviewed it, and the two defects K-08 and K-09 shipped with were both invisible until somebody looked. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction); FND-004a added a fourth and 80 more (67 at delivery, 13 by its correction), for 617 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable; and three were found in FND-004a by review and corrected (§11.22) — a decoder that asked far less than creation, and a migration whose comments claimed to prohibit natural keys that its predicates admitted. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -473,7 +473,7 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | FND-003a — K-05 Configuration foundation | DELIVERED | Commands + exit codes + planted regressions | See §11.10, corrected in §11.11, §11.12 and §11.13. **Nothing marked COMPLETE.** No API, no enforced authority, no audit, migration never applied. |
 | FND-003b — K-08 Event Infrastructure foundation | DELIVERED | Commands + exit codes + planted regressions | See §11.14, corrected in §11.15. **Nothing marked COMPLETE.** No producer, no consumer, no broker binding, migration never applied. |
 | FND-003c — K-09 Audit Foundation | DELIVERED | Commands + exit codes + planted regressions | See §11.19, corrected in §11.20. **Nothing marked COMPLETE.** No unit records an audit record; the append-only trigger has never refused anything. |
-| FND-004a — K-01 Identity foundation | DELIVERED | Commands + exit codes + nine planted regressions | See §11.21. **Nothing marked COMPLETE.** The checklist K-01 row moves to `IN PROGRESS`: no consumer, no authentication, no permission check, no audit integration, and the write-once trigger has never refused anything. |
+| FND-004a — K-01 Identity foundation | DELIVERED | Commands + exit codes + sixteen planted regressions | See §11.21, corrected in §11.22. **Nothing marked COMPLETE.** The checklist K-01 row moves to `IN PROGRESS`: no consumer, no authentication, no permission check, no audit integration, and the write-once trigger has never refused anything. |
 
 **Evidence block for DOC-001:**
 
@@ -3037,6 +3037,97 @@ STILL NOT VERIFIED: No PostgreSQL runtime is available here, so migration 0006 h
                     reason stated when there is no server. K-01 also has no consumer, no
                     authentication behind its origin, no permission check on creation and no audit
                     record, so the K-01 checklist row and every live-database gate stay incomplete.
+```
+
+---
+
+### 11.22 Correction — FND-004a persisted-identity validation and the migration's opacity claim
+
+§11.21 recorded that K-01 refuses natural-key identifiers, and it did — on the way *in*. Two other
+places claimed the same guarantee and did not keep it.
+
+| # | The gap | Why it mattered | The correction |
+|---|---|---|---|
+| 1 | **Decoding asked far less than creation.** `toSubject` checked that each column was non-empty text and that two of them held a known enum value. It did not ask whether the subject id was opaque, whether the origin id or idempotency key looked like a credential, or whether the instant was a real one. | A row written around the adapter — by hand, by a restore, by a migration script — decoded cleanly and was handed back as a real party carrying exactly the natural key the creation path exists to keep out. Validation on the way in protects the store from a caller; validation on the way out protects every consumer from the store, and the store is the thing this component controls least. | One function, `validateSubject` in `kernel/identity/validate.ts`, called by the service on the subject it builds and by the decoder on the subject it decodes. There is no second list of rules to keep in step, because there is no second list. Its refusal on a stored row adds a clause saying the row was not written by this component, because that is a database problem rather than a caller's. |
+| 2 | **Migration 0006 claimed more than it enforced.** Its comments said the constraints prohibited natural keys. The predicates checked `subject_id` for an `@` and for a run of twelve or more digits, and checked `origin_id` for neither. | Four whole classes of natural key satisfied every constraint the table declared while the service refused them: a **domain** (`example.com`), a **`first.last` personal name** (`alice.smith`), a **compact IBAN or labelled document number** (`GB29NWBK6016133192`, `nic:912345678V`), and a **10- or 11-digit telephone number** (`0771234567`) — the last slipping under the twelve-digit rule. Credentials were not checked at all, on any column. A constraint that claims more than it enforces is worse than none, because the next reader trusts the comment rather than the predicate. | `kernel_identity.is_opaque_identifier(text)` carries the whole rule set once, and the `CHECK` on all three identifier columns calls it. It mirrors `assertOpaqueIdentifier` clause for clause. |
+| 3 | **`origin_id` and `idempotency_key` were second-class.** The service applied the full identifier rules to all three; the database applied a fragment to one. | An origin id is copied into logs and diagnostics exactly as a subject id is, and `origin_id = 'alice@example.com'` was accepted by the table. | All three columns go through the one function, and a test fails if any column reacquires an ad-hoc regex `CHECK` of its own alongside it. |
+
+**One corpus, three enforcement points.** `tests/identity-persisted.test.ts` holds twenty-eight
+identifiers — ten that must be accepted and eighteen natural or credential-shaped ones that must
+not — and drives every one of them through the service, through `validateSubject`, and through the
+SQL rules **extracted from migration 0006 and evaluated in JavaScript**. The SQL evaluator
+understands only the clause forms the function actually uses and **throws** on anything else, so
+rewriting a clause into a shape it cannot read is a failing test rather than a silent pass. That
+matters more here than usual: no PostgreSQL runtime is available, so an unevaluated `CHECK` would be
+a constraint nobody had ever tested in any form.
+
+The corpus also guards the other direction. "Without weakening the accepted opaque-ID domain" is
+half of this correction, and a rule tightened until only one generator's output survives would pass
+every refusal test while breaking every caller that chose a different id format. Ten accepted shapes
+— ULID, UUID, prefixed key, colon-namespaced, base64url, hyphenated service name — are asserted to
+survive all three points.
+
+**Each protection was planted and the tests observed to fail:**
+
+```text
+the decoder stops calling the shared validator             8 of 80 failed
+the SQL domain-suffix clause removed                       2 of 14 failed
+the SQL bare-digit-run clause removed                      2 of 14 failed
+the SQL shape clause weakened to accept short ids          3 of 14 failed
+the SQL shape clause narrowed so a valid UUID is refused   3 of 14 failed
+a SQL clause rewritten into a form the evaluator cannot read
+                                                           3 of 14 failed
+the domain rule removed from the service instead           3 of 37 failed
+```
+
+The last two are the ones worth keeping. The sixth replaces `position('@' in value) = 0` with the
+equivalent `strpos(value, '@') = 0` — a change that is *correct SQL and correct behaviour*, and the
+test still fails, because a rule set the guard cannot read is a rule set the guard is not checking.
+The seventh weakens the **service** rather than the SQL and is caught by the same corpus, so drift
+is detected whichever side moves.
+
+**Also changed:** two decoder tests in `tests/identity-repository.test.ts` now expect the shared
+vocabulary — a stored `kind` of `seller` is `unknown-subject-kind` rather than `malformed-record`,
+because the kind is not malformed, it is unregistered, exactly as at creation. The migration-contract
+test asserts that all three columns call the shared function. `tests/integration/identity.integration.ts`
+gained fifteen bypass-insert probes covering the newly-refused classes on all three columns.
+
+```text
+STATUS AFTER THIS TASK:
+                    K-01 contract         COMPLETE (kernel/identity/CONTRACT.md)
+                    K-01 implementation   IN PROGRESS - core only
+                    Checklist K-01 row (§B) stays IN PROGRESS - no live PostgreSQL, no consumer,
+                          no authentication, no permissions, no audit integration.
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 617, pass 617, fail 0
+                                                                (604 before; +13 net, +14 new
+                                                                 less one relocated)
+                    npm run check:migrations           exit 0   12 files, 0 violations
+                    npm run check:fixtures             exit 0   2 files, 2 datasets, 0 violations
+                    node --test tests/identity.test.ts exit 0   tests 23, pass 23
+                    node --test tests/identity-repository.test.ts
+                                                       exit 0   tests 21, pass 21
+                    node --test tests/identity-concurrency.test.ts
+                                                       exit 0   tests 22, pass 22
+                    node --test tests/identity-persisted.test.ts
+                                                       exit 0   tests 14, pass 14
+                    npm run test:integration           exit 0   tests 25, pass 0, SKIPPED 25
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: The strengthened constraints have never been applied to a server, so
+                    `is_opaque_identifier` has never refused an INSERT. It is proved by extracting
+                    its clauses and evaluating them, which tests the *rules* and not PostgreSQL's
+                    execution of them — a regex that means something different under POSIX ARE than
+                    under JavaScript would pass here and behave otherwise in the database. The two
+                    known differences are handled (`\y` is translated to `\b`; case-insensitive
+                    matching uses `~*`), and the residue is stated rather than implied.
+                    `tests/integration/identity.integration.ts` inserts every refused class
+                    directly and skips, with its reason, when there is no server. Everything else in
+                    §11.21's "still not verified" is unchanged: no consumer, no authentication
+                    behind `origin`, no permission check, no audit record.
 ```
 
 ---

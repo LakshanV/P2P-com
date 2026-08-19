@@ -40,6 +40,9 @@ export {
 
 export { isSealed, sealOrigin, sealSubject, sealSubjects } from './immutable.ts';
 
+export { validateSubject } from './validate.ts';
+export type { SubjectSource } from './validate.ts';
+
 export { IdentityService } from './service.ts';
 export type { CreateSubjectRequest, CreateSubjectResult } from './service.ts';
 

@@ -177,6 +177,27 @@ test('the database refuses what the service refuses', liveTestOptions, async () 
       ['an email as an origin id', { origin_id: `'alice@example.com'` }],
       ['a blank origin id', { origin_id: `'   '` }],
       ['a short idempotency key', { idempotency_key: `'k1'` }],
+
+      // The four classes the first revision of migration 0006 admitted. Each satisfied every
+      // constraint the table declared while the service refused it, so a write around the adapter
+      // put a natural key in the table for ever.
+      ['a domain as a subject id', { subject_id: `'example.com'` }],
+      ['a country-coded domain', { subject_id: `'jaya.market.lk'` }],
+      ['a first.last personal name', { subject_id: `'alice.smith'` }],
+      ['a first_last personal name', { subject_id: `'alice_smith'` }],
+      ['a compact IBAN', { subject_id: `'GB29NWBK6016133192'` }],
+      ['a labelled national identity number', { subject_id: `'nic:912345678V'` }],
+      ['a labelled passport number', { subject_id: `'passport-X1234567'` }],
+      ['a 10-digit telephone number', { subject_id: `'0771234567'` }],
+      ['an 11-digit telephone number', { subject_id: `'07712345678'` }],
+
+      // Credentials, on every identifier column — the rule set applies to all three.
+      ['a credential-named subject id', { subject_id: `'api_key_for_alice'` }],
+      ['a provider secret key as an origin id', { origin_id: `'sk-abcdefghijklmnopqrstuvwxyz'` }],
+      ['an AWS key id as an origin id', { origin_id: `'AKIAIOSFODNN7EXAMPLE'` }],
+      ['a bearer token as an idempotency key', { idempotency_key: `'bearer-zzzzzzzzzzzz'` }],
+      ['a domain as an idempotency key', { idempotency_key: `'example.com'` }],
+      ['a personal name as an origin id', { origin_id: `'alice.smith'` }],
     ] as const) {
       const refusal = await refuses(database, probeInsert(overrides));
       assert.ok(refusal !== null, `${why} must be refused by the database`);

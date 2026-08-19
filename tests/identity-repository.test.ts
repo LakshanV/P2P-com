@@ -305,9 +305,8 @@ test('a malformed persisted row is refused rather than approximated', () => {
     ['a millisecond timestamp', { created_at: '2026-04-01T12:00:00.000Z' }, /projected form/],
     ['a local timestamp', { created_at: '2026-04-01 12:00:00+05:30' }, /projected form/],
     ['an impossible date', { created_at: '2026-02-30T00:00:00.000000Z' }, /created_at/],
-    ['an unknown kind', { kind: 'seller' }, /expected one of/],
     ['a null kind', { kind: null }, /expected non-empty text/],
-    ['an unknown origin kind', { origin_kind: 'daemon' }, /expected one of/],
+    ['an unknown origin kind', { origin_kind: 'daemon' }, /origin.kind is "daemon"/],
     ['an empty subject id', { subject_id: '' }, /expected non-empty text/],
     ['a missing idempotency key', { idempotency_key: null }, /expected non-empty text/],
     ['an empty origin id', { origin_id: '' }, /expected non-empty text/],
@@ -342,7 +341,7 @@ test('a stored row claiming an AI origin is refused on read', () => {
 
 test('the adapter refuses a malformed row on every read path', async () => {
   const database = new RecordingDatabase({
-    selects: [{ match: /SELECT/i, rows: [row({ kind: 'seller' })] }],
+    selects: [{ match: /SELECT/i, rows: [row({ origin_kind: 'daemon' })] }],
   });
   const repository = new PostgresIdentityRepository(database);
 
@@ -420,9 +419,19 @@ test('the migration enforces the identity contract in the database, not only in 
   );
   assert.match(MIGRATION_UP, /CHECK \(kind IN \('person', 'organisation', 'system'\)\)/);
   assert.match(MIGRATION_UP, /CHECK \(origin_kind <> 'ai'\)/);
-  assert.match(MIGRATION_UP, /CHECK \(position\('@' in subject_id\) = 0\)/);
-  assert.match(MIGRATION_UP, /CHECK \(subject_id !~ '\[0-9\]\{12,\}'\)/);
+
+  // Every identifier column is held to the one rule set, not to a per-column subset. The first
+  // revision checked subject_id for an `@` and a 12-digit run and checked origin_id for neither,
+  // so an origin id could be an email address the service would have refused.
+  for (const column of ['subject_id', 'origin_id', 'idempotency_key']) {
+    assert.match(
+      MIGRATION_UP,
+      new RegExp(`CHECK \\(kernel_identity\\.is_opaque_identifier\\(${column}\\)\\)`),
+      `${column} does not go through is_opaque_identifier`,
+    );
+  }
   assert.match(MIGRATION_UP, /identity_subject_id_opaque/);
+  assert.match(MIGRATION_UP, /identity_subject_origin_id_opaque/);
   assert.match(MIGRATION_UP, /identity_subject_idempotency_key_opaque/);
   assert.match(
     MIGRATION_UP,
@@ -449,23 +458,9 @@ test('the migration refuses mutation at the database as well', () => {
   assert.match(MIGRATION_DOWN, /DROP FUNCTION IF EXISTS kernel_identity\.refuse_mutation/);
 });
 
-test('the opacity CHECK and the service agree on what an identifier may be', () => {
-  // Two enforcement points for one rule. If they drift, a write around the service is judged by a
-  // different standard from one through it — which is the whole reason the CHECK exists.
-  const match = /CHECK \(subject_id ~ '(\^[^']+)'\)/.exec(MIGRATION_UP);
-  assert.ok(match !== null, 'the opacity CHECK was not found');
-
-  const databaseRule = new RegExp(String(match[1]));
-  for (const accepted of ['sub_01HQZX3M4N5P6Q', 'f47ac10b-58cc-4372-a567-0e02b2c3d479']) {
-    assert.ok(databaseRule.test(accepted), `${accepted} passes the service but not the CHECK`);
-  }
-  for (const rejected of ['sub_1', '', '_leading', 'has space here']) {
-    assert.ok(
-      !databaseRule.test(rejected),
-      `${rejected} is refused by the service but not the CHECK`,
-    );
-  }
-});
+// The agreement between the SQL rule set and the service is proved in
+// tests/identity-persisted.test.ts, which extracts the clauses of is_opaque_identifier from the
+// migration and runs the service's own accepted and rejected identifiers through them.
 
 test('the rollback reverses exactly what the forward migration created', () => {
   const created = [...MIGRATION_UP.matchAll(/CREATE TABLE IF NOT EXISTS ([\w.]+)/g)].map((match) =>

@@ -58,7 +58,8 @@ and no merge — see §4.
 | Guarantee | Meaning |
 |---|---|
 | Immutability | A subject is written once. No update or delete exists at any layer, and the database refuses both by trigger, so a connection that bypasses this component still cannot rewrite an identity |
-| Opaque identifiers | A subject id that looks like an email, a telephone number, a document number, an IBAN, a URL or a `first.last` name is refused. So is one shorter than 8 characters |
+| Opaque identifiers | A subject id, origin id or idempotency key that looks like an email, a telephone number, a document number, an IBAN, a URL, a domain or a `first.last` name is refused. So is one shorter than 8 characters, and one that names or looks like a credential |
+| One rule, three enforcement points | The same rules apply at creation, on every read decoded from PostgreSQL, and in the `CHECK` constraints — the last so a write around the adapter is judged by the same standard as a call. A test drives one corpus through all three and fails if any two disagree (§6) |
 | Closed kind registry | Exactly `person`, `organisation`, `system`. Unknown kinds are refused, and the list is closed on purpose (§3) |
 | Idempotent creation | A retry with the same key returns the original subject **only when the whole content matches**. Two retries that overlap in time converge on the winner rather than one failing — a caller retrying after a timeout has done nothing wrong |
 | Determinism | The caller supplies the id, the instant and the key. This component reads no clock and generates no randomness, so the same request twice is the same subject |
@@ -71,7 +72,7 @@ and no merge — see §4.
 |---|---|
 | `unknown-subject-kind` | The kind is not in the closed registry. A role is not a kind (§3) |
 | `malformed-identifier` | Not 8–128 characters of `[A-Za-z0-9._:-]` starting alphanumeric. A short id is guessable, and an enumerable identity space lets anybody count the platform's parties |
-| `natural-identifier` | The id looks like an email, phone number, document number, IBAN, URL, domain or personal name. See §3 |
+| `natural-identifier` | An identifier looks like an email, telephone number, document number, IBAN, URL, domain or personal name — at creation or in a row read back from storage. See §3 and §6 |
 | `secret-bearing-input` | The id names or looks like a credential. An identity record is permanent; a secret in one is disclosed for as long as the platform exists |
 | `malformed-instant` | `createdAt` is not a real UTC instant. 31 April is refused rather than rolled forward |
 | `ai-not-permitted` | `origin.kind` is `ai`. See §5 |
@@ -80,7 +81,7 @@ and no merge — see §4.
 | `idempotency-key-reuse` | The key was already used for a *different* subject. Returning the earlier one would hand back an identity for a party the caller never asked about |
 | `no-such-subject` | Nothing to read |
 | `nested-transaction` | An enlisted write tried to issue `BEGIN`, `COMMIT`, `ROLLBACK` or `SAVEPOINT`. The transaction belongs to the caller |
-| `malformed-record` | A stored row is not what this component writes — including a row whose `origin_kind` is `ai` |
+| `malformed-record` | A stored row or a candidate subject is the wrong runtime shape: a column that is not text, an instant that is not what the projection emits, an unknown `origin.kind`, or a field the subject may not carry |
 
 ---
 
@@ -176,10 +177,33 @@ because a shallow `{ ...subject }` looks like a copy and shares its children —
 shipped with (§11.20).
 
 `created_at` is projected as UTC text through `to_char`, never left to the driver's `Date` parser:
-`Date` holds milliseconds where the column holds microseconds. Decoding is fail-closed — a row that
-is not exactly what the projection emits, or whose kind or origin is not what the contract declares,
-is refused rather than approximated. A wrong identity is worse than a missing one, because it is
-treated as a real party.
+`Date` holds milliseconds where the column holds microseconds.
+
+### A stored subject is held to exactly what creation demands
+
+Decoding runs in two stages, and the split is deliberate. **Shape** is the adapter's job, because
+only it knows what the driver hands back: is the column text at all, and is `created_at` exactly
+what the projection emits. **Domain** is `validateSubject` in `validate.ts` — *the same function the
+service calls on the way in*. Every stored subject id, origin id, idempotency key, kind, origin and
+instant is therefore judged by the rules that governed its creation: opacity, natural- and
+PII-shape refusal, credential refusal, the closed kind registry, the AI prohibition, and runtime
+shape. A row failing any of them is refused before it is returned, and the refusal says that the row
+was not written by this component — because that is a database problem, not a caller's.
+
+The first revision did not do this. It asked only whether each column was non-empty text and whether
+two of them held a known enum value, so a row written around the adapter decoded cleanly and came
+back as a real party while carrying exactly the natural key creation exists to keep out. That
+asymmetry was the wrong way round: validation on the way *in* protects the store from a caller,
+validation on the way *out* protects every consumer from the store, and the store is the thing this
+component controls least. A wrong identity is worse than a missing one, because it is treated as a
+real party.
+
+The same rule set exists a third time, in SQL, as `kernel_identity.is_opaque_identifier` — one
+function, called by the `CHECK` on all three identifier columns, so a direct write is judged by the
+same standard as a call. `tests/identity-persisted.test.ts` extracts that function's clauses from
+migration 0006, translates them, and runs one shared corpus through all three enforcement points,
+failing if any two disagree. It **throws** rather than passing when a clause is rewritten into a
+form it cannot evaluate, so the check cannot quietly stop checking.
 
 ---
 
@@ -217,6 +241,7 @@ npm run check:migrations                       # the FND-002a contract over db/m
 node --test tests/identity.test.ts             # subject contract, kind registry, refusals
 node --test tests/identity-repository.test.ts  # port conformance, adapter, module contract
 node --test tests/identity-concurrency.test.ts # retry convergence, enlistment, immutability
+node --test tests/identity-persisted.test.ts   # decoded rows and the SQL rule set, held to §6
 npm run test:integration                       # live PostgreSQL; skips without a database
 ```
 
