@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "dataset": "planted-unknown-owner",
+  "owner": "K-05",
+  "schema": "kernel_nonexistent",
+  "purpose": "test",
+  "description": "A planted-invalid fixture. It exists to be rejected; do not \"fix\" it.",
+  "dependsOn": [],
+  "tables": [
+    {
+      "table": "kernel_nonexistent.some_table",
+      "identity": [
+        "id"
+      ],
+      "rows": [
+        {
+          "id": "row-1"
+        }
+      ]
+    }
+  ]
+}

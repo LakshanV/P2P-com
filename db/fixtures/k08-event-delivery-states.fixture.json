@@ -1,0 +1,155 @@
+{
+  "manifestVersion": 1,
+  "dataset": "k08-event-delivery-states",
+  "owner": "K-08",
+  "schema": "kernel_event_infrastructure",
+  "purpose": "development",
+  "description": "One event per delivery state a developer needs to see: delivered with its consumer receipt, pending and due, and dead-lettered after exhausting its attempts. The events describe the configuration versions the K-05 dataset creates, which is why this dataset depends on it - loading the other way round would describe versions that do not exist yet. These are development scenarios, not authoritative history.",
+  "dependsOn": ["k05-configuration-baseline"],
+  "tables": [
+    {
+      "table": "kernel_event_infrastructure.event",
+      "identity": ["event_id"],
+      "jsonColumns": ["payload"],
+      "rows": [
+        {
+          "event_id": "evt-fixture-0001",
+          "event_type": "configuration.version_published",
+          "schema_version": 1,
+          "occurred_at": "2026-02-01T00:00:00Z",
+          "recorded_at": "2026-02-01T00:00:00Z",
+          "producer": "K-05",
+          "correlation_id": "corr-fixture-0001",
+          "causation_id": null,
+          "payload": {
+            "version_id": "ver-fixture-0002",
+            "config_key": "session.timeout_seconds"
+          },
+          "payload_fingerprint": "f0dd5a8a762380a14b9e7e6851d193858da35ca88560b74bd3e9f5a96cc82844",
+          "idempotency_key": "fixture-k08-0001",
+          "origin": "system"
+        },
+        {
+          "event_id": "evt-fixture-0002",
+          "event_type": "configuration.version_published",
+          "schema_version": 1,
+          "occurred_at": "2026-01-01T00:00:00Z",
+          "recorded_at": "2026-01-01T00:00:00Z",
+          "producer": "K-05",
+          "correlation_id": "corr-fixture-0002",
+          "causation_id": null,
+          "payload": {
+            "version_id": "ver-fixture-0003",
+            "config_key": "search.results_per_page"
+          },
+          "payload_fingerprint": "b5f4359aa8b72b63f3812d918224273fef550c4e49b89dc10c57c848a98ffb57",
+          "idempotency_key": "fixture-k08-0002",
+          "origin": "system"
+        },
+        {
+          "event_id": "evt-fixture-0003",
+          "event_type": "configuration.version_published",
+          "schema_version": 1,
+          "occurred_at": "2026-02-01T00:00:00Z",
+          "recorded_at": "2026-02-01T00:00:00Z",
+          "producer": "K-05",
+          "correlation_id": "corr-fixture-0001",
+          "causation_id": "evt-fixture-0001",
+          "payload": {
+            "version_id": "ver-fixture-0004",
+            "config_key": "session.timeout_seconds"
+          },
+          "payload_fingerprint": "0faa78951dd14d2403205fba524a88085649360acee2d6162f5b0864eb4dcbf6",
+          "idempotency_key": "fixture-k08-0003",
+          "origin": "system"
+        }
+      ]
+    },
+    {
+      "table": "kernel_event_infrastructure.event_delivery",
+      "identity": ["delivery_id"],
+      "rows": [
+        {
+          "delivery_id": "evt-fixture-0001:audit-writer:1",
+          "event_id": "evt-fixture-0001",
+          "subscription": "audit-writer",
+          "generation": 1,
+          "status": "delivered",
+          "attempts": 1,
+          "next_attempt_at": "2026-02-01T00:00:00Z",
+          "claimed_by": null,
+          "claim_token": null,
+          "claim_expires_at": null,
+          "last_error": null,
+          "completed_at": "2026-02-01T00:00:05Z",
+          "created_at": "2026-02-01T00:00:00Z",
+          "replay_of": null,
+          "replay_reason": null
+        },
+        {
+          "delivery_id": "evt-fixture-0001:search-indexer:1",
+          "event_id": "evt-fixture-0001",
+          "subscription": "search-indexer",
+          "generation": 1,
+          "status": "pending",
+          "attempts": 0,
+          "next_attempt_at": "2026-02-01T00:00:00Z",
+          "claimed_by": null,
+          "claim_token": null,
+          "claim_expires_at": null,
+          "last_error": null,
+          "completed_at": null,
+          "created_at": "2026-02-01T00:00:00Z",
+          "replay_of": null,
+          "replay_reason": null
+        },
+        {
+          "delivery_id": "evt-fixture-0002:audit-writer:1",
+          "event_id": "evt-fixture-0002",
+          "subscription": "audit-writer",
+          "generation": 1,
+          "status": "dead-lettered",
+          "attempts": 5,
+          "next_attempt_at": "2026-01-01T01:00:00Z",
+          "claimed_by": null,
+          "claim_token": null,
+          "claim_expires_at": null,
+          "last_error": "fixture: the consumer refused this event five times",
+          "completed_at": "2026-01-01T01:00:00Z",
+          "created_at": "2026-01-01T00:00:00Z",
+          "replay_of": null,
+          "replay_reason": null
+        },
+        {
+          "delivery_id": "evt-fixture-0003:audit-writer:1",
+          "event_id": "evt-fixture-0003",
+          "subscription": "audit-writer",
+          "generation": 1,
+          "status": "pending",
+          "attempts": 1,
+          "next_attempt_at": "2026-02-01T00:00:30Z",
+          "claimed_by": null,
+          "claim_token": null,
+          "claim_expires_at": null,
+          "last_error": "fixture: one failed attempt, retry scheduled",
+          "completed_at": null,
+          "created_at": "2026-02-01T00:00:00Z",
+          "replay_of": null,
+          "replay_reason": null
+        }
+      ]
+    },
+    {
+      "table": "kernel_event_infrastructure.event_receipt",
+      "identity": ["subscription", "event_id"],
+      "rows": [
+        {
+          "subscription": "audit-writer",
+          "event_id": "evt-fixture-0001",
+          "delivery_id": "evt-fixture-0001:audit-writer:1",
+          "processed_at": "2026-02-01T00:00:05Z"
+        }
+      ]
+    }
+  ]
+}

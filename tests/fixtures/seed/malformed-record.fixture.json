@@ -1,0 +1,25 @@
+{
+  "manifestVersion": 1,
+  "dataset": "planted-malformed-record",
+  "owner": "K-05",
+  "schema": "kernel_configuration",
+  "purpose": "test",
+  "description": "A planted-invalid fixture. It exists to be rejected; do not \"fix\" it.",
+  "dependsOn": [],
+  "tables": [
+    {
+      "table": "kernel_configuration.config_version",
+      "identity": [
+        "version_id"
+      ],
+      "rows": [
+        {
+          "version_id": "ver-planted-1",
+          "value_text": {
+            "nested": "not a scalar"
+          }
+        }
+      ]
+    }
+  ]
+}

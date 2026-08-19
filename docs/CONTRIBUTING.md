@@ -142,7 +142,7 @@ One command decides whether a change is acceptable:
 npm run verify
 ```
 
-It chains seven gates in order and stops at the first failure:
+It chains eight gates in order and stops at the first failure:
 
 | Command | What it proves |
 |---|---|
@@ -152,6 +152,7 @@ It chains seven gates in order and stops at the first failure:
 | `npm run build` | `tsc -p tsconfig.build.json` compiles and emits `dist/`; `postbuild` re-runs the boundary and migration checks against the emitted output. |
 | `npm run check:boundaries` | The four architectural checks below, over the real source tree. |
 | `npm run check:migrations` | The ten migration-contract checks in [section 6](#6-the-database-and-the-migration-contract), over `db/migrations`. |
+| `npm run check:fixtures` | The nine fixture-contract checks over `db/fixtures` — ownership, determinism, identity, dependency order, credentials and personal data. See [`db/fixtures/README.md`](../db/fixtures/README.md). |
 | `npm test` | `node --test "tests/**/*.test.ts"` — the whole test suite. |
 
 Supporting commands:
@@ -203,6 +204,7 @@ without the other and `tests/manifest.test.ts` fails.
 | `violation-provider-import/` | A provider SDK imported outside K-13 is rejected. |
 | `violation-unregistered-unit/` | A directory that is in no register is rejected rather than silently skipped. |
 | `migrations/` | One directory per migration-contract check — `valid/` plus `invalid-<check>/` — each breaking exactly one rule from [section 6](#6-the-database-and-the-migration-contract). |
+| `seed/` | One fixture per fixture-contract check, each violating exactly one rule of the seed-data contract: an unowned schema, a cross-owner write, a duplicate identity, a dependency cycle, a nondeterministic value, a seeded credential, a real-looking email address. |
 
 **These files are not broken code awaiting repair.** They are the evidence that each check can
 fail. A check that has never rejected anything is indistinguishable from a check that returns

@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "dataset": "planted-cross-owner",
+  "owner": "K-05",
+  "schema": "kernel_configuration",
+  "purpose": "test",
+  "description": "A planted-invalid fixture. It exists to be rejected; do not \"fix\" it.",
+  "dependsOn": [],
+  "tables": [
+    {
+      "table": "kernel_event_infrastructure.event",
+      "identity": [
+        "event_id"
+      ],
+      "rows": [
+        {
+          "event_id": "evt-planted-1"
+        }
+      ]
+    }
+  ]
+}

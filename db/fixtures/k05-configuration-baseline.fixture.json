@@ -1,0 +1,97 @@
+{
+  "manifestVersion": 1,
+  "dataset": "k05-configuration-baseline",
+  "owner": "K-05",
+  "schema": "kernel_configuration",
+  "purpose": "development",
+  "description": "A configuration history a developer can resolve against: one key with a superseded predecessor and a live successor, one key set only globally, one tenant override, and one draft that resolution must ignore. No financial policy values - those are K-06's.",
+  "dependsOn": [],
+  "tables": [
+    {
+      "table": "kernel_configuration.config_version",
+      "identity": ["version_id"],
+      "rows": [
+        {
+          "version_id": "ver-fixture-0001",
+          "config_key": "session.timeout_seconds",
+          "scope_level": "global",
+          "scope_id": "",
+          "value_kind": "duration-seconds",
+          "value_text": "900",
+          "effective_from": "2026-01-01T00:00:00Z",
+          "status": "superseded",
+          "created_at": "2026-01-01T00:00:00Z",
+          "published_at": "2026-01-01T00:00:00Z",
+          "superseded_at": "2026-02-01T00:00:00Z",
+          "previous_version_id": null,
+          "idempotency_key": "fixture-k05-0001",
+          "origin": "system-migration"
+        },
+        {
+          "version_id": "ver-fixture-0002",
+          "config_key": "session.timeout_seconds",
+          "scope_level": "global",
+          "scope_id": "",
+          "value_kind": "duration-seconds",
+          "value_text": "1800",
+          "effective_from": "2026-02-01T00:00:00Z",
+          "status": "active",
+          "created_at": "2026-01-15T00:00:00Z",
+          "published_at": "2026-02-01T00:00:00Z",
+          "superseded_at": null,
+          "previous_version_id": "ver-fixture-0001",
+          "idempotency_key": "fixture-k05-0002",
+          "origin": "system-migration"
+        },
+        {
+          "version_id": "ver-fixture-0003",
+          "config_key": "search.results_per_page",
+          "scope_level": "global",
+          "scope_id": "",
+          "value_kind": "integer",
+          "value_text": "25",
+          "effective_from": "2026-01-01T00:00:00Z",
+          "status": "active",
+          "created_at": "2026-01-01T00:00:00Z",
+          "published_at": "2026-01-01T00:00:00Z",
+          "superseded_at": null,
+          "previous_version_id": null,
+          "idempotency_key": "fixture-k05-0003",
+          "origin": "system-migration"
+        },
+        {
+          "version_id": "ver-fixture-0004",
+          "config_key": "session.timeout_seconds",
+          "scope_level": "tenant",
+          "scope_id": "tenant-fixture-a",
+          "value_kind": "duration-seconds",
+          "value_text": "300",
+          "effective_from": "2026-02-01T00:00:00Z",
+          "status": "active",
+          "created_at": "2026-01-20T00:00:00Z",
+          "published_at": "2026-02-01T00:00:00Z",
+          "superseded_at": null,
+          "previous_version_id": null,
+          "idempotency_key": "fixture-k05-0004",
+          "origin": "system-migration"
+        },
+        {
+          "version_id": "ver-fixture-0005",
+          "config_key": "search.results_per_page",
+          "scope_level": "global",
+          "scope_id": "",
+          "value_kind": "integer",
+          "value_text": "50",
+          "effective_from": "2026-06-01T00:00:00Z",
+          "status": "draft",
+          "created_at": "2026-02-10T00:00:00Z",
+          "published_at": null,
+          "superseded_at": null,
+          "previous_version_id": null,
+          "idempotency_key": "fixture-k05-0005",
+          "origin": "system-migration"
+        }
+      ]
+    }
+  ]
+}

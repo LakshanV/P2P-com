@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-002d (seed and fixture foundation: a versioned deterministic manifest contract, an injected transactional seed runner with two target guards, and development datasets for the K-05 and K-08 foundations). Preceded by FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -22,7 +22,7 @@
 >
 > Contributor documentation and git conventions are delivered (FND-001d) and are themselves under an executable contract: [docs/CONTRIBUTING.md](./CONTRIBUTING.md) is read by `tests/docs-contract.test.ts`, which fails the build if a documented guarantee is deleted or softened.
 >
-> There is still **no CI, no database, no business module and no UI**. Two kernel components now have cores — **K-05 Configuration** (§11.10–§11.13) and **K-08 Event Infrastructure** (§11.14–§11.15) — and neither is complete: no API, no authorisation, no audit, no producing or consuming module, and nothing applied to a live server. FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `kernel/`, `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**.
+> There is still **no CI, no database, no business module and no UI**. Two kernel components now have cores — **K-05 Configuration** (§11.10–§11.13) and **K-08 Event Infrastructure** (§11.14–§11.15) — and neither is complete: no API, no authorisation, no audit, no producing or consuming module, and nothing applied to a live server. FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**; `kernel/` holds the two component foundations above.
 >
 > Exact commands and results: §11.1 (FND-001a), §11.2 (FND-001b) and §11.4 (FND-001d).
 
@@ -52,8 +52,9 @@
 | Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement and the migration contract; no database server, no kernel. |
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
+| Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures`, loaded by `npm run db:seed` (FND-002d). **Never loaded into a live server.** No business-module, financial-policy or production data. |
 | Migrations | 4 forward + 4 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, and the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables. No business-module tables exist. |
-| Tests | 392 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration and K-08 Event Infrastructure. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 430 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration and K-08 Event Infrastructure. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -103,7 +104,7 @@ Verified by direct inspection of the working tree at baseline time.
 
 | Path | Type | Description |
 |---|---|---|
-| `kernel/`, `modules/`, `design-system/`, `apps/` | Source roots | Tracked, each with a README recording its ownership rules. **Empty of implementation.** |
+| `kernel/`, `modules/`, `design-system/`, `apps/` | Source roots | Tracked, each with a README recording its ownership rules. **Empty of implementation at FND-001b**, which is the state this table describes; `kernel/` has since gained K-05 and K-08. |
 | `platform/architecture/manifest.ts` | Substrate | Machine-readable encoding of MODULE_MAP: 15 kernel components, 47 modules, layer depths, the financial authority zone as path prefixes, the provider SDK list. |
 | `platform/checks/boundaries.ts` | Substrate | The four boundary checks, extracting imports through the TypeScript compiler API. |
 | `platform/checks/cli.ts` | Substrate | `npm run check:boundaries`; exits 1 on any violation. |
@@ -114,7 +115,7 @@ Verified by direct inspection of the working tree at baseline time.
 
 **That was the entire repository at FND-001b**, the point this inventory describes: no CI configuration, no database, no migration directory, no environment configuration, no kernel component, no business module and no UI. FND-002 and FND-003 have since added the migration set, the runner, local provisioning and two kernel component cores; §4 and §11 carry the current picture.
 
-DOC-001 created no source file. FND-001a was scoped to the toolchain. FND-001b was scoped to the source roots and boundary enforcement and created **no CI, database, kernel, business-module or UI functionality** — `kernel/` and `modules/` contain one README each and nothing else.
+DOC-001 created no source file. FND-001a was scoped to the toolchain. FND-001b was scoped to the source roots and boundary enforcement and created **no CI, database, kernel, business-module or UI functionality** — at that point `kernel/` and `modules/` contained one README each and nothing else. FND-002 and FND-003 have since populated `kernel/`; `modules/` is still a README.
 
 ---
 
@@ -240,7 +241,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 392 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 430 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -288,7 +289,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction), for 392 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 31 more, for 430 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -2295,6 +2296,132 @@ STILL NOT VERIFIED: **No business module uses any of this.** The enlisted path i
                     inside a real transaction) is proved by recording the statements it sends, not
                     by watching a server honour them. P0-35 and every live-database gate stay
                     incomplete.
+```
+
+---
+
+### 11.16 Evidence — FND-002d (seed and fixture foundation)
+
+Seed data is the quietest way to make a test suite lie. A fixture carrying a real-looking email
+address becomes a data-protection question the first time somebody dumps a development database;
+one calling `now()` makes a test that passes in the morning and fails at midnight; one writing into
+another unit's schema makes the boundary rules decorative. None of those fail loudly. All of them
+are cheap to prevent at the point the data is declared, which is what this slice does.
+
+**What was built**
+
+| File | Holds |
+|---|---|
+| `platform/fixtures/manifest.ts` | the versioned manifest contract and its nine checks |
+| `platform/fixtures/runner.ts` | the injected transactional seed runner, and the two target guards |
+| `platform/fixtures/cli.ts` | `validate`, `list`, `load`, `reset` |
+| `db/fixtures/*.fixture.json` | two datasets: K-05 configuration history, K-08 delivery states |
+| `db/fixtures/README.md` | commands, safety, ownership, extension rules, retention, limitations |
+| `tests/fixtures/seed/*` | ten planted-invalid fixtures, one per check, plus a README saying not to fix them |
+
+**The design decisions worth recording**
+
+- **A fixture is declared, not executed.** There is no place in a manifest to put code, so there is
+  nothing to review for side effects. The runner reads, validates and inserts.
+- **Ownership is derived, not remembered.** A dataset names a manifest unit and a schema, and the
+  validator resolves the schema through the same `ownerOfSchema` the migration validator uses. A
+  dataset claiming an owner that does not own its schema is refused; so is one writing into another
+  unit's namespace.
+- **Two target guards, not one.** `load` is additive and idempotent, so it may reach the local
+  *development* database — that is the ordinary case, and that database does not end in `_test`. It
+  refuses any remote host and any name containing a shared-environment marker. `reset` deletes rows,
+  so it refuses everything but the guarded derived `_test` database *and* demands
+  `--confirm=<database>` naming it. The development database is loadable and never replaceable.
+- **`ON CONFLICT (identity) DO NOTHING`, never `DO UPDATE`.** A reload is a no-op, and a fixture
+  cannot overwrite a row somebody changed by hand while debugging. During a debugging session the
+  database is authoritative, not the file.
+- **One transaction for the whole load**, across every dataset. A partial seed looks loaded, and
+  whichever half is missing surfaces days later as an unrelated failure.
+- **`reset` deletes by identity and never truncates.** The fixture set does not own the tables it
+  writes into; a truncate would remove rows it never created.
+
+**Tests** — 31 deterministic cases, plus one opt-in live suite:
+
+```text
+tests/seed-fixtures.test.ts              12 cases
+  real datasets   every fixture passes; only implemented kernel foundations are seeded (K-05 and
+                  K-08, checked against which components actually have a CONTRACT.md, so an
+                  unimplemented component cannot acquire fixtures); no financial policy key; every
+                  instant is a fixed UTC literal; every declared identity is present in every row
+  ordering        dependency order respected, stable across input order and across repeated calls
+  planted         each of the nine checks rejects its planted fixture; the planted directory has
+                  one per check and nothing stale; a rejected manifest is not returned as loadable;
+                  P0 is reserved for the checks that could leak data or corrupt a boundary
+
+tests/seed-runner.test.ts                19 cases
+  ordering        dependencies first whatever order the manifests arrive in, and the rows
+                  themselves written in that order; tables within a dataset in declared order
+                  (events before deliveries before receipts, or the foreign keys would refuse);
+                  a cycle refused before a connection is opened
+  atomicity       a row failing in the *second* dataset rolls back the first as well; a failure
+                  after a successful earlier load restores exactly what was there; one BEGIN, one
+                  COMMIT, one connection for the whole load
+  idempotency     a second load inserts nothing and says so; every insert conflicts on the declared
+                  identity including the composite one; a hand-edited row is not overwritten;
+                  unseed removes exactly the declared rows, children first, and never truncates
+  safety          remote hosts refused; every marker in the provisioning guard's own list refused
+                  even on localhost; unparseable strings refused; the development database refused
+                  for replacement; four wrong confirmations refused and the right one accepted
+
+tests/integration/fixtures.integration.ts   2 cases, SKIPPED without a server
+                  the two claims a fake cannot make: that the rows satisfy the real CHECK
+                  constraints, foreign keys and unique indexes, and that ON CONFLICT really makes a
+                  reload a no-op against the actual indexes. Runs inside the guarded derived _test
+                  database and asserts the development database untouched.
+```
+
+**Each guarantee was planted and the tests observed to fail:**
+
+```text
+content rules and the cross-owner check disabled       1 of 12 failed (covering 4 checks)
+per-dataset commits instead of one transaction         2 of 19 failed
+ON CONFLICT removed, host and confirmation guards off  5 of 19 failed
+```
+
+**What is deliberately not seeded**, and why — recorded in `db/fixtures/README.md` as well:
+
+- **No business-module data.** No module is implemented; seeding orders or listings would invent
+  contracts that do not exist, and every test written against them would be rewritten when the real
+  ones land.
+- **No financial policy values.** K-06 owns those and K-06 does not exist. A test fails if a fixture
+  declares one.
+- **No production defaults**, and no `production` purpose in the format at all.
+- **No authoritative events.** The K-08 rows are delivery-state scenarios written by hand, not
+  published through `EventService` and consumed by nothing.
+- **No end-to-end commerce coverage.** Two kernel foundations' worth of rows is not a marketplace,
+  and nothing here should be read as evidence that one works.
+
+```text
+STATUS AFTER THIS TASK:
+                    P0-17 IN PROGRESS - the strategy, contract, runner and datasets exist; nothing
+                          has been loaded into a live server, and "realistic-data testing" in the
+                          v3 sense needs business modules that do not exist.
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 430, pass 430, fail 0
+                                                                (399 before; +31)
+                    npm run check:fixtures             exit 0   2 files, 2 datasets, 0 violations
+                    node --test tests/seed-fixtures.test.ts
+                                                       exit 0   tests 12, pass 12
+                    node --test tests/seed-runner.test.ts
+                                                       exit 0   tests 19, pass 19
+                    npm run check:migrations           exit 0   8 files, 0 violations
+                    npm run test:integration           exit 0   tests 14, pass 0, SKIPPED 14
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: No PostgreSQL runtime is available here, so **no fixture has ever been loaded**.
+                    The datasets are validated statically and the runner is proved against an
+                    injected fake; that the rows satisfy the real constraints, and that ON CONFLICT
+                    behaves against the actual indexes, is unobserved. The K-08 fixtures also carry
+                    hand-computed payload fingerprints that nothing recomputes. P0-17 and every
+                    live-database gate stay incomplete.
 ```
 
 ---

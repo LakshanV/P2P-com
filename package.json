@@ -18,7 +18,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node --test \"tests/**/*.test.ts\"",
-    "verify": "npm run typecheck && npm run lint && npm run format:check && npm run build && npm run check:boundaries && npm run check:migrations && npm test",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm run build && npm run check:boundaries && npm run check:migrations && npm run check:fixtures && npm test",
     "check:boundaries": "node platform/checks/cli.ts",
     "postbuild": "node dist/checks/cli.js --quiet && node dist/db/cli.js --quiet",
     "check:migrations": "node platform/db/cli.ts",
@@ -30,7 +30,11 @@
     "db:ready": "node platform/db/provision-cli.ts ready",
     "db:down": "node platform/db/provision-cli.ts down",
     "db:reset": "node platform/db/provision-cli.ts reset",
-    "db:destroy": "node platform/db/provision-cli.ts destroy"
+    "db:destroy": "node platform/db/provision-cli.ts destroy",
+    "check:fixtures": "node platform/fixtures/cli.ts validate",
+    "db:fixtures": "node platform/fixtures/cli.ts list",
+    "db:seed": "node platform/fixtures/cli.ts load",
+    "db:seed:reset": "node platform/fixtures/cli.ts reset"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
