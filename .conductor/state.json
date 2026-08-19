@@ -16,7 +16,7 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "blocked",
-      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated creation instructions; diagnosis of the workflow creation/retention failure is now required before further implementation. FND-001d remains afterward."
+      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated creation instructions; GitHub advanced from 22 to 23 commits ahead without the requested workflow or diagnosis, so the latest commit and workflow retention failure must be investigated. FND-001d remains afterward."
     },
     {
       "id": 4,
@@ -51,7 +51,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Repeated FND-001c attempts have produced neither a tracked workflow nor explanatory evidence while GitHub remains at 22 commits ahead."
+    "Repeated FND-001c attempts have produced no tracked workflow; additionally, the branch advanced to 23 commits ahead despite the prior no-change diagnostic instruction."
   ],
-  "last_instruction": "Without changing any files, diagnose why `.github/workflows/ci.yml` is absent after the prior instructions: report the current branch and HEAD SHA, `git status --short`, whether `.github` or the workflow exists in the working tree or any commit, relevant ignore/exclude results from `git check-ignore -v`, and the exact failure or constraint that prevented creation, commit, or push."
+  "last_instruction": "Without modifying or committing anything, inspect the current branch and latest commit, then report: branch name and HEAD SHA; `git status --short`; `git show --stat --oneline HEAD`; whether `.github/workflows/ci.yml` exists in the working tree, index, HEAD, or any prior commit; `git check-ignore -v .github .github/workflows .github/workflows/ci.yml` output; and the exact reason the prior workflow task and no-change diagnosis did not produce the requested artifact or report."
 }
