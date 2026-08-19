@@ -21,7 +21,11 @@
     "verify": "npm run typecheck && npm run lint && npm run format:check && npm run build && npm run check:boundaries && npm run check:migrations && npm test",
     "check:boundaries": "node platform/checks/cli.ts",
     "postbuild": "node dist/checks/cli.js --quiet && node dist/db/cli.js --quiet",
-    "check:migrations": "node platform/db/cli.ts"
+    "check:migrations": "node platform/db/cli.ts",
+    "db:status": "node platform/db/migrate-cli.ts status",
+    "db:migrate": "node platform/db/migrate-cli.ts up",
+    "db:rollback": "node platform/db/migrate-cli.ts rollback",
+    "test:integration": "node --test \"tests/integration/**/*.integration.ts\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

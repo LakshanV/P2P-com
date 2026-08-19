@@ -32,7 +32,7 @@ export default tseslint.config(
   {
     // node:test registers each case with the runner; the returned promise is the runner's to
     // await, not ours. Requiring `void test(...)` on every case would add noise, not safety.
-    files: ['tests/**/*.test.ts'],
+    files: ['tests/**/*.test.ts', 'tests/**/*.integration.ts'],
     rules: { '@typescript-eslint/no-floating-promises': 'off' },
   },
   {

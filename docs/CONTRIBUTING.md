@@ -46,8 +46,8 @@ its tests and the database migration contract, and none of them opens a connecti
 validator reads SQL as text, so every gate passes on a machine with no PostgreSQL installed.
 
 **PostgreSQL 16 or later** is the selected database (FND-002a). It is a prerequisite only for
-actually applying a migration, which nothing in this repository does yet — no runner, no
-connection string, no provisioning script. See
+actually applying a migration — `npm run db:migrate` (FND-002b) — which is opt-in and needs both a
+server and `DATABASE_URL`. No provisioning script exists, and nothing runs automatically. See
 [section 6](#6-the-database-and-the-migration-contract) for what exists and what does not.
 
 The **supported ranges** are wider than the pins — `engines.node >= 22.18.0` and
@@ -157,6 +157,10 @@ Supporting commands:
 | `npm run format` | Rewrite files to Prettier style. Run this rather than arguing with `format:check`. |
 | `node docs/tools/validate-doc-links.mjs` | Validate every relative file link and Markdown anchor under `/docs`. Exit 1 on any broken link. |
 | `npm audit --audit-level=high` | Fail on any high or critical dependency advisory. |
+| `npm run db:status` | Report applied and pending migrations against `DATABASE_URL`. Changes nothing. |
+| `npm run db:migrate` | Apply pending migrations. Needs `DATABASE_URL` and the `pg` driver — see [6.6](#66-applying-migrations--the-runner). |
+| `npm run db:rollback -- --version NNNN --yes` | Reverse exactly one migration. Operator-invoked only. |
+| `npm run test:integration` | The opt-in live-PostgreSQL suite. Skips with a reason when there is no database — see [6.7](#67-the-integration-test). |
 
 `npm run check:boundaries` runs four checks, each of which fails the build on violation:
 
@@ -226,14 +230,16 @@ financial zone will need.
 | Migration file format, versioning and pairing | **Delivered and enforced** — `db/migrations/`, `npm run check:migrations` |
 | Schema-namespace ownership convention | **Delivered and enforced** — `platform/db/schema-namespaces.ts` |
 | Local provisioning (container, service, init script) | **Not delivered.** Nothing here starts a database |
-| Migration runner (applying files to a live server) | **Not delivered.** No connection is opened by any code in this repository |
-| Connection configuration, pooling, credentials | **Not delivered** |
+| Migration runner (applying files to a live server) | **Delivered** (FND-002b) — `npm run db:migrate`, see [6.6](#66-applying-migrations--the-runner). **Never executed against a live server from this repository**; its logic is covered by deterministic tests against an injected fake |
+| Connection configuration | `DATABASE_URL`, read from the environment and never logged. **No pooling, no secret storage** |
 | Seed and fixture data | **Not delivered** |
 | Business-module or kernel tables | **None.** FND-002a establishes the contract only |
 
-The migrations in `db/migrations/` have therefore **never been executed against a live server**
-from this repository. They are validated statically. Treat "the migration contract passes" as
-exactly that claim and no more.
+The migrations in `db/migrations/` have **never been executed against a live server** from this
+repository — no PostgreSQL runtime is available to it. They are validated statically, and the
+runner that would apply them is exercised against an injected fake. The opt-in integration test in
+[6.7](#67-the-integration-test) is the only thing that touches a real server, and it skips when
+there is none. Treat "the migration contract passes" as exactly that claim and no more.
 
 ### 6.2 Running the validator
 
@@ -331,6 +337,75 @@ success. Rolling back means applying the `.down.sql` files in reverse version or
 Nothing in `npm run verify` does any of the above, and nothing in this repository writes a
 connection string. When a runner and provisioning arrive, this section is where they get
 documented.
+
+### 6.6 Applying migrations — the runner
+
+The runner (FND-002b) applies forward migrations to a live PostgreSQL. It is the only part of the
+data foundation that opens a connection, and it does so only when you invoke it.
+
+```bash
+export DATABASE_URL='postgres://jaya:secret@localhost:5432/jaya_dev'
+
+npm run db:status                              # what is applied, what is pending — changes nothing
+npm run db:migrate                             # apply every pending migration
+npm run db:rollback -- --version 0002 --yes    # reverse exactly one migration
+```
+
+The target comes from `DATABASE_URL` and is never accepted as a command-line argument, so it
+cannot land in shell history or a process listing. It is never printed either: the runner holds
+only a redacted description — `postgres://jaya:***@localhost:5432/jaya_dev` — and every message it
+emits, including errors quoted back from the driver, passes through redaction first.
+
+The driver is **not** a declared dependency. `npm ci` installs a toolchain and nothing else, and
+adding a database driver for a runner no environment yet points at would put an unused package in
+every install and every audit. Install it explicitly when you need it:
+
+```bash
+npm install --no-save pg
+```
+
+**What the runner guarantees:**
+
+| Guarantee | How |
+|---|---|
+| Nothing commits before its ledger row | The migration body and its `INSERT` into `platform.schema_migrations` share one transaction. |
+| One runner at a time | A session-level advisory lock, taken with `pg_try_advisory_lock` so a second runner fails immediately rather than interleaving. Released on every exit path. |
+| A fresh database bootstraps cleanly | The schema and ledger are created in one transaction before anything is applied, so a failed bootstrap leaves neither behind. Migrations 0001 and 0002 then apply as no-ops and record their rows. |
+| An applied migration is immutable | A SHA-256 checksum of the forward file is persisted on application and re-checked on every run. |
+| Ambiguity stops the run | A drifted checksum, a ledger row with no file on disk, or a pending version that sorts before an applied one each abort before anything is applied. |
+
+**Self-wrapped SQL and the runner.** Section 6.4 requires every migration to carry its own
+`BEGIN; … COMMIT;` so it can be applied by hand with `psql`. That would commit the migration before
+its ledger row, so the runner strips exactly the outer transaction and re-wraps the body together
+with the ledger write. Files stay independently runnable and nothing commits unrecorded. If a file
+is not wrapped where the contract says, the runner refuses it rather than executing a body whose
+boundaries it has not understood.
+
+**Rollback is operator-invoked.** Nothing calls it automatically. It requires both `--version` and
+`--yes`, refuses anything other than the most recently applied migration, and fails closed when
+the ledger and the files disagree — rolling back on evidence the runner cannot verify is how a
+recovery becomes an outage.
+
+### 6.7 The integration test
+
+The runner's logic is covered by deterministic tests against an injected fake database
+(`tests/migration-runner.test.ts`, in `npm run verify`). Those cannot prove the SQL is valid
+PostgreSQL or that advisory locks behave as assumed. Only a server can, so there is a separate,
+opt-in suite:
+
+```bash
+npm install --no-save pg
+createdb jaya_integration
+DATABASE_URL=postgres://localhost:5432/jaya_integration npm run test:integration
+```
+
+It applies the whole set, checks the ledger and checksums, reruns to prove idempotency, rolls back
+and re-applies, and confirms a second runner is excluded — then rolls everything back so a rerun
+starts clean. **Point it at a disposable database.**
+
+Without `DATABASE_URL` or without the driver it **skips with the reason printed**, and a skipped
+run is not evidence. It is deliberately outside `npm test`, so `npm run verify` contains only tests
+that need no live service.
 
 ---
 
