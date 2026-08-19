@@ -40,10 +40,10 @@
 | Dimension | State |
 |---|---|
 | Phase | Phase 0 — Foundation. **In progress**, early. Toolchain only. |
-| Application code | None. Substrate only: one module (`platform/runtime/node-version.ts`) making the runtime pin checkable. |
+| Application code | None. Substrate only: two modules under `platform/runtime/` making the Node and npm pins checkable. |
 | Database | None |
 | Migrations | None |
-| Tests | 7 passing (`npm test`, exit 0) — substrate only; no business logic exists to test |
+| Tests | 15 passing (`npm test`, exit 0) — substrate only; no business logic exists to test |
 | CI | None — deliberately out of scope for this subtask |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -79,12 +79,14 @@ Verified by direct inspection of the working tree at baseline time.
 
 | Path | Type | Description |
 |---|---|---|
-| `package.json`, `package-lock.json`, `.nvmrc` | Toolchain | Pinned runtime (`.nvmrc` = 26.7.0, `engines.node >=22.18.0`, `engines.npm >=10`) and six devDependencies pinned to exact versions. |
+| `package.json`, `package-lock.json`, `.nvmrc` | Toolchain | **Pinned development toolchain:** Node 26.7.0 (`.nvmrc`), npm 11.19.0 (`packageManager`). **Supported ranges:** `engines.node >=22.18.0`, `engines.npm >=10.0.0`. Six devDependencies pinned to exact versions with a committed lockfile. |
 | `tsconfig.json`, `tsconfig.build.json` | Toolchain | Strict TypeScript; erasable-syntax-only so Node runs the sources directly with no build step between editing and testing. |
 | `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitattributes`, `.gitignore` | Toolchain | Type-aware lint, formatting, line-ending and ignore rules. |
-| `platform/runtime/node-version.ts` | Substrate | Version parsing, comparison and minimum-range checking, so the `engines.node` pin is verifiable from code instead of only declared. |
+| `platform/runtime/node-version.ts` | Substrate | Version parsing, comparison and minimum-range checking, so the `engines.node` range is verifiable from code instead of only declared. |
+| `platform/runtime/package-manager.ts` | Substrate | Parses the `packageManager` pin, accepting only an exact `name@x.y.z` and rejecting range syntax. |
 | `platform/README.md` | Substrate | Ownership note for the substrate root. |
 | `tests/node-version.test.ts` | Tests | 7 tests, including one asserting the running Node satisfies the declared `engines.node`. |
+| `tests/toolchain.test.ts` | Tests | 8 tests binding the exact pins (`.nvmrc`, `packageManager`) to the supported ranges (`engines.*`). |
 
 **That is the entire repository.** There is no CI configuration, no boundary enforcement, no database, no migration directory, no environment configuration, no kernel component, no business module and no UI. The `kernel/`, `modules/`, `design-system/` and `apps/` roots do not exist yet.
 
@@ -448,8 +450,21 @@ STATUS:             DELIVERED — but no checklist item is marked COMPLETE.
                     P0-04 is satisfied; P0-03, P0-05..P0-08 are partial; all are IN PROGRESS.
                     FND-001 as a whole is IN PROGRESS.
 
-IMPLEMENTED:        Pinned toolchain: .nvmrc = 26.7.0; engines.node >=22.18.0, engines.npm >=10;
-                    six devDependencies pinned to exact versions (no carets) with a committed
+IMPLEMENTED:        Reproducibility contract — two distinct claims, kept distinct:
+
+                      PINNED DEVELOPMENT TOOLCHAIN (exact; what this repository is actually
+                      developed and verified against)
+                        Node  26.7.0   .nvmrc
+                        npm   11.19.0  package.json "packageManager": "npm@11.19.0"
+
+                      SUPPORTED RUNTIME RANGES (minimums; what the project will run on)
+                        Node  >=22.18.0   package.json engines.node
+                        npm   >=10.0.0    package.json engines.npm
+
+                    The pins name one version each; the ranges stay open. A lockfile fixes the
+                    dependency graph but not the tool that resolves it, so the package manager
+                    is pinned explicitly rather than left to whatever npm happens to be present.
+                    Six devDependencies pinned to exact versions (no carets) with a committed
                     package-lock.json.
                     Strict TypeScript: strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes,
                     noUnusedLocals/Parameters, verbatimModuleSyntax, erasableSyntaxOnly — the last
@@ -461,12 +476,31 @@ IMPLEMENTED:        Pinned toolchain: .nvmrc = 26.7.0; engines.node >=22.18.0, e
                     merely declared in a manifest. Refuses version ranges it does not understand
                     instead of silently accepting them.
                     tests/node-version.test.ts — 7 tests.
+                    platform/runtime/package-manager.ts — parsePackageManager, which accepts an
+                    exact name@major.minor.patch pin (tolerating Corepack's +integrity suffix)
+                    and rejects range syntax outright. A "pin" that admits a span of versions
+                    is not a pin.
+                    tests/toolchain.test.ts — 8 tests binding the pins to the ranges.
 
-TESTED:             7 tests, all real assertions: version parsing including prerelease and build
-                    metadata; rejection of six malformed inputs; ordering that is numeric rather
-                    than lexicographic (22.18.0 > 22.9.0); inclusive minimum boundary; refusal of
-                    five unsupported range forms; and one test that reads engines.node from
-                    package.json and asserts the running Node satisfies it.
+TESTED:             15 tests, all real assertions.
+
+                    Version handling (7): parsing including prerelease and build metadata;
+                    rejection of six malformed inputs; ordering that is numeric rather than
+                    lexicographic (22.18.0 > 22.9.0); inclusive minimum boundary; refusal of five
+                    unsupported range forms; and the running Node satisfying engines.node.
+
+                    Reproducibility contract (8): parsePackageManager accepting exact pins and
+                    the Corepack integrity suffix, and rejecting ten non-exact forms
+                    (^, ~, >=, partial, x, *, latest, bare name, bare version, empty);
+                    .nvmrc being an exact version rather than a range or alias;
+                    THE EXACT .nvmrc RUNTIME SATISFYING engines.node;
+                    packageManager PINNING AN EXACT npm VERSION THAT SATISFIES engines.npm;
+                    the ranges remaining minimums while the pins remain exact; and the npm
+                    actually running the scripts matching the pin (read from
+                    npm_config_user_agent, skipped when invoked outside an npm script).
+
+                    These read the real .nvmrc and package.json rather than restating their
+                    contents, so they catch drift instead of documenting it.
 
 TEST COMMANDS:      npm ci
                     npm run typecheck
@@ -483,13 +517,24 @@ TEST RESULTS:       npm ci                exit 0   added 91 packages
                     npm run build         exit 0   tsc -p tsconfig.build.json
                                                    emitted dist/runtime/node-version.js,
                                                    .d.ts and .js.map
-                    npm test              exit 0   tests 7, pass 7, fail 0, cancelled 0,
+                    npm test              exit 0   tests 15, pass 15, fail 0, cancelled 0,
                                                    skipped 0, todo 0
                     npm run verify        exit 0   full chain, clean dependency state
 
                     Harness failure proof: node --test over a throwaway failing assertion,
                     run outside the repository, exits 1 and reports the failure — so a green
                     suite is a real signal, not a runner that cannot fail.
+
+                    Reproducibility-contract failure proof — each contradiction was planted in
+                    the working tree, observed to fail, then reverted:
+                      .nvmrc set to 20.0.0 (below engines.node)
+                        npm test exit 1, pass 14, fail 1
+                        ".nvmrc pins Node 20.0.0, which does not satisfy engines.node >=22.18.0"
+                      packageManager set to "npm@^11.19.0" (a range, not a pin)
+                        npm test exit 1, 3 tests failed
+                        "Invalid packageManager \"npm@^11.19.0\": expected an exact pin of the
+                         form \"name@major.minor.patch\""
+                    Both pins were restored and the suite returned to 15/15, exit 0.
 
 SECURITY:           No secrets committed; .env* git-ignored. No authentication, permissions,
                     network access or data handling exists to review. Dependency audit is NOT
@@ -513,8 +558,14 @@ KNOWN LIMITATIONS:  1. No CI. Every command was verified locally only; nothing r
                        no entry point exists — so the build proves the code compiles, not that a
                        shipped artefact runs.
                     5. satisfiesMinimum supports only the ">=x.y.z" form actually used by this
-                       repository. Deliberate: a range checker that silently accepts syntax it
-                       does not understand is worse than none.
+                       repository, and parsePackageManager only the exact "name@x.y.z" form.
+                       Deliberate: a checker that silently accepts syntax it does not understand
+                       is worse than none.
+                    7. The packageManager pin is declarative. Nothing in this repository installs
+                       or switches npm; honouring the pin requires Corepack or an equivalent, and
+                       the "npm actually running the scripts" assertion is what surfaces a
+                       mismatch. It also self-skips when the suite is invoked outside an npm
+                       script, since there is then no npm to compare against.
                     6. No contributor documentation and no git workflow conventions. FND-001d.
 
 DEFERRED:           P0-03 completion, P0-09, P0-10, P0-11, P0-12, P0-13 to FND-001b/c/d.
@@ -525,7 +576,8 @@ COMMITS:            Recorded at commit time for this branch.
 FILES:              .nvmrc, .gitignore, .gitattributes, .editorconfig, .prettierrc.json,
                     .prettierignore, package.json, package-lock.json, tsconfig.json,
                     tsconfig.build.json, eslint.config.mjs, platform/README.md,
-                    platform/runtime/node-version.ts, tests/node-version.test.ts
+                    platform/runtime/node-version.ts, platform/runtime/package-manager.ts,
+                    tests/node-version.test.ts, tests/toolchain.test.ts
                     Also modified: docs/tools/validate-doc-links.mjs — one redundant regex
                     escape removed so that "npm run lint" passes across the repository.
                     Behaviour unchanged: validator output identical before and after
