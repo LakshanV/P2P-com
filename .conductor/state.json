@@ -16,13 +16,13 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001 remains selected. FND-001a has a working local Node/TypeScript harness with seven passing tests and recorded clean-install results, but its package manager is not exactly pinned because package.json lacks packageManager. A bounded reproducibility correction is required before FND-001a acceptance; FND-001b through FND-001d remain unstarted."
+      "notes": "FND-001 remains selected. FND-001a implementation and clean verification evidence are credible, but acceptance is pending reconciliation of residual stale statements in the authority-rank-2 status document. FND-001b through FND-001d remain unstarted."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "First review target remains FND-001. After the reproducibility correction, inspect boundary enforcement with persistent negative fixtures, then require GitHub CI execution evidence."
+      "notes": "After status reconciliation, accept FND-001a and proceed to FND-001b boundary enforcement with persistent planted-violation fixtures. GitHub CI execution evidence remains required during FND-001c."
     },
     {
       "id": 5,
@@ -45,8 +45,7 @@
     "The baseline requirement count is extensive and must remain mechanically verifiable as statuses change.",
     "FND-001 boundary checks must inspect real source paths and have persistent negative fixtures; checks that merely pass an empty repository are not acceptable.",
     "GitHub currently reports no checks, so CI workflow execution evidence will be required before P0-09 can be accepted.",
-    "The current package.json does not exactly pin npm and therefore does not yet satisfy the requested pinned package-manager toolchain.",
-    "CURRENT_IMPLEMENTATION_STATUS.md contains some stale baseline wording inside the FND-001 task description, including a current-state row saying no manifest or tests exist; this should be reconciled in a later status-document review if not corrected with the current evidence update."
+    "CURRENT_IMPLEMENTATION_STATUS.md still contains multiple stale baseline claims despite its otherwise detailed FND-001a evidence."
   ],
-  "last_instruction": "Correct FND-001a's reproducibility contract only: declare the exact npm version actually used via package.json packageManager, add automated assertions that the exact .nvmrc runtime satisfies engines.node and that packageManager is an exact npm version compatible with engines.npm, update the status evidence to distinguish the pinned development runtime/package manager from the supported runtime ranges, then rerun npm ci and the full verification chain from deleted node_modules and dist; commit the correction without starting FND-001b or marking FND-001 complete."
+  "last_instruction": "Reconcile only the remaining stale baseline statements in docs/CURRENT_IMPLEMENTATION_STATUS.md with the delivered FND-001a state—specifically the FND-001 CURRENT STATE row, R-01 description/mitigation, the §7 zero-code explanation, §10 build-and-quality state, DOC-001 KNOWN LIMITATIONS claim that Node is not pinned, and the final permitted-description sentence—then run the documentation link validator and npm run verify, record any changed evidence accurately, and commit without starting FND-001b."
 }
