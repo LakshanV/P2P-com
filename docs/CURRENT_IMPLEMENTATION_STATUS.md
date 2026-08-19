@@ -9,7 +9,7 @@
 - [MASTER_IMPLEMENTATION_CHECKLIST.md](./MASTER_IMPLEMENTATION_CHECKLIST.md)
 - [MODULE_MAP.md](./MODULE_MAP.md)
 
-> **Read this first.** The repository contains two specification documents and this planning baseline. There is no application, no database, no CI, no tests, and no deployment. Nothing has been built. Every implementation capability in the checklist is `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`. No implementation item is `COMPLETE` or `IN PROGRESS`.
+> **Read this first.** The repository contains two specification documents and this planning baseline. There is no application, no database, no CI, no application tests, and no deployment — only the documentation link validator described in §2. Nothing has been built. Every implementation capability in the checklist is `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`. No implementation item is `COMPLETE` or `IN PROGRESS`.
 
 ---
 
@@ -68,6 +68,7 @@ Verified by direct inspection of the working tree at baseline time.
 | `docs/CURRENT_IMPLEMENTATION_STATUS.md` | Planning baseline | This document. Created by DOC-001. |
 | `docs/MASTER_IMPLEMENTATION_CHECKLIST.md` | Planning baseline | Created by DOC-001. |
 | `docs/MODULE_MAP.md` | Planning baseline | Created by DOC-001. |
+| `docs/tools/validate-doc-links.mjs` | Documentation tooling | Link and anchor validator for the `/docs` Markdown set. Created by DOC-001. Not application code, not part of any module; requires only a Node runtime and no package manifest. |
 
 **That is the entire repository.** There is no `package.json` or equivalent manifest, no source directory, no test directory, no CI configuration, no migration directory, no environment configuration, and no lockfile. `git log` shows two seed commits only.
 
@@ -259,7 +260,7 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 | **OBJECTIVE** | Establish a repository that builds, type-checks, lints, tests, and mechanically enforces the module boundaries — so that every subsequent claim of completion is verifiable by running a command. |
 | **BUSINESS PURPOSE** | Nothing in this programme can be honestly marked complete until a test can run. This is the single dependency shared by all 62 owned units. |
 | **CURRENT STATE** | Repository contains specifications and `/docs` only. No manifest, no source tree, no CI, no tests. |
-| **IN SCOPE** | Runtime and package manifest (P0-04); source directory structure per [MODULE_MAP.md §2](./MODULE_MAP.md#2-architectural-shape--modular-monolith) (P0-03); build (P0-05); type checking (P0-06); lint and format (P0-07); test framework with at least one real assertion exercising the harness (P0-08); CI running build + typecheck + lint + test on every change (P0-09); import-boundary and layering checks (P0-10); financial-zone and AI-provider-import checks (P0-11); contributor documentation (P0-12); git workflow conventions (P0-13). |
+| **IN SCOPE** | Runtime and package manifest (P0-04); source directory structure per [MODULE_MAP.md §2](./MODULE_MAP.md#2-architectural-shape--modular-monolith) (P0-03); build (P0-05); type checking (P0-06); lint and format (P0-07); test framework with at least one real assertion exercising the harness (P0-08); CI running build + typecheck + lint + test on every change, plus the existing documentation link validator (P0-09); import-boundary and layering checks (P0-10); financial-zone and AI-provider-import checks (P0-11); contributor documentation (P0-12); git workflow conventions (P0-13). |
 | **OUT OF SCOPE** | Database, migrations, authentication, permissions, any kernel component, any business module, any UI, the design system, deployment, cloud environments. Those are FND-002 and later. |
 | **DEPENDENCIES** | None. This is the root of the build order. |
 | **OWNED FILES/DATA** | Repository root configuration, `/platform`, `/tests` harness. No business data. |
@@ -287,8 +288,8 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 |---|---|---|---|
 | 1 | **FND-001** | Substrate, CI, boundary checks, test harness | No — **start here** |
 | 2 | FND-002 | Database, migration system, schema-namespace convention, seed strategy (P0-14…P0-17) | No |
-| 3 | FND-003 | K-05 Configuration, K-08 Events, K-09 Audit, K-07 Feature Flags (build step B-1) | No |
-| 4 | FND-004 | K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions (build step B-2) | No |
+| 3 | FND-003 | K-05 Configuration, K-08 Events (build step B-1 — the kernel components that depend only on the substrate) | No |
+| 4 | FND-004 | K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, then K-09 Audit and K-07 Feature Flags (build step B-2) | No |
 | 5 | FND-005 | K-06 Policy, K-10 Ledger foundation, K-11 Commerce Unit Registry, K-12 Conversation, K-14 Notifications, K-15 Search, K-13 AI Gateway (build step B-3) | K-13 live adapter needs BL-04; the abstraction and a test double for the test suite do not |
 | 6 | FND-006 | Design system foundation (build step B-4) | No |
 | 7 | DOC-002 | Remaining v3 §42 `/docs` set, written against the now-real architecture (P0-02) | No |
@@ -344,6 +345,7 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | P0-01a — status baseline | COMPLETE | File | `docs/CURRENT_IMPLEMENTATION_STATUS.md` (this document) |
 | P0-01b — checklist baseline | COMPLETE | File | [`docs/MASTER_IMPLEMENTATION_CHECKLIST.md`](./MASTER_IMPLEMENTATION_CHECKLIST.md) |
 | P0-01c — module map baseline | COMPLETE | File | [`docs/MODULE_MAP.md`](./MODULE_MAP.md) |
+| P0-01d — link validator | COMPLETE | File + reproducible command | `docs/tools/validate-doc-links.mjs`, run as `node docs/tools/validate-doc-links.mjs` |
 
 **Evidence block for DOC-001:**
 
@@ -351,30 +353,64 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 ITEM ID:            P0-01 (DOC-001)
 MODULE / PHASE:     Documentation / Phase 0
 STATUS:             COMPLETE (documentation artefact — not an implementation capability)
-IMPLEMENTED:        Three baseline planning documents under /docs: current implementation
-                    status, master implementation checklist, module map.
-TESTED:             Internal document link validation (relative file links and in-document
-                    anchors). No code exists to test.
-TEST COMMANDS:      Link-and-anchor validation script executed over docs/*.md during DOC-001.
-TEST RESULTS:       All internal links and anchors resolve. See the DOC-001 report.
-SECURITY:           N/A — no code, no data, no credentials introduced.
+IMPLEMENTED:        Three baseline planning documents under /docs — current implementation
+                    status, master implementation checklist, module map — plus a
+                    reproducible link/anchor validator at docs/tools/validate-doc-links.mjs.
+TESTED:             Every relative file link and every Markdown anchor across the /docs
+                    Markdown set. Fenced code blocks excluded from heading extraction;
+                    external links reported as skipped, not silently ignored. The validator
+                    itself was negative-tested against planted violations. No application
+                    code exists to test.
+TEST COMMANDS:      node docs/tools/validate-doc-links.mjs
+                    (exit 0 = pass, exit 1 = at least one broken link or anchor)
+TEST RESULTS:       PASS — exit 0.
+                      files scanned  : 3
+                      CURRENT_IMPLEMENTATION_STATUS.md    internal links: 29  anchors: 31
+                      MASTER_IMPLEMENTATION_CHECKLIST.md  internal links: 22  anchors: 61
+                      MODULE_MAP.md                       internal links: 17  anchors: 25
+                      internal links : 68
+                      external links : 0 (skipped — out of scope)
+                      broken         : 0
+                    Negative test: a temporary copy of the validator run over a planted
+                    fixture containing one missing file link and one missing anchor
+                    reported broken = 2 and exited 1, confirming the check can fail.
+SECURITY:           N/A — no application code, no data, no credentials introduced. The
+                    validator reads Markdown from the repository and writes nothing.
 UI/UX REVIEW:       N/A — no user-facing surface.
 MIGRATIONS:         None.
 EVENTS:             None.
 CONFIG / POLICY:    None. No business constants introduced; policy values in v3 §20 are
                     recorded as configuration requirements, not as values.
-KNOWN LIMITATIONS:  Documents describe intent only. Nothing here is enforced by any check
-                    until FND-001 delivers the boundary checks (risks R-01, R-02).
+KNOWN LIMITATIONS:  Documents describe intent only. None of the architectural rules is
+                    machine-enforced until FND-001 delivers the boundary checks (risks
+                    R-01, R-02). The validator checks document integrity, not the
+                    correctness of any statement inside a document. External URLs are not
+                    checked. The validator requires a Node runtime, which the repository
+                    does not yet pin — FND-001 fixes that under P0-04.
 DEFERRED:           17 of the 20 v3 §42 /docs files (tracked as P0-02); all 62 module
                     contracts (tracked in checklist §B and §C).
 COMMITS:            Recorded at commit time for this branch.
 FILES:              docs/CURRENT_IMPLEMENTATION_STATUS.md
                     docs/MASTER_IMPLEMENTATION_CHECKLIST.md
                     docs/MODULE_MAP.md
-FOLLOW-UP:          FND-001 (§8). Then FND-002…FND-006, DOC-002.
+                    docs/tools/validate-doc-links.mjs
+FOLLOW-UP:          FND-001 (§8). Then FND-002…FND-006, DOC-002. FND-001 should add
+                    `node docs/tools/validate-doc-links.mjs` to CI (P0-09) so documentation
+                    integrity is enforced on every change rather than on request.
 ```
 
 **Every other item in the checklist records `NONE — no implementation`.** That is the accurate value.
+
+### 11.1 Corrections applied after first review
+
+Two defects were found in the DOC-001 baseline by review and corrected. Recorded here per v3 §58 rather than silently patched.
+
+| # | Defect | Failed invariant | Correction |
+|---|---|---|---|
+| 1 | **Build order contradicted declared dependencies.** [MODULE_MAP.md](./MODULE_MAP.md) §3 declares K-09 Audit as depending on K-01 and K-04, yet the §9 build order scheduled K-09 in step B-1 while K-01 and K-04 land in B-2 — the component was sequenced ahead of its own dependencies. Inspection of adjacent entries found the identical defect in **K-07 Feature Flags** (declared deps K-03 and K-05; also scheduled in B-1 ahead of K-03). | Build order must be a topological order of the declared dependency graph — the same acyclicity discipline the document imposes on modules (MR-2) was not applied to its own schedule. | K-07 and K-09 moved to B-2, after the identity chain. B-1 now contains only K-05 and K-08, whose sole dependency is the substrate. An explicit ordering rule was added to [MODULE_MAP.md §9](./MODULE_MAP.md#9-build-order) so the constraint is stated, not just satisfied once. Propagated to checklist §B (K-07, K-09 build step) and to the FND-003 / FND-004 task scopes in §8 of this document. |
+| 2 | **Wrong risk reference.** [MODULE_MAP.md](./MODULE_MAP.md) §13 attributed the unenforced-boundary-rules gap to risk R-05, which is scope-to-verification mismatch. | Cross-document references must resolve to the thing they name. | Corrected to **R-02 — boundary rules are unenforced**, and made a deep link to [§5](#5-current-risks) so the reference is now machine-checkable by the validator rather than only by eye. |
+
+Neither defect changed any status, count or gate: the baseline remains 474 tracked requirements with 0 of 472 implementation items complete.
 
 ---
 

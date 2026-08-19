@@ -10,13 +10,13 @@
       "id": 2,
       "task": "Create CURRENT_IMPLEMENTATION_STATUS.md, MASTER_IMPLEMENTATION_CHECKLIST.md, and a module/dependency map",
       "status": "in_progress",
-      "notes": "Initial persistent planning baseline is now delegated as DOC-001."
+      "notes": "All three documents exist, but DOC-001 requires correction of the K-09 build-order contradiction, an incorrect risk reference, and reproducible link/anchor validation evidence."
     },
     {
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "todo",
-      "notes": "The documentation baseline must explicitly identify the first Phase 0 implementation slice."
+      "notes": "FND-001 remains the proposed first implementation task after the planning baseline is accepted."
     },
     {
       "id": 4,
@@ -38,7 +38,9 @@
   ],
   "concerns": [
     "There is no application, CI, database, authentication, test, deployment, or monitoring foundation yet.",
-    "The eventual production/staging environments and external provider credentials may require later human or cloud-access escalation, but do not block local foundation work."
+    "The eventual production/staging environments and external provider credentials may require later human or cloud-access escalation, but do not block local foundation work.",
+    "The baseline requirement count is extensive and must remain mechanically verifiable as statuses change.",
+    "The event-direction terminology in MODULE_MAP should be watched as contracts are introduced because control-plane events can flow downward even though source dependencies cannot."
   ],
-  "last_instruction": "Create the three required baseline planning documents under `/docs`, accurately map the specification-only state and dependencies, and identify the first unblocked implementation slice without scaffolding code."
+  "last_instruction": "Correct and revalidate DOC-001: resolve the K-09/build-order dependency contradiction consistently across all three planning documents, fix the incorrect risk reference in MODULE_MAP §13, run a reproducible validation of every relative file link and Markdown anchor in docs/*.md, and update the DOC-001 evidence with the exact command and resulting counts/output without creating application scaffolding."
 }

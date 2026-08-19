@@ -9,7 +9,7 @@
 - [CURRENT_IMPLEMENTATION_STATUS.md](./CURRENT_IMPLEMENTATION_STATUS.md)
 - [MODULE_MAP.md](./MODULE_MAP.md)
 
-> **Baseline truth: no implementation capability in this checklist is complete.** The repository contains specifications and this documentation baseline only. Every implementation item below is `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`. The only `COMPLETE` items are the three documentation artefacts produced by DOC-001, each backed by a file that exists at the recorded path.
+> **Baseline truth: no implementation capability in this checklist is complete.** The repository contains specifications and this documentation baseline only. Every implementation item below is `NOT STARTED`, `BLOCKED`, `DEFERRED WITH REASON`, or `OUT OF SCOPE WITH REASON`. The only `COMPLETE` item is P0-01, the documentation artefacts produced by DOC-001, each backed by a file that exists at the recorded path.
 
 ---
 
@@ -90,7 +90,7 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
-| P0-01 | `/docs` planning baseline created | `[x]` COMPLETE | `docs/CURRENT_IMPLEMENTATION_STATUS.md`, `docs/MASTER_IMPLEMENTATION_CHECKLIST.md`, `docs/MODULE_MAP.md` — created by DOC-001. Documentation artefact, not an implementation capability. |
+| P0-01 | `/docs` planning baseline created, with reproducible link validation | `[x]` COMPLETE | `docs/CURRENT_IMPLEMENTATION_STATUS.md`, `docs/MASTER_IMPLEMENTATION_CHECKLIST.md`, `docs/MODULE_MAP.md`, `docs/tools/validate-doc-links.mjs` — created by DOC-001. Validated by `node docs/tools/validate-doc-links.mjs` → 68 internal links across 3 files, 0 broken, exit 0. Full evidence block: [CURRENT_IMPLEMENTATION_STATUS.md §11](./CURRENT_IMPLEMENTATION_STATUS.md#11-evidence-register). Documentation artefact, not an implementation capability. |
 | P0-02 | Remaining `/docs` set from v3 §42 (ARCHITECTURE, DATABASE_SCHEMA, API_CONTRACTS, EVENT_CATALOG, AI_ARCHITECTURE, AI_MODEL_REGISTRY, SECURITY_MODEL, PERMISSIONS_MATRIX, POLICY_CATALOG, TEST_STRATEGY, UX_SYSTEM, DEPLOYMENT_GUIDE, OPERATIONS_RUNBOOK, DECISIONS_LEDGER, KNOWN_LIMITATIONS, CHANGELOG, MASTER_PRODUCT_SPEC) | `[ ]` NOT STARTED | NONE — files do not exist |
 | P0-03 | Repository source structure (`/platform`, `/kernel`, `/modules`, `/design-system`, `/apps`, `/tests`) | `[ ]` NOT STARTED | NONE — no source tree |
 | P0-04 | Runtime and package manifest chosen and committed | `[ ]` NOT STARTED | NONE — no package manifest |
@@ -98,7 +98,7 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 | P0-06 | Type checking | `[ ]` NOT STARTED | NONE |
 | P0-07 | Lint and format configuration | `[ ]` NOT STARTED | NONE |
 | P0-08 | Test framework and runner | `[ ]` NOT STARTED | NONE — no test infrastructure |
-| P0-09 | CI pipeline running build + typecheck + lint + tests on every change | `[ ]` NOT STARTED | NONE — no CI configuration |
+| P0-09 | CI pipeline running build + typecheck + lint + tests + `node docs/tools/validate-doc-links.mjs` on every change | `[ ]` NOT STARTED | NONE — no CI configuration |
 | P0-10 | Import-boundary / layering enforcement checks ([MODULE_MAP.md](./MODULE_MAP.md) §13) | `[ ]` NOT STARTED | NONE |
 | P0-11 | Financial-zone and AI-provider-import enforcement checks | `[ ]` NOT STARTED | NONE |
 | P0-12 | Contributor and development documentation | `[ ]` NOT STARTED | NONE |
@@ -177,9 +177,9 @@ Each kernel component needs a contract document (v3 §10) and an implementation 
 | K-04 | Permissions (RBAC/ABAC, purpose-based staff access) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-2 |
 | K-05 | Configuration | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-1 |
 | K-06 | Policy Engine (versioned, history-preserving) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-3 |
-| K-07 | Feature Flags (OFF → internal → selected → percentage → full, kill switches) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-1 |
+| K-07 | Feature Flags (OFF → internal → selected → percentage → full, kill switches) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-2 |
 | K-08 | Event Infrastructure (idempotency, retries, DLQ, replay) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-1 |
-| K-09 | Audit Foundation (append-only) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-1 |
+| K-09 | Audit Foundation (append-only) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-2 |
 | K-10 | Ledger Foundation (double-entry primitives) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-3 |
 | K-11 | Commerce Unit Registry (`CommerceUnit`, units of measure, category adapters) | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-3 |
 | K-12 | Conversation Foundation | `[ ]` NOT STARTED | `[ ]` NOT STARTED | B-3 |

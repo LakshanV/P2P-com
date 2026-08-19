@@ -376,8 +376,8 @@ Build order follows the dependency graph, not feature appeal. Each numbered step
 | Step | Scope | Maps to v3 phase |
 |---|---|---|
 | B-0 | Platform substrate: runtime, package manifest, lint/typecheck/build, test harness, CI | Phase 0 |
-| B-1 | K-05 Configuration, K-08 Event Infrastructure, K-09 Audit, K-07 Feature Flags | Phase 0 |
-| B-2 | K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions | Phase 0 |
+| B-1 | K-05 Configuration, K-08 Event Infrastructure — the kernel components whose only dependency is the substrate | Phase 0 |
+| B-2 | K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, then K-09 Audit and K-07 Feature Flags | Phase 0 |
 | B-3 | K-06 Policy Engine, K-11 Commerce Unit Registry, K-13 AI Gateway, K-15 Search Foundation, K-14 Notifications, K-12 Conversation Foundation, K-10 Ledger Foundation | Phase 0 |
 | B-4 | Design system (v3 §34) | Phase 0 |
 | B-5 | M-01, M-02, plus cockpit shells M-36 / M-37 / M-38 | Phase 1 |
@@ -400,6 +400,13 @@ Build order follows the dependency graph, not feature appeal. Each numbered step
 | B-22 | M-45 Analytics, M-46 Admin Audit, M-47 Module Registry | Phase 16 |
 | B-23 | Omnichannel channel adapters | Phase 17 |
 | B-24 | Final hardening | Phase 18 |
+
+**Build order must agree with declared dependencies.** A step may not contain a component whose declared dependencies (§3 for the kernel, §4 and §8 for modules) land in a later step. This is checkable against the tables in this document and is the first thing to verify when the build order is edited. Two specific consequences inside the kernel:
+
+- **K-09 Audit depends on K-01 and K-04**, so it cannot precede them. It is sequenced in B-2, after the identity chain, not in B-1.
+- **K-07 Feature Flags depends on K-03 and K-05**, so it likewise sits in B-2, after K-03.
+
+This means audit and flags are not available to B-1. That is acceptable: B-1 delivers only K-05 Configuration and K-08 Event Infrastructure, neither of which requires an actor identity or a flag. Every component from B-2 onward has both.
 
 **Ordering constraints that matter most:**
 - B-2 before anything user-facing — no module may implement its own authorisation.
@@ -496,4 +503,4 @@ Boundary rules that are only written down get violated. Each rule below gets a m
 | Contract-presence check (module has a contract doc before merge) | MR-5 | B-1 |
 | Cycle detector over the declared dependency manifest | MR-2 | B-1 |
 
-**Current state of enforcement: none of these checks exist.** Until B-0 and B-1 land, every rule in this document is enforced by review only. That gap is tracked as risk R-05 in [CURRENT_IMPLEMENTATION_STATUS.md](./CURRENT_IMPLEMENTATION_STATUS.md).
+**Current state of enforcement: none of these checks exist.** Until B-0 and B-1 land, every rule in this document is enforced by review only. That gap is tracked as risk **R-02 — boundary rules are unenforced** in [CURRENT_IMPLEMENTATION_STATUS.md](./CURRENT_IMPLEMENTATION_STATUS.md#5-current-risks).
