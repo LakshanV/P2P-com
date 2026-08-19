@@ -15,8 +15,8 @@
     {
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
-      "status": "in_progress",
-      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated implementation instructions; execution failure diagnosis is now required before another creation attempt. FND-001d remains afterward."
+      "status": "blocked",
+      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated creation instructions; diagnosis of the workflow creation/retention failure is now required before further implementation. FND-001d remains afterward."
     },
     {
       "id": 4,
@@ -42,7 +42,7 @@
     "FND-001b is accepted as delivered: all source roots, the architecture manifest, four static boundary checks, and planted violation proofs are present; P0-10 remains partial because four specified checks are deferred to schema/contracts/policy artefacts.",
     "FND-001c must use immutable action SHAs, least-privilege permissions, exact toolchain pins, full verification, and a high/critical dependency-audit gate with an automated anti-weakening contract test.",
     "FND-001c delivery is split into a workflow-file task followed by the anti-weakening contract test and acceptance review.",
-    "Further FND-001c implementation is paused for one diagnostic task because repeated workflow-creation instructions produced no tracked artifact or report."
+    "Further workflow creation attempts are paused until the agent provides a no-change diagnosis explaining why the requested tracked artifact has repeatedly remained absent."
   ],
   "concerns": [
     "There is no database, authentication, deployment, or monitoring foundation yet.",
@@ -51,7 +51,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Repeated FND-001c attempts have produced no tracked workflow or diagnostic evidence despite GitHub showing 21 commits ahead."
+    "Repeated FND-001c attempts have produced neither a tracked workflow nor explanatory evidence while GitHub remains at 22 commits ahead."
   ],
-  "last_instruction": "Investigate why the repeated FND-001c instructions have produced no tracked `.github/workflows/ci.yml`; do not modify any files. Report the repository root and current branch, `git status --short`, whether `.github` or the workflow file exists on disk, relevant ignore results from `git check-ignore -v`, recent commit history, remote/primary-branch details, and the concrete root cause preventing the workflow from being created, committed, or pushed."
+  "last_instruction": "Without changing any files, diagnose why `.github/workflows/ci.yml` is absent after the prior instructions: report the current branch and HEAD SHA, `git status --short`, whether `.github` or the workflow exists in the working tree or any commit, relevant ignore/exclude results from `git check-ignore -v`, and the exact failure or constraint that prevented creation, commit, or push."
 }
