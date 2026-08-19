@@ -116,23 +116,37 @@ export class AccountService {
     } catch (error) {
       // Two retries of one opening that overlap in time each read a store with no such key, so
       // both try to insert and one loses. The loser has not failed — the opening it was retrying
-      // succeeded — so it re-reads and converges, checking the content exactly as the sequential
-      // path does.
+      // succeeded — so it re-reads and converges.
       //
-      // `subject-already-has-account` is deliberately *not* in this list. A second account id for
-      // one subject is a caller error, not a retry, and converging on it would hand back an
-      // account the caller did not ask for and then let it believe its own id had been used.
+      // **All three uniqueness conflicts have to be caught here, not two.** An identical retry
+      // violates every one of them at once: same account id, same subject, same key. PostgreSQL
+      // reports whichever unique index it happened to check first, and that choice is not something
+      // this component can predict or pin. The first revision listed only `duplicate-account-id`
+      // and `idempotency-key-reuse`, on the reasoning that a second account for one subject is a
+      // caller error rather than a retry — true of the *situation*, but not a safe way to
+      // recognise it, because a genuine retry that the server reported as
+      // `subject-already-has-account` would then have been refused. The in-memory repository
+      // checks in a fixed order and always reported the account id first, so every test passed and
+      // the gap was invisible.
+      //
+      // Which conflict was reported is therefore not evidence of anything. **The content is.**
       const conflicted =
         error instanceof AccountError &&
-        (error.code === 'idempotency-key-reuse' || error.code === 'duplicate-account-id');
+        (error.code === 'idempotency-key-reuse' ||
+          error.code === 'duplicate-account-id' ||
+          error.code === 'subject-already-has-account');
       if (!conflicted) throw error;
 
       const winner = await this.#repository.withTransaction((tx) =>
         tx.findAccountByIdempotencyKey(account.idempotencyKey),
       );
-      if (winner === null) throw error;
 
-      assertSameAccount(winner, account);
+      // Converge only on an exact match. Anything else re-raises the **original** refusal rather
+      // than a synthesised one, so a caller opening a genuinely different account for a party that
+      // already has one still hears `subject-already-has-account` — which is what happened — and
+      // not "your idempotency key was reused", which did not.
+      if (winner === null || differencesFrom(winner, account).length > 0) throw error;
+
       return { account: sealAccount(winner), deduplicated: true };
     }
   }
@@ -248,7 +262,10 @@ function assertNoForeignConcerns(request: OpenAccountRequest): void {
  * they all fit in one comparison. A digest would be a second representation of the same content
  * that could drift out of step with it.
  */
-function assertSameAccount(existing: UniversalAccount, incoming: UniversalAccount): void {
+function differencesFrom(
+  existing: UniversalAccount,
+  incoming: UniversalAccount,
+): readonly string[] {
   const differences: string[] = [];
   const compare = (field: string, was: unknown, now: unknown): void => {
     if (JSON.stringify(was) !== JSON.stringify(now)) {
@@ -256,11 +273,19 @@ function assertSameAccount(existing: UniversalAccount, incoming: UniversalAccoun
     }
   };
 
+  // Every field except the idempotency key, which is what matched to get here. "The complete
+  // logical account" means all four: an opening that differs in any of them is a different
+  // opening, whatever key it arrived under.
   compare('accountId', existing.accountId, incoming.accountId);
   compare('subjectId', existing.subjectId, incoming.subjectId);
   compare('createdAt', existing.createdAt, incoming.createdAt);
   compare('origin', existing.origin, incoming.origin);
 
+  return differences;
+}
+
+function assertSameAccount(existing: UniversalAccount, incoming: UniversalAccount): void {
+  const differences = differencesFrom(existing, incoming);
   if (differences.length === 0) return;
 
   throw new AccountError(

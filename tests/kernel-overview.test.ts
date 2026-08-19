@@ -37,6 +37,9 @@ const CONFIG_INDEX_PATH = path.join(KERNEL_DIR, 'configuration', 'index.ts');
 const KERNEL_README = readFileSync(KERNEL_README_PATH, 'utf8');
 const CONFIG_INDEX = readFileSync(CONFIG_INDEX_PATH, 'utf8');
 
+const IDENTITY_INDEX_PATH = path.join(KERNEL_DIR, 'identity', 'index.ts');
+const IDENTITY_INDEX = readFileSync(IDENTITY_INDEX_PATH, 'utf8');
+
 /** The doc comment at the top of a source file — the part a consumer reads before the exports. */
 function leadingComment(source: string): string {
   const match = /^\s*\/\*\*([\s\S]*?)\*\//.exec(source);
@@ -228,4 +231,79 @@ test('neither file claims a kernel component is complete', () => {
       assert.ok(!pattern.test(text), `${name} over-claims completeness via ${String(pattern)}`);
     }
   }
+});
+
+test("K-01's public commentary does not claim K-03 is unbuilt", () => {
+  // The exact obsolete sentence, which survived FND-004b: "K-03 will be its first consumer".
+  // K-03 was delivered in that task and *is* its first consumer, so the header was describing a
+  // future that had already happened — the same kind of drift the K-08 denials in this file were
+  // written to catch, in the same kind of place (the first thing a consumer reads).
+  const comment = leadingComment(IDENTITY_INDEX);
+
+  const obsolete: ReadonlyArray<{ readonly pattern: RegExp; readonly why: string }> = [
+    {
+      pattern: /K-03[^.]{0,60}\bwill be\b/i,
+      why: 'says K-03 will be its consumer, which it already is',
+    },
+    {
+      pattern:
+        /\bK-03\b[^.]{0,60}\b(does not exist|doesn't exist|is absent|is not built|is unbuilt)\b/i,
+      why: 'states K-03 does not exist',
+    },
+    {
+      pattern: /K-03[\s\S]{0,120}?\bnone of which exists?\b/i,
+      why: 'lists K-03 among components that do not exist',
+    },
+    {
+      pattern: /\bno (unit|component|consumer)[^.]{0,60}\bconsumes?\b[^.]{0,40}\bK-01\b/i,
+      why: 'says nothing consumes K-01',
+    },
+  ];
+
+  for (const { pattern, why } of obsolete) {
+    assert.ok(
+      !pattern.test(comment),
+      `kernel/identity/index.ts ${why} — K-03 Accounts is implemented in kernel/accounts and ` +
+        'consumes K-01 through its SubjectLookup port',
+    );
+  }
+});
+
+test("K-01's public commentary records K-03 as its implemented consumer, and what is still deferred", () => {
+  const comment = leadingComment(IDENTITY_INDEX);
+
+  assert.match(comment, /\bK-03\b/, 'the consumer must be named');
+  assert.match(
+    comment,
+    /K-03[^.]{0,80}\b(is implemented|is delivered|is built)\b|\bimplemented\b[^.]{0,40}\bK-03\b/i,
+    'and recorded as implemented rather than as a plan',
+  );
+
+  // Accurate in the other direction too. Two things really are still missing, and a header that
+  // dropped them while updating the first half would over-claim instead of under-claiming.
+  assert.match(
+    comment,
+    /\b(deferred|undelivered|not delivered)\b/i,
+    'the remaining integration must still be named as deferred',
+  );
+  assert.match(
+    comment,
+    /transactional registration|one transaction/i,
+    'specifically the transactional registration path, which is what is actually missing',
+  );
+  assert.match(
+    comment,
+    /no caller creates|nothing[^.]{0,40}\bwrites?\b[^.]{0,20}subject/i,
+    'and that nothing writes a subject, which is separate from K-03 reading one',
+  );
+});
+
+test('K-01 and K-03 both record that nothing uses their enlisted paths', () => {
+  // The enlisted paths are the capability transactional registration would be built from. Both
+  // components claim to have one and neither claims it is used; if either started claiming
+  // otherwise without a caller existing, this is where it would show.
+  const accountIndex = readFileSync(path.join(KERNEL_DIR, 'accounts', 'index.ts'), 'utf8');
+
+  assert.match(leadingComment(IDENTITY_INDEX), /nothing uses it|undelivered|deferred/i);
+  assert.match(leadingComment(accountIndex), /No unit opens an account/i);
 });

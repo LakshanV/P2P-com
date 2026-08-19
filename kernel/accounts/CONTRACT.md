@@ -74,7 +74,8 @@ and `tests/accounts.test.ts` scans the whole surface for one.
 | Referential validity at creation | The subject must exist, checked through K-01's public contract **before** an account transaction opens. A malformed request never reaches K-01 at all |
 | Opaque identifiers | K-01's rule set, applied to every K-03 identifier and re-raised in K-03's vocabulary. An account id that looks like an email, telephone number, document number, IBAN, URL, domain or personal name is refused, as is a credential-shaped one |
 | One rule, three enforcement points | The same rules apply at creation, on every row decoded from PostgreSQL, and in the `CHECK` constraints |
-| Idempotent opening | A retry with the same key returns the original account **only when the whole content matches**. Two retries that overlap converge on the winner rather than one failing |
+| Idempotent opening | A retry with the same key returns the original account **only when the whole logical account matches** — account id, subject, instant and origin. Two retries that overlap converge on the winner rather than one failing |
+| Convergence independent of which constraint fired | An identical concurrent opening violates all three uniqueness constraints at once, and PostgreSQL reports whichever index it checked first. Convergence is decided by **content**, never by which constraint was reported, so a genuine retry is not refused because of a choice the server made. Anything that is not an identical opening re-raises the **original** refusal — a different account for a party that already has one still hears `subject-already-has-account`, not a complaint about a key it never reused |
 | Determinism | The caller supplies the account id, the instant and the key. This component reads no clock and generates no randomness |
 | Immutability in the process | Every account crossing a boundary — a service result, a repository read, a decoded row — is deep-frozen and severed from the caller's objects by a single seal |
 | Transaction composition | `PostgresAccountRepository.enlist(client)` opens an account inside a transaction the caller already owns, so a subject and its account can commit together |
@@ -233,6 +234,7 @@ npm run check:migrations                       # the FND-002a contract over db/m
 node --test tests/accounts.test.ts             # contract, refusals, the real K-01 dependency
 node --test tests/accounts-repository.test.ts  # port conformance, adapter, module contract
 node --test tests/accounts-concurrency.test.ts # one-per-subject races, retry convergence, enlistment
+node --test tests/accounts-convergence.test.ts  # convergence under each constraint the server may pick
 npm run test:integration                       # live PostgreSQL; skips without a database
 ```
 
