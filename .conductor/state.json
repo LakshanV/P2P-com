@@ -16,7 +16,7 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated implementation instructions; execution/environment diagnosis is now required before another attempt. FND-001d remains afterward."
+      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated implementation instructions, including an atomic workflow-file-only request; execution failure is now being diagnosed before further implementation. FND-001d remains afterward."
     },
     {
       "id": 4,
@@ -40,7 +40,9 @@
     "The exact .nvmrc value is the pinned development runtime, while engines.node may remain a compatible supported-runtime range; packageManager must identify an exact npm version.",
     "FND-001a is accepted as delivered, not as completion of FND-001 or Phase 0.",
     "FND-001b is accepted as delivered: all source roots, the architecture manifest, four static boundary checks, and planted violation proofs are present; P0-10 remains partial because four specified checks are deferred to schema/contracts/policy artefacts.",
-    "FND-001c must use immutable action SHAs, least-privilege permissions, exact toolchain pins, full verification, and a high/critical dependency-audit gate with an automated anti-weakening contract test."
+    "FND-001c must use immutable action SHAs, least-privilege permissions, exact toolchain pins, full verification, and a high/critical dependency-audit gate with an automated anti-weakening contract test.",
+    "FND-001c delivery is split into a workflow-file task followed by the anti-weakening contract test and acceptance review.",
+    "Diagnose the local execution failure before issuing another workflow implementation instruction."
   ],
   "concerns": [
     "There is no database, authentication, deployment, or monitoring foundation yet.",
@@ -49,7 +51,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Repeated FND-001c instructions have produced neither repository changes nor exact failure evidence, suggesting an unreported execution, environment, or push blocker."
+    "Repeated FND-001c instructions, including a workflow-only atomic task, produced neither repository changes nor failure evidence, indicating an unresolved agent execution or filesystem/git blocker."
   ],
-  "last_instruction": "Investigate why the immediately preceding FND-001c instruction produced no repository changes: do not modify files; report the current branch and working-tree status, whether `.github/workflows` can be created, the exact outputs of `node --version`, `npm --version`, `git remote -v`, and `git push --dry-run`, and identify the concrete blocker (if any) that prevented implementation and push."
+  "last_instruction": "Investigate why the previous workflow-only instruction produced no `.github/workflows/ci.yml`, commit, or push evidence; make no repository changes, and report the exact blocker with the commands attempted, their complete output, `git status --short`, current branch name, and whether `.github/workflows/` can be created and written locally."
 }
