@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-002d, as corrected twice (seed and fixture foundation: a versioned deterministic manifest contract, an injected transactional seed runner with two target guards, and development datasets for the K-05 and K-08 foundations; then mandatory validation on every runner path, a single-transaction replacement, and recomputed payload fingerprints; then complete runtime shape validation for programmatic callers and required evidence on every event row). Preceded by FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-003c (K-09 Audit Foundation: an immutable audit-record contract with classified evidence, an append-only store refused at four layers, idempotent recording and deterministic paginated retrieval). Preceded by FND-002d, as corrected twice (seed and fixture foundation: a versioned deterministic manifest contract, an injected transactional seed runner with two target guards, and development datasets for the K-05 and K-08 foundations; then mandatory validation on every runner path, a single-transaction replacement, and recomputed payload fingerprints; then complete runtime shape validation for programmatic callers and required evidence on every event row). Preceded by FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -22,7 +22,7 @@
 >
 > Contributor documentation and git conventions are delivered (FND-001d) and are themselves under an executable contract: [docs/CONTRIBUTING.md](./CONTRIBUTING.md) is read by `tests/docs-contract.test.ts`, which fails the build if a documented guarantee is deleted or softened.
 >
-> There is still **no CI, no database, no business module and no UI**. Two kernel components now have cores — **K-05 Configuration** (§11.10–§11.13) and **K-08 Event Infrastructure** (§11.14–§11.15) — and neither is complete: no API, no authorisation, no audit, no producing or consuming module, and nothing applied to a live server. FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**; `kernel/` holds the two component foundations above.
+> There is still **no CI, no database, no business module and no UI**. Three kernel components now have cores — **K-05 Configuration** (§11.10–§11.13), **K-08 Event Infrastructure** (§11.14–§11.15) and **K-09 Audit Foundation** (§11.19) — and none is complete: no API, no authentication, no authorisation, no producing or consuming unit, and nothing applied to a live server. FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**; `kernel/` holds the two component foundations above.
 >
 > Exact commands and results: §11.1 (FND-001a), §11.2 (FND-001b) and §11.4 (FND-001d).
 
@@ -53,15 +53,15 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures` and by every runner path (FND-002d, as corrected). **Never loaded into a live server.** No business-module, financial-policy or production data. |
-| Migrations | 4 forward + 4 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, and the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables. No business-module tables exist. |
-| Tests | 456 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration and K-08 Event Infrastructure. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Migrations | 5 forward + 5 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table and the trigger that refuses to update or delete a row. No business-module tables exist. |
+| Tests | 520 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration and K-08 Event Infrastructure. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
 | Monitoring | None |
-| Modules implemented | 2 of 62 partially — **K-05 Configuration** (FND-003a) and **K-08 Event Infrastructure** (FND-003b), cores only; 0 business modules. All 62 registered in the architecture manifest |
+| Modules implemented | 3 of 62 partially — **K-05 Configuration** (FND-003a), **K-08 Event Infrastructure** (FND-003b) and **K-09 Audit Foundation** (FND-003c), cores only; 0 business modules. All 62 registered in the architecture manifest |
 | Boundary rules enforced | 4 of 8 (`layer-direction`, `kernel-purity`, `financial-zone-ai`, `provider-import`); the other 4 need a schema, policy values or module contracts to exist |
-| Module contracts written | 2 of 62 — [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md) and [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md) |
+| Module contracts written | 3 of 62 — [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md), [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md) and [`kernel/audit-foundation/CONTRACT.md`](../kernel/audit-foundation/CONTRACT.md) |
 | Tracked requirements | 474, each with an explicit status; **4 of 472 implementation items complete** (P0-03, P0-11, P0-12, P0-13). 13 are `IN PROGRESS`, 9 are `BLOCKED`. |
 | Release gates met | 0 of 26 |
 | Open P0 defects | 0 |
@@ -241,7 +241,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 456 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains eight gates and 520 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -289,7 +289,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections), for 456 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 64 more, for 520 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -2593,6 +2593,171 @@ STILL NOT VERIFIED: These are refusals, and a refusal proves that a bad manifest
                     guarantee rests on the character class in `COLUMN_NAME` being correct rather
                     than on the server rejecting anything. P0-17 and every live-database gate stay
                     incomplete.
+```
+
+---
+
+### 11.19 Evidence — FND-003c (K-09 Audit Foundation)
+
+An audit record answers a question asked much later, by somebody who was not there and is not
+inclined to take anybody's word for it. The whole value of the answer rests on the record being
+impossible to change afterwards — so immutability is not a feature of this component, it is the
+reason it exists, and everything below follows from it.
+
+**What was built**
+
+| File | Holds |
+|---|---|
+| `kernel/audit-foundation/types.ts` | the immutable record, actor, resource reference, outcome, evidence classification, 15 refusal codes |
+| `kernel/audit-foundation/registry.ts` | registered actions with authority, owner, resource types and classified evidence fields; credential detection |
+| `kernel/audit-foundation/repository.ts` | the injected port — append, read, query — and its in-memory reference implementation |
+| `kernel/audit-foundation/service.ts` | record, retry convergence, filtered retrieval with stable pagination, content fingerprinting |
+| `kernel/audit-foundation/postgres-repository.ts` | the adapter, the enlisted-client path, UTC-text projections, fail-closed decoding |
+| `kernel/audit-foundation/CONTRACT.md` | ownership, guarantees, refusals, retention and access assumptions, deferred integrations |
+| `db/migrations/0005_…up.sql` / `.down.sql` | `kernel_audit_foundation.audit_record` with an append-only trigger |
+
+**The design decisions worth recording**
+
+- **No update and no delete, at four layers.** Not in the service, not in the port, not in the
+  adapter, and refused by a database trigger. Three tests attack this from different angles: the
+  transaction object is inspected at runtime for any operation matching update/delete/redact/purge,
+  the service's method list is asserted to be exactly `record, recordById, query, queryAll`, and the
+  three source files are scanned for `UPDATE`, `DELETE` and `TRUNCATE`. A rule enforced only by a
+  type is a rule a cast undoes.
+- **The actor placeholder is refused into honesty.** `actor.authentication` must be
+  `unauthenticated` and `actor.sessionId` must be `null` — anything else is refused, in the service
+  and by a `CHECK`. A record written today that claimed a verified session would assert a
+  verification that never happened, and a reader in two years could not tell which records had a
+  real actor. Relaxing the constraint is a later migration's job when K-02 lands, rather than a
+  silent change of meaning.
+- **Ordering is `(recordedAt, recordId)`, never the instant alone.** Audit records arrive in bursts
+  and two can share an instant to the microsecond. The SQL compares the cursor as a tuple
+  (`(recorded_at, record_id) > ($n::timestamptz, $m)`) and the index matches. Ordering on time alone
+  makes a paginated walk skip or repeat rows — the failure that turns "the log has 400 records" into
+  "the log showed me 397 of them".
+- **Evidence is classified at registration or refused.** An undeclared field is not stored and not
+  dropped: dropping it means a recorder believes it captured something the log does not hold, which
+  surfaces during an investigation. Classifications exist so the entitlement check K-04 will add has
+  something to act on, decided by whoever understood the field.
+- **A credential is refused under every classification, `restricted` included.** An audit log is the
+  longest-lived store in the system. `REDACTED` is the documented alternative, and is accepted — that
+  a field existed is worth recording, its value is not.
+- **`denied` is a separate outcome from `failed`.** The single most interesting row in a security
+  log; folding it into failure loses the difference between the system breaking and somebody trying
+  something they may not do.
+
+**Tests** — 64 deterministic cases, plus five opt-in live ones:
+
+```text
+tests/audit.test.ts                    22 cases
+  registry     unregistered actions, bad names, absent owners, missing descriptions, unknown
+               authorities and non-snake resource types refused; every field must carry a known
+               classification; a declared credential field cannot be registered under any
+               classification; classifications are reportable
+  evidence     undeclared fields refused rather than dropped; missing required, wrong-typed,
+               fractional-integer, non-boolean and null-required refused; optional-null accepted;
+               five credential-shaped values refused; REDACTED accepted
+  recording    stored as given with a fingerprint; the fingerprint ignores evidence key order;
+               identical retry returns the original; mismatched reuse names what differed;
+               duplicate id refused under a fresh key
+  refusals     AI authorship; claimed session and claimed authentication; another unit's resource;
+               an undeclared resource type; ten malformed identities and instants; empty reason;
+               unknown outcome; denied recorded as itself
+
+tests/audit-repository.test.ts         26 cases
+  conformance  append-once; no mutation operation on the transaction; failed transaction writes
+               nothing; equal-instant ordering stable and repeatable; a page walk over seven
+               records sharing one instant returns each exactly once; filters combine with AND;
+               from inclusive and before exclusive; four bad limits refused
+  immutability no UPDATE/DELETE/TRUNCATE in any source; the migration's trigger and its rollback
+  adapter      timestamps projected as UTC text and never bare; ORDER BY qualified on both columns;
+               the cursor compared as a tuple with a timestamptz cast; every filter a bound
+               parameter and no quoted literal in a WHERE; limit+1 rather than a second count(*);
+               twelve undecodable rows refused; evidence decoding accepts flat scalars only
+  transactions an enlisted append issues no transaction control and releases nothing; a failure
+               propagates so the caller rolls back; nine forms of nested control refused; the
+               repository-owned path still opens, commits and releases its own
+  contract     the schema is the one the manifest derives; adapter and migration touch no other
+               schema; the migration carries the pkey, the idempotency unique, the AI check, the
+               session check, the outcome/reason/evidence checks and the chronological index; the
+               rollback reverses everything and drops the trigger before its function
+
+tests/audit-concurrency.test.ts        16 cases
+  concurrency  two and three concurrent identical retries return one record; concurrent mismatched
+               reuse fails closed; two recordings under one id, one wins; the loser writes nothing
+  immutability the returned evidence is frozen; a mutated read cannot reach the store; five
+               retries leave the record byte-identical; the service's method list is exactly four
+  querying     a page walk over equal instants returns each record once; distinct instants are
+               chronological; the last page reports no cursor; a query is repeatable; five bad
+               limits, an unregistered action, an unknown outcome and two malformed instants
+               refused; the four filters an investigation starts from; queryAll respects its bound
+
+tests/integration/audit.integration.ts  5 cases, SKIPPED without a server
+               the claims a fake cannot make: the trigger really refuses UPDATE and DELETE; the
+               CHECK constraints refuse what the service refuses, through a connection that never
+               went near the component; pagination is exact against the real index when every
+               record shares an instant; an enlisted append commits with the caller and rolls back
+               with it
+```
+
+**Each guarantee was planted and the tests observed to fail:**
+
+```text
+AI authorship and claimed sessions permitted           2 of 22 failed
+unclassified fields ignored, secret values permitted   2 of 22 failed
+instant-only ordering, no commit-time conflict check   6 of 42 failed
+a mutation capability exposed, nested control allowed  2 of 26 failed
+```
+
+**Also caught by an earlier guard.** `tests/kernel-overview.test.ts`, added by the FND-003b
+documentation correction, failed the moment K-09 landed because `kernel/README.md` still described
+two implemented components. That is the test working: the README now names three, and the
+remaining-unbuilt count follows from the same arithmetic.
+
+**Deliberately not delivered**, and recorded as such in CONTRACT.md rather than implied:
+
+- **No unit records an audit record.** Not K-05, not K-08, not any financial module. The actions in
+  the tests are fixtures; registering one on a unit's behalf would claim it is audited when it
+  records nothing.
+- No API, no UI, no authentication implementation, no entitlement check on `query`.
+- No retention, expiry, archival, partitioning or erasure. §5 of the contract records these as
+  assumptions rather than mechanisms, including that a subject-erasure request currently has no
+  answer in this component.
+- No tamper-evident chaining. Records are fingerprinted individually; chaining would additionally
+  detect deletion, and is worth doing once somebody has decided what the log is defended against.
+
+```text
+STATUS AFTER THIS TASK:
+                    K-09 contract         COMPLETE (kernel/audit-foundation/CONTRACT.md)
+                    K-09 implementation   IN PROGRESS - core only
+                    P0-36 IN PROGRESS - not complete: no live PostgreSQL, no producer integration,
+                          no RBAC, no authentication
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 520, pass 520, fail 0
+                                                                (456 before; +64)
+                    npm run check:migrations           exit 0   10 files, 0 violations
+                    npm run check:fixtures             exit 0   2 files, 2 datasets, 0 violations
+                    node --test tests/audit.test.ts    exit 0   tests 22, pass 22
+                    node --test tests/audit-repository.test.ts
+                                                       exit 0   tests 26, pass 26
+                    node --test tests/audit-concurrency.test.ts
+                                                       exit 0   tests 16, pass 16
+                    npm run test:integration           exit 0   tests 19, pass 0, SKIPPED 19
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: No PostgreSQL runtime is available here, so migration 0005 has never been
+                    applied and **the append-only trigger has never refused anything**. That is the
+                    strongest claim this component makes, and today it is proved only in the sense
+                    that the trigger is declared and the application has no operation that would
+                    reach it. The `CHECK` constraints, the tuple cursor against the real index, and
+                    the enlisted path inside a real transaction are all equally unobserved.
+                    `tests/integration/audit.integration.ts` makes exactly these checks and skips,
+                    with its reason stated, when there is no server. K-09 also has no producer, no
+                    authentication and no entitlement check, so P0-36 and every live-database gate
+                    stay incomplete.
 ```
 
 ---

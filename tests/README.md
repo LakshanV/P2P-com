@@ -23,6 +23,9 @@
 | `seed-fixtures.test.ts` | The fixture-manifest contract, and one planted-invalid fixture per check (FND-002d). |
 | `seed-runner.test.ts` | The seed runner: ordering, atomicity, idempotency and target safety. |
 | `seed-hardening.test.ts` | Validation that direct runner calls cannot bypass, single-transaction replacement, and recomputed payload fingerprints. |
+| `audit.test.ts` | K-09 audit record contract, action registry, evidence classification and refusals (FND-003c). |
+| `audit-repository.test.ts` | K-09 port conformance, adapter queries, pagination, transaction composition and module contract. |
+| `audit-concurrency.test.ts` | K-09 concurrent retry convergence, immutability and query determinism. |
 | `seed-adversarial.test.ts` | Type-cast hostile manifests: SQL-bearing column names, malformed dependency and JSON-column arrays, wrong-typed rows and tables, and event rows missing their evidence. |
 | `kernel-overview.test.ts` | The kernel README and K-05's public commentary must describe the kernel that is actually on disk. |
 | `events-concurrency.test.ts` | K-08 commit-time conflict parity, convergent concurrent retries, and appending inside a caller's transaction. |
