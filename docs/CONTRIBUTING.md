@@ -21,7 +21,7 @@ Delivered by task **FND-001d** (checklist items P0-12 and P0-13).
 3. [The pinned toolchain, and why it is pinned](#3-the-pinned-toolchain-and-why-it-is-pinned)
 4. [Verification commands](#4-verification-commands)
 5. [The planted-violation fixtures](#5-the-planted-violation-fixtures)
-6. [The database and the migration contract](#6-the-database-and-the-migration-contract)
+6. [The database and the migration contract](#6-the-database-and-the-migration-contract) — including [local provisioning](#68-local-provisioning--running-a-database) and [the isolated test database](#69-the-isolated-test-database)
 7. [Module ownership and dependency rules](#7-module-ownership-and-dependency-rules)
 8. [AI authority is excluded from financial code](#8-ai-authority-is-excluded-from-financial-code)
 9. [Provider SDK imports are confined to K-13](#9-provider-sdk-imports-are-confined-to-k-13)
@@ -40,6 +40,7 @@ Delivered by task **FND-001d** (checklist items P0-12 and P0-13).
 | Node.js | **26.7.0** | `.nvmrc` |
 | npm | **11.19.0** | `packageManager` in `package.json` |
 | Git | any recent version | — |
+| Docker Engine 24+ with Compose | only to run a database | `compose.yaml` |
 
 Nothing else is needed to run `npm run verify`. The repository contains a platform substrate,
 its tests, the database migration contract and the migration runner, and no gate opens a
@@ -48,9 +49,10 @@ so `npm run verify` passes on a machine with no PostgreSQL installed. The `pg` d
 declared dependency, so `npm ci` installs it — you need a *server* to apply a migration, not an
 extra install.
 
-**PostgreSQL 16 or later** is the selected database (FND-002a). It is a prerequisite only for
-actually applying a migration — `npm run db:migrate` (FND-002b) — which is opt-in and needs both a
-server and `DATABASE_URL`. No provisioning script exists, and nothing runs automatically. See
+**PostgreSQL 16 or later** is the selected database (FND-002a), pinned to an exact patch version
+in `compose.yaml`. You do not install it: `npm run db:up` provisions it in a container
+(FND-002c). That is needed only to actually apply a migration or run a live suite — never to run
+`npm run verify`. See [6.8](#68-local-provisioning--running-a-database) for the commands and
 [section 6](#6-the-database-and-the-migration-contract) for what exists and what does not.
 
 The **supported ranges** are wider than the pins — `engines.node >= 22.18.0` and
@@ -163,7 +165,9 @@ Supporting commands:
 | `npm run db:status` | Report applied and pending migrations against `DATABASE_URL`. Changes nothing. |
 | `npm run db:migrate` | Apply pending migrations. Needs `DATABASE_URL` and a running server — see [6.6](#66-applying-migrations--the-runner). |
 | `npm run db:rollback -- --version NNNN --yes` | Reverse exactly one migration. Operator-invoked only. |
-| `npm run test:integration` | The opt-in live-PostgreSQL suite. Skips with a reason when `DATABASE_URL` is unset — see [6.7](#67-the-integration-test). |
+| `npm run test:integration` | The opt-in live-PostgreSQL suites. Skips with a reason when `DATABASE_URL` is unset — see [6.7](#67-the-integration-test) and [6.9](#69-the-isolated-test-database). |
+| `npm run db:up` / `db:ready` / `db:down` | Start, wait for, and stop the local database — see [6.8](#68-local-provisioning--running-a-database). |
+| `npm run db:reset -- --yes` / `db:destroy -- --yes` | Destructive. Both refuse without `--yes`. |
 
 `npm run check:boundaries` runs four checks, each of which fails the build on violation:
 
@@ -232,9 +236,10 @@ financial zone will need.
 | Database selection | **Decided** — PostgreSQL 16+ |
 | Migration file format, versioning and pairing | **Delivered and enforced** — `db/migrations/`, `npm run check:migrations` |
 | Schema-namespace ownership convention | **Delivered and enforced** — `platform/db/schema-namespaces.ts` |
-| Local provisioning (container, service, init script) | **Not delivered.** Nothing here starts a database |
+| Local provisioning | **Delivered** (FND-002c) — `compose.yaml` plus `db:up`/`db:ready`/`db:down`/`db:reset`/`db:destroy`, see [6.8](#68-local-provisioning--running-a-database). Development only. **Never started from this repository** — no Docker runtime is available to it |
 | Migration runner (applying files to a live server) | **Delivered** (FND-002b) — `npm run db:migrate`, see [6.6](#66-applying-migrations--the-runner). The `pg` driver is declared and locked, so a clean `npm ci` can run it. **Never executed against a live server from this repository**; its logic is covered by deterministic tests against an injected fake |
 | Connection configuration | `DATABASE_URL`, read from the environment and never logged. **No pooling, no secret storage** |
+| Isolated test database | **Delivered** (FND-002c) — derived from `DATABASE_URL`, guarded against non-local and non-test targets, see [6.9](#69-the-isolated-test-database) |
 | Seed and fixture data | **Not delivered** |
 | Business-module or kernel tables | **None.** FND-002a establishes the contract only |
 
@@ -424,6 +429,106 @@ disposable database.**
 
 Without `DATABASE_URL` it **skips with the reason printed**, and a skipped run is not evidence. It is deliberately outside `npm test`, so `npm run verify` contains only tests
 that need no live service.
+
+### 6.8 Local provisioning — running a database
+
+**DEVELOPMENT ONLY.** `compose.yaml` provisions a PostgreSQL for your machine and for the isolated
+test database. It has no TLS, no backups, no resource limits and no secret management, its port is
+bound to `127.0.0.1`, and its example credentials are committed. It is not a deployment artefact
+and must never be pointed at, or copied into, a shared environment.
+
+**Prerequisites**
+
+| Requirement | Why |
+|---|---|
+| Docker Engine 24+ with the Compose plugin (`docker compose version`) | Runs the service defined in `compose.yaml` |
+| ~200 MB free disk | The `jaya-postgres-data` volume |
+| Port 5432 free on 127.0.0.1 | Or set `POSTGRES_PORT` in `.env` |
+
+Nothing in `npm run verify` needs any of this. Provisioning is only required to actually apply a
+migration or to run the live suites.
+
+**First run**
+
+```bash
+cp .env.example .env      # .env is git-ignored; the example's password is a placeholder
+npm run db:up             # start PostgreSQL in the background
+npm run db:ready          # wait until it is healthy, not merely started
+npm run db:migrate        # apply pending migrations
+npm run db:status         # confirm what is applied
+```
+
+`db:ready` waits on the container's own health check — `pg_isready` against the real user and
+database — rather than sleeping for a guessed number of seconds. "Healthy" therefore means "will
+accept our connection", not "the port is open".
+
+**Every command**
+
+| Command | Effect | Data |
+|---|---|---|
+| `npm run db:up` | Start the service in the background | preserved |
+| `npm run db:ready` | Block until the health check passes (90s timeout) | untouched |
+| `npm run db:migrate` | Apply pending migrations | preserved |
+| `npm run db:status` | Report applied and pending. Creates nothing | untouched |
+| `npm run db:rollback -- --version NNNN --yes` | Reverse one migration | schema change |
+| `npm run db:down` | Stop and remove the container | **preserved** |
+| `npm run db:reset -- --yes` | Drop and recreate the application database | **destroyed** |
+| `npm run db:destroy -- --yes` | Remove the container **and** the data volume | **destroyed** |
+
+**Data retention.** The database lives in a named Docker volume, `jaya-postgres-data`, not in the
+container. `db:down` stops the service and your data survives — start it again with `db:up` and
+everything is where you left it, including applied migrations. Only `db:reset` and `db:destroy`
+lose data, and both refuse to run without an explicit `--yes`:
+
+```
+$ npm run db:destroy
+refusing to run `destroy` without --yes.
+
+  destroy removes the jaya-postgres-data volume. Every row in the local database is lost.
+  If you only want to stop the service, use `npm run db:down`, which keeps the data.
+```
+
+A destructive default is a destructive accident waiting for a tired operator, so the two
+destructive commands are the only ones that ask.
+
+**Failure recovery**
+
+| Symptom | Cause | Recovery |
+|---|---|---|
+| `docker` was not found on PATH | Docker or the Compose plugin is not installed | Install Docker Desktop or Engine with the Compose plugin |
+| `POSTGRES_USER is not set` | No `.env` | `cp .env.example .env` |
+| `db:ready` times out after 90s | Corrupt or incompatible data volume, usually after changing the pinned PostgreSQL major | `docker compose --file compose.yaml logs postgres` to confirm, then `npm run db:destroy -- --yes` and start again |
+| Port already allocated | Something else holds 5432 | Set `POSTGRES_PORT` in `.env` and update `DATABASE_URL` to match |
+| `db:migrate` reports checksum drift | An applied migration file was edited | Correct it with a **new** migration, or `npm run db:reset -- --yes` on a local database you are happy to lose |
+| `db:migrate` refuses with a concurrent-run error | Another runner holds the advisory lock, or a previous run was killed | Wait; if nothing is running, the lock died with its session and a retry succeeds |
+
+### 6.9 The isolated test database
+
+The live suites create, fill and drop databases, so they must never run against your development
+database. They do not: `platform/db/test-database.ts` **derives** a test database from
+`DATABASE_URL` — `jaya_dev` becomes `jaya_dev_test` — and every lifecycle call passes through a
+guard first.
+
+```bash
+npm run db:up && npm run db:ready
+npm run test:integration
+```
+
+The guard refuses, before creating or dropping anything:
+
+- a host that is not loopback — a test that can reach another machine can destroy another
+  machine's data;
+- a database whose name does not end in `_test`, whatever the caller believes it is;
+- any name containing `prod`, `production`, `live`, `staging`, `stage`, `uat` or `preprod`, even on
+  a loopback host, because a port-forward to a shared database looks local too;
+- anything it cannot parse — an unparseable connection string is not a safe one.
+
+Deriving rather than configuring is deliberate: a separately-configured test URL is a URL somebody
+can point somewhere else.
+
+The suite creates the test database, runs the migration set against it, asserts the development
+database is unchanged, and drops it — including on failure. Without `DATABASE_URL` it **skips with
+the reason printed**, and a skipped run is not evidence of anything.
 
 ---
 

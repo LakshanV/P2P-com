@@ -1,0 +1,45 @@
+# Local development database (FND-002c).
+#
+# DEVELOPMENT ONLY. This file provisions a PostgreSQL for a developer's machine and for the
+# isolated integration-test database. It is not a deployment artefact: there is no TLS, no backup,
+# no resource limit, no secret management, and the credentials come from an untracked .env whose
+# committed example carries an obviously-fake password. Nothing here should ever point at, or be
+# copied into, a staging or production environment.
+#
+# The image is pinned to an exact patch version rather than `16` or `latest`. A floating tag means
+# the database under your tests can change without a single line of this repository changing,
+# which turns a reproducible environment into an approximately reproducible one.
+
+name: jaya-local
+
+services:
+  postgres:
+    image: postgres:16.10-alpine3.22
+    container_name: jaya-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env — copy .env.example}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — copy .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env — copy .env.example}
+      # Deterministic collation, so an index built here behaves like one built anywhere else.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      # Bound to the loopback interface on purpose: this database must not be reachable from the
+      # network, because its credentials are in a file whose example is committed.
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      # A named volume, so `db:down` stops the service without discarding application data and
+      # only `db:destroy` removes it.
+      - jaya-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # `db:ready` waits on this rather than on a fixed sleep. pg_isready is checked against the
+      # real user and database, so "healthy" means "will accept our connection", not "port open".
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -h 127.0.0.1']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  jaya-postgres-data:
+    name: jaya-postgres-data

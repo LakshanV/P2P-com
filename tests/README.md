@@ -9,6 +9,7 @@
 | `docs-contract.test.ts` | Anti-erosion proofs for `docs/CONTRIBUTING.md` (FND-001d). |
 | `migrations.test.ts` | The migration contract and schema-namespace convention (FND-002a). |
 | `migration-runner.test.ts` | The migration runner, against an injected fake database (FND-002b). |
+| `provisioning-contract.test.ts` | Local provisioning and the isolated test-database guard (FND-002c). |
 | `helpers/fake-database.ts` | The in-memory stand-in for PostgreSQL. Not a test; imported by the runner tests. |
 | `integration/` | Opt-in live-PostgreSQL suites. **Outside `npm test`** — run with `npm run test:integration`; they skip with a stated reason when `DATABASE_URL` or the driver is missing. |
 | `fixtures/` | Deliberately non-conforming source trees, plus `fixtures/migrations/` — one directory per migration-contract check. **Excluded from TypeScript, ESLint and Prettier on purpose.** |

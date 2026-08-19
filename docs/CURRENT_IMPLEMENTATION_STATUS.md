@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-002b, as corrected (declared `pg` driver, read-only `status` and refused rollback, bootstrap folded into the first migration transaction, executable 0002 rollback). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-002c (local PostgreSQL provisioning, isolated test-database lifecycle, provisioning contract). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -13,6 +13,8 @@
 > **Read this first.** The repository now installs, builds, type-checks, lints, format-checks and tests from a clean dependency state. That is the whole of what exists in code.
 >
 > Four of the eight architectural checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are now executable and run inside `npm run verify`, each proven by a committed planted-violation fixture.
+>
+> Local provisioning is delivered (FND-002c): `compose.yaml` pins PostgreSQL 16.10 with a health check, a named data volume and loopback-only binding; `db:up`/`db:ready`/`db:migrate`/`db:status`/`db:reset`/`db:down`/`db:destroy` drive it; and the integration suites derive a guarded, isolated test database rather than touching the development one. **No Docker runtime is available to this repository, so the service has never been started and no live suite has ever run.**
 >
 > The data foundation has begun. FND-002a selected PostgreSQL 16+, delivered the migration file contract enforced by `npm run check:migrations` with a planted-invalid fixture per rule, and derived the schema-namespace ownership convention from the architecture manifest. FND-002b added the runner: a PostgreSQL adapter, advisory locking, SHA-256 checksum reconciliation, and atomic application of each migration with its ledger row, all written against an injected database interface and covered by 35 deterministic tests.
 >
@@ -49,9 +51,9 @@
 |---|---|
 | Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement and the migration contract; no database server, no kernel. |
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
-| Database | **Selected, not provisioned.** PostgreSQL 16+ chosen (FND-002a). No server, no connection string, no runner; nothing in this repository opens a connection. |
+| Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Migrations | 2 forward + 2 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema and the migration ledger; no kernel or module tables exist. |
-| Tests | 138 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract and migration runner; no business logic exists to test. A further 4 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 175 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract and migration runner; no business logic exists to test. A further 7 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -186,11 +188,12 @@ This is the honest inventory, not a backlog summary. Items delivered by FND-001a
 | Item | State | Checklist ID |
 |---|---|---|
 | Database selection | **Decided** — PostgreSQL 16+ (FND-002a) | P0-14 |
-| Local database provisioning | Absent — no container, service or init script | P0-14 |
+| Local database provisioning | **Present, never exercised** — `compose.yaml` pins PostgreSQL 16.10 with a health check and a named data volume; `db:up`/`db:ready`/`db:down`/`db:reset`/`db:destroy` drive it (FND-002c). **No Docker runtime is available here, so it has never been started** | P0-14 |
 | Migration file contract and validator | **Present** — `db/migrations/`, `npm run check:migrations`, ten checks with planted-invalid fixtures | P0-15 |
 | Migration runner | **Present** — `npm run db:migrate`/`db:status`/`db:rollback` (FND-002b), with advisory locking, checksum reconciliation and ledger-atomic application. Driver `pg` declared and locked, so `npm ci` yields a runnable runner. **Never run against a live server** | P0-15 |
 | Connection configuration | `DATABASE_URL` only, read from the environment and never logged. **No pooling, no secret storage, no provisioning** | P0-14 |
 | Schema-namespace ownership convention | **Present and enforced for migrations** — `platform/db/schema-namespaces.ts`, derived from the architecture manifest | P0-16 |
+| Isolated test-database lifecycle | **Present, never exercised** — derived from `DATABASE_URL`, guarded against non-loopback hosts, non-test names and shared-environment names (FND-002c) | T-21 |
 | Seed and fixture data | Absent | P0-17 |
 | Object / file storage | Absent | P0-18 |
 | Search index | Absent | K-15 |
@@ -237,7 +240,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 138 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 175 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -285,7 +288,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more, for 138 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added three more and 37 more, for 175 today. No defect was found in any of them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -299,7 +302,9 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 **Status:** IN PROGRESS. Subtasks FND-001a, FND-001b and FND-001d delivered. **FND-001c is BLOCKED by BL-10** — it is the only remaining subtask, and it cannot be delivered by any local means.
 
-**Next subtask: FND-001c — GitHub Actions CI.** It is the only remaining item on the critical path to a boundary rule that holds without somebody remembering to run a command, and it is stalled on a credential permission rather than on any technical question. The workflow has been authored and validated locally on several occasions; every attempt to land it is rejected by the remote because the token lacks the Workflows permission (BL-10, §6). Until that is granted, FND-001 stays IN PROGRESS and no CI-dependent gate may be marked complete.
+**Next genuinely unblocked task: FND-003 — kernel build step B-1 (K-05 Configuration, K-08 Events).** The data foundation now has everything a module needs from it that can be built without a running server: a validated migration set, a runner, a schema-namespace convention and a provisioned local database. What FND-002 still lacks — one verified live run — is blocked on a PostgreSQL runtime rather than on engineering, and a kernel component does not wait on it: K-05 and K-08 depend only on the substrate. FND-002d (seed and fixture strategy, P0-17) is the alternative, and is equally unblocked.
+
+**FND-001c — GitHub Actions CI — remains BLOCKED on BL-10** and is not the next task despite being older. It is the only remaining item on the critical path to a boundary rule that holds without somebody remembering to run a command, and it is stalled on a credential permission rather than on any technical question. The workflow has been authored and validated locally on several occasions; every attempt to land it is rejected by the remote because the token lacks the Workflows permission (BL-10, §6). Until that is granted, FND-001 stays IN PROGRESS and no CI-dependent gate may be marked complete.
 
 ### Subtask breakdown
 
@@ -1347,6 +1352,175 @@ STILL NOT VERIFIED: Every one of these corrections is proved against an injected
                     available here. Transactional DDL semantics, advisory-lock behaviour and the
                     validity of the SQL itself remain unverified, which is why P0-14 and P0-15
                     are unchanged.
+```
+
+---
+
+### 11.8 Evidence — FND-002c (local provisioning and isolated test-database lifecycle)
+
+FND-002b left the runner able to apply migrations to a database that did not exist. This provides
+one — reproducibly, on a developer's machine, and nowhere else.
+
+**No Docker runtime is available to this repository, so the service has never been started.** Every
+guarantee below is proved by inspecting the real artifacts and by planting weakened variants of
+them; none is proved by running the thing. That distinction is why P0-14, P0-15, T-02, T-04, T-05,
+T-20 and T-21 all remain incomplete.
+
+```text
+ITEM ID:            P0-14, T-21 (FND-002c)
+MODULE / PHASE:     Platform substrate — data foundation / Phase 0
+STATUS:             P0-14 IN PROGRESS — provisioning delivered, never started
+                    T-21  IN PROGRESS — lifecycle delivered, never run against a server
+                    P0-15, T-02, T-04, T-05, T-20 unchanged
+                    Nothing is marked COMPLETE.
+
+IMPLEMENTED:        compose.yaml — a DEVELOPMENT ONLY PostgreSQL service:
+                      image     postgres:16.10-alpine3.22, an exact patch tag. A floating `16`
+                                would let the database under the tests change without a line of
+                                this repository changing
+                      health    pg_isready against the real user and database, interval 2s,
+                                retries 30. `db:ready` waits on this rather than on a sleep, so
+                                "healthy" means "will accept our connection"
+                      data      named volume jaya-postgres-data mounted at the data directory, so
+                                `db:down` stops the service without discarding data
+                      network   published on 127.0.0.1 only — a database whose example
+                                credentials are committed must not be reachable from the network
+                      secrets   POSTGRES_USER/PASSWORD/DB come from an untracked .env; compose
+                                fails with a pointed message if they are unset
+
+                    .env.example — every variable compose needs, with the password
+                    `jaya_local_dev_only`: a placeholder that is safe to commit precisely because
+                    it grants access to nothing but a loopback container holding disposable data.
+                    .env and .env.* are git-ignored; .env.example is exempted.
+
+                    platform/db/provision-cli.ts — up, ready, down, reset, destroy.
+                    `reset` and `destroy` are the only commands that can lose data and both refuse
+                    without --yes, naming what will be lost and what to run instead. `down` keeps
+                    the volume, deliberately.
+
+                    platform/db/test-database.ts — the isolated test-database lifecycle. The test
+                    database is DERIVED from DATABASE_URL (jaya_dev -> jaya_dev_test) rather than
+                    configured, because a separately-configured test URL is a URL somebody can
+                    point somewhere else. assertSafeTestTarget refuses a non-loopback host, a name
+                    not ending in _test, any name containing prod/production/live/staging/stage/
+                    uat/preprod even on loopback, and anything it cannot parse. createTestDatabase
+                    and dropTestDatabase each call the guard before acting.
+
+                    platform/checks/provisioning-contract.ts — eleven guarantees over the real
+                    artifacts: service-definition, pinned-version, health-check, persistent-data,
+                    loopback-only, no-committed-secrets, env-example, commands,
+                    destructive-confirmation, safe-target-guard, development-only.
+
+                    tests/provisioning-contract.test.ts — in `npm run verify`.
+                    tests/integration/test-database-lifecycle.integration.ts — opt-in, skips.
+
+TESTED:             175 tests (138 before this subtask, 37 added), all passing.
+                    Of the 37: 22 planted weakenings, 5 artifact/consistency assertions, 10
+                    behavioural tests of the target guard.
+
+                    The planted weakenings are the substance. Each mutates one real artifact and
+                    requires the contract to catch it:
+                      health check deleted / pg_isready removed / retries removed
+                      image floated to `postgres:16`, to `latest`, downgraded to 14.11
+                      password hardcoded into compose.yaml
+                      real-looking credential put in .env.example
+                      .env ignore rule removed; a .env reported as tracked by git
+                      named volume removed; data directory unmounted
+                      port published on every interface
+                      postgres service renamed away
+                      a required variable dropped from .env.example
+                      a provisioning command dropped from package.json
+                      --yes requirement removed; destructive command list emptied
+                      target guard removed; a lifecycle function stops calling it; LOCAL_HOSTS
+                        unexported
+                      DEVELOPMENT ONLY statement deleted
+                    A coverage test fails the build if a guarantee ever has no weakening.
+
+                    The guard itself is tested behaviourally, not textually: non-loopback hosts,
+                    names without the suffix, every forbidden marker on a loopback host,
+                    unparseable strings, idempotent derivation, and that a refusal message never
+                    echoes the password.
+
+TEST COMMANDS:      npm run verify
+                    node --test tests/provisioning-contract.test.ts
+                    npm run test:integration
+                    npm audit --audit-level=high
+                    node docs/tools/validate-doc-links.mjs
+                    git diff --check
+
+TEST RESULTS:       npm run verify                     exit 0   tests 175, pass 175, fail 0
+                    node --test tests/provisioning-contract.test.ts
+                                                       exit 0   tests 37, pass 37, fail 0
+                    npm run test:integration           exit 0   tests 7, pass 0, SKIPPED 7
+                      reason: "DATABASE_URL is not set — no live database to run against" and
+                      "…no local PostgreSQL to derive a test database from"
+                      A SKIPPED SUITE IS NOT EVIDENCE THAT PROVISIONING WORKS.
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs
+                                                       exit 0   4 files, 0 broken
+                    git diff --check                   exit 0
+
+                    NOT RUN: docker is not installed in this environment
+                      $ command -v docker  ->  not found
+                    so `npm run db:up`, `db:ready`, `db:reset`, `db:down` and `db:destroy` have
+                    never been executed, and no PostgreSQL has ever been started from this
+                    repository.
+
+SECURITY:           No credential is committed. The only password in a tracked file is the known
+                    placeholder, and the contract fails the build if .env.example ever carries
+                    something secret-shaped, if compose.yaml hardcodes a password, if the ignore
+                    rules for .env are weakened, or if git reports a .env as tracked. The service
+                    binds to loopback only. The test-target guard refuses to act on anything that
+                    is not demonstrably a local disposable database, and its refusal messages do
+                    not echo connection strings.
+
+UI/UX REVIEW:       N/A — no user-facing surface.
+MIGRATIONS:         Unchanged. Two forward, two rollback, none applied anywhere.
+EVENTS:             None.
+
+CONFIG / POLICY:    DATABASE_URL plus POSTGRES_USER/PASSWORD/DB/PORT, all from an untracked .env
+                    with a committed example. No defaults that could reach a real environment.
+
+KNOWN LIMITATIONS:  1. NOTHING HAS BEEN STARTED. No Docker runtime here, so compose.yaml has never
+                       been validated by Docker itself — only by the contract's own reading of it.
+                       A syntax error Docker would reject could still be present.
+                    2. Docker-specific. A contributor using Podman, Colima or a native install can
+                       still use everything else by setting DATABASE_URL by hand, but `db:up` and
+                       friends assume `docker compose`.
+                    3. The image is pinned by tag, not by digest. A tag is immutable by convention
+                       rather than by cryptography; a digest pin would be stronger and needs a
+                       registry lookup this environment cannot make.
+                    4. `db:reset` drops and recreates the application database but does not
+                       re-apply migrations — that is `db:migrate`, deliberately kept separate so
+                       the destructive step and the constructive one are distinct commands.
+                    5. The forbidden-name list is a heuristic. A shared database called `scratch`
+                       on a port-forward would pass the name check; the loopback rule and the
+                       _test suffix are what carry the weight.
+                    6. No seed or fixture data (P0-17), no backup, no restore, no upgrade path
+                       between PostgreSQL majors.
+                    7. NOT VERIFIED BY CI. P0-09, blocked by BL-10.
+
+DEFERRED:           P0-17 seed/fixture strategy to FND-002d.
+                    One verified live run — which is what P0-14, P0-15, T-02, T-04, T-05, T-20
+                    and T-21 are all waiting on — to whenever a PostgreSQL runtime exists.
+
+COMMITS:            Recorded at commit time for this branch.
+
+FILES:              compose.yaml, .env.example,
+                    platform/db/provision-cli.ts, platform/db/test-database.ts,
+                    platform/checks/provisioning-contract.ts,
+                    tests/provisioning-contract.test.ts,
+                    tests/integration/test-database-lifecycle.integration.ts,
+                    modified: package.json (db:up/db:ready/db:down/db:reset/db:destroy),
+                    docs/CONTRIBUTING.md (sections 1, 4, 6.1, 6.8, 6.9),
+                    docs/CURRENT_IMPLEMENTATION_STATUS.md,
+                    docs/MASTER_IMPLEMENTATION_CHECKLIST.md
+
+FOLLOW-UP:          On any machine with Docker: `npm run db:up && npm run db:ready &&
+                    npm run test:integration`. Seven currently-skipped tests then become real
+                    evidence, and P0-14, P0-15 and T-21 can be argued for COMPLETE against it.
+                    Until then they stay IN PROGRESS. The next genuinely unblocked engineering
+                    task is FND-003 (kernel build step B-1) — see §8.
 ```
 
 ---
