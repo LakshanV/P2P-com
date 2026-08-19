@@ -348,11 +348,93 @@ export function toReceipt(row: ReceiptRow): ConsumerReceipt {
   };
 }
 
+/** Statements that begin, end or subdivide a transaction. An enlisted path may issue none of them. */
+const TRANSACTION_CONTROL =
+  /^\s*(BEGIN|START\s+TRANSACTION|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE\s+SAVEPOINT)\b/i;
+
+/**
+ * A client that refuses transaction control and never releases the connection.
+ *
+ * Both halves matter, and both protect the caller rather than this component:
+ *
+ *   - **No transaction control.** PostgreSQL has no true nested transactions. A `BEGIN` inside an
+ *     open transaction warns and is ignored; a `COMMIT` ends the *caller's* transaction, so the
+ *     domain rows the caller had not finished writing are committed early and its later `ROLLBACK`
+ *     silently rolls back nothing. That failure is invisible at the point it happens and surfaces
+ *     as inexplicable partial writes much later.
+ *   - **No release.** The connection belongs to the caller. Releasing it mid-transaction would
+ *     abort work this component knows nothing about.
+ *
+ * This is a guard rather than a convention: a future refactor that added a `BEGIN` to a shared code
+ * path would fail loudly here instead of corrupting a caller's transaction boundary.
+ */
+export function enlistedClient(client: DatabaseClient): DatabaseClient {
+  return {
+    query<Row = Record<string, unknown>>(sql: string, params?: readonly unknown[]) {
+      if (TRANSACTION_CONTROL.test(sql)) {
+        return Promise.reject(
+          new EventError(
+            'nested-transaction',
+            `an enlisted event append may not issue "${sql.trim().split(/\s+/, 2).join(' ')}". ` +
+              'The transaction belongs to the caller: PostgreSQL has no nested transactions, so ' +
+              "this would end the caller's transaction rather than a nested one, committing " +
+              'domain writes it had not finished making',
+          ),
+        );
+      }
+      return client.query<Row>(sql, params);
+    },
+    release(): Promise<void> {
+      // Deliberately nothing. The caller opened this connection and will close it.
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * An event repository that runs inside a transaction somebody else opened.
+ *
+ * This is the mechanism CONTRACT.md §4 describes: a producing module opens one transaction, writes
+ * its domain rows and appends its event through this, and the two commit together or not at all.
+ * Publishing after the caller's commit loses the event if the process dies in between; publishing
+ * before it announces something that may still roll back. Only sharing the transaction avoids both.
+ *
+ * `withTransaction` here does not open a transaction — it runs the body against the caller's
+ * client and lets every failure propagate, because the caller's `ROLLBACK` is what must undo the
+ * append. Swallowing an error here would commit domain state with no event, which is the exact
+ * outcome this exists to prevent.
+ *
+ * No business module uses this yet; K-08 has no producer. It is the capability, not an integration.
+ */
+export class EnlistedEventRepository implements EventRepository {
+  readonly #client: DatabaseClient;
+
+  constructor(client: DatabaseClient) {
+    this.#client = enlistedClient(client);
+  }
+
+  withTransaction<T>(body: (tx: EventTransaction) => Promise<T>): Promise<T> {
+    return body(new PostgresEventTransaction(this.#client));
+  }
+}
+
 export class PostgresEventRepository implements EventRepository {
   readonly #database: Database;
 
   constructor(database: Database) {
     this.#database = database;
+  }
+
+  /**
+   * An event repository enlisted in a transaction the caller already opened.
+   *
+   * Named on this class so that the two paths are read together: this one composes with a caller's
+   * transaction, `withTransaction` below owns its own. Both write through the same
+   * `PostgresEventTransaction`, so there is one implementation of every statement and no second
+   * copy to keep in step.
+   */
+  static enlist(client: DatabaseClient): EventRepository {
+    return new EnlistedEventRepository(client);
   }
 
   async withTransaction<T>(body: (tx: EventTransaction) => Promise<T>): Promise<T> {

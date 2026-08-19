@@ -210,6 +210,35 @@ export class InMemoryEventRepository implements EventRepository {
     working: { events: EventEnvelope[]; deliveries: Delivery[]; receipts: ConsumerReceipt[] },
     touchedDeliveries: ReadonlySet<string>,
   ): void {
+    // Events first, because that is the order the statements run in. A publication inserts its
+    // event and then its deliveries, so against PostgreSQL the event's constraints are what a
+    // losing transaction violates — and a reference implementation that reported the delivery
+    // conflict instead would hand callers a different error from the one they will really see.
+    const currentEventIds = new Set(this.#events.map((event) => event.eventId));
+    const currentIdempotencyKeys = new Map(
+      this.#events.map((event) => [event.idempotencyKey, event.eventId]),
+    );
+    const appendedEvents = working.events.filter((event) => !baseEventIds(base).has(event.eventId));
+    for (const event of appendedEvents) {
+      if (currentEventIds.has(event.eventId)) {
+        throw new EventError(
+          'duplicate-event-id',
+          `event ${event.eventId} was appended by another transaction while this one was open`,
+        );
+      }
+      // `UNIQUE (idempotency_key)`. Two overlapping retries of one publication each read a store
+      // with no such key and would otherwise both append — producing two events for one logical
+      // publication, which is exactly what an idempotency key exists to prevent.
+      const holder = currentIdempotencyKeys.get(event.idempotencyKey);
+      if (holder !== undefined) {
+        throw new EventError(
+          'idempotency-key-reuse',
+          `idempotency key "${event.idempotencyKey}" was used by event ${holder}, appended by ` +
+            'another transaction while this one was open',
+        );
+      }
+    }
+
     const baseDeliveries = new Map(base.deliveries.map((row) => [row.deliveryId, row]));
     const currentDeliveries = new Map(this.#deliveries.map((row) => [row.deliveryId, row]));
     const merged = this.#deliveries.map((row) => ({ ...row }));
@@ -229,6 +258,24 @@ export class InMemoryEventRepository implements EventRepository {
             `delivery ${deliveryId} was inserted by another transaction while this one was open`,
           );
         }
+        // The `UNIQUE (event_id, subscription, generation)` constraint, checked against the store
+        // as it stands now rather than against the snapshot this transaction read. Two replays of
+        // one delivery, or two publications fanning out to one subscription, each see no clash in
+        // their own snapshot and would otherwise both commit a generation-N row.
+        const clash = merged.find(
+          (row) =>
+            row.eventId === written.eventId &&
+            row.subscription === written.subscription &&
+            row.generation === written.generation,
+        );
+        if (clash !== undefined) {
+          throw new EventError(
+            'concurrent-modification',
+            `${written.subscription} already has a generation-${written.generation} delivery for ` +
+              `${written.eventId} (${clash.deliveryId}); another transaction appended it first. A ` +
+              'replay appends the next generation rather than reusing one',
+          );
+        }
         indexById.set(deliveryId, merged.length);
         merged.push({ ...written });
         continue;
@@ -245,15 +292,23 @@ export class InMemoryEventRepository implements EventRepository {
       merged[indexById.get(deliveryId) as number] = { ...written };
     }
 
-    const currentEventIds = new Set(this.#events.map((event) => event.eventId));
-    const appendedEvents = working.events.filter((event) => !baseEventIds(base).has(event.eventId));
-    for (const event of appendedEvents) {
-      if (currentEventIds.has(event.eventId)) {
+    // The claim token is `UNIQUE` in the migration, and it is what every completion is predicated
+    // on. Two live claims sharing one token cannot be told apart, so the guard that stops a stale
+    // worker acknowledging would silently stop working — checked over the merged result, because
+    // the collision is between this transaction's claim and one committed since its snapshot.
+    const heldTokens = new Map<string, string>();
+    for (const row of merged) {
+      if (row.claimToken === null) continue;
+      const holder = heldTokens.get(row.claimToken);
+      if (holder !== undefined) {
         throw new EventError(
-          'duplicate-event-id',
-          `event ${event.eventId} was appended by another transaction while this one was open`,
+          'claim-token-reuse',
+          `claim token "${row.claimToken}" would be held by both ${holder} and ${row.deliveryId}. ` +
+            'A token identifies one claim, not one worker, and two claims that cannot be told ' +
+            'apart defeat the guard that stops a stale worker acknowledging',
         );
       }
+      heldTokens.set(row.claimToken, row.deliveryId);
     }
 
     const currentReceiptKeys = new Set(this.#receipts.map(receiptKey));

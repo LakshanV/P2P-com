@@ -166,6 +166,7 @@ export type EventErrorCode =
   | 'delivery-not-terminal'
   | 'replay-not-authorised'
   | 'concurrent-modification'
+  | 'nested-transaction'
   | 'immutable-event'
   | 'unknown-subscription';
 

@@ -61,6 +61,8 @@ A caller that needs spread can stagger its workers.
 | At-least-once delivery | A handler is acknowledged only after it returns. The alternative — acknowledging first — is at-most-once, and silently losing an event is worse than processing one twice |
 | Consumer-side idempotency | A receipt per (subscription, event), written in the same transaction as the acknowledgement. A redelivered event whose receipt exists never reaches the handler |
 | Safe concurrent claiming | `FOR UPDATE SKIP LOCKED`, and every completion predicated on the claim token. Two workers cannot both authoritatively finish one delivery |
+| Conflict parity | The reference implementation refuses at commit every uniqueness conflict the database refuses with a constraint — a second event under one idempotency key, a second delivery at one `(event, subscription, generation)`, two live claims holding one token — and reports the conflict the *first* violated statement would have produced, because events are inserted before deliveries |
+| Convergent retries | Two overlapping retries of one publication do not both fail. The loser re-reads, checks that the winner is the same logical event, and returns it. A key reused for genuinely different content still fails closed |
 | Deterministic bounded retry | `base × 2^(attempt−1)`, capped at `maxBackoffSeconds`. `backoffSeconds` is exported, so an operator can compute a `nextAttemptAt` rather than infer it |
 | Terminal dead-lettering | After `maxAttempts` a delivery is dead-lettered and never retried automatically. It stays for inspection and can only return through an explicit replay |
 | Operator-explicit replay | A replay appends the next generation, names its operator and carries a reason. It never reopens a terminal delivery |
@@ -87,6 +89,7 @@ A caller that needs spread can stagger its workers.
 | `replay-not-authorised` | Replay needs an operator and a reason. Automatic replay is how one incident becomes two |
 | `no-such-event` / `no-such-delivery` | Nothing to act on |
 | `concurrent-modification` | Something moved underneath the transaction |
+| `nested-transaction` | An enlisted append tried to issue `BEGIN`, `COMMIT`, `ROLLBACK` or `SAVEPOINT`. The transaction belongs to the caller — see §4 |
 | `unknown-subscription` | Not registered, or registered with no handler. Claiming work with nothing to run it would burn attempts and dead-letter events that were never delivered |
 
 ### AI is not an authority here
@@ -106,8 +109,20 @@ Two separate refusals, because they protect different things:
 
 ## 3. Persistence and transport
 
-An injected `EventRepository` port with two implementations: `InMemoryEventRepository` (the
-reference implementation, used by the tests) and `PostgresEventRepository`.
+An injected `EventRepository` port with three implementations:
+
+| Implementation | Owns a transaction? | For |
+|---|---|---|
+| `InMemoryEventRepository` | yes, modelled | the reference implementation, used by the tests |
+| `PostgresEventRepository` | yes, its own `BEGIN … COMMIT` | a caller that is only publishing |
+| `EnlistedEventRepository` | no — it uses the caller's | a producing module coupling a domain write to its event (§4) |
+
+The reference implementation is not a convenience double. It refuses at commit every uniqueness
+conflict the database refuses with a constraint, and in the order the statements run: an event is
+inserted before its deliveries, so two overlapping publications collide on the event's idempotency
+key rather than on a delivery row, which is the error a caller will really see. A reference
+implementation that reported a different conflict from the database would make every guarantee
+proved against it worth less than it appears.
 
 **PostgreSQL is the transport, not merely the store**, and that is the point rather than a
 compromise. A table with `FOR UPDATE SKIP LOCKED` gives durable at-least-once delivery, and it lets
@@ -126,30 +141,56 @@ anything here can notice. Same reasoning, and the same projection, as K-05's ada
 
 ---
 
-## 4. How a module must publish (not yet integrated)
+## 4. How a module must publish (capability built, no module using it)
 
 **No module publishes events yet.** K-08 has no producing module and no consuming module; the
-subscriptions used in the tests are fixtures. What follows is the rule future modules must follow,
-recorded now so the first integration does not have to invent it.
+subscriptions used in the tests are fixtures. What follows is the mechanism the first producer will
+use — it exists and is tested, but nothing in the repository calls it.
 
-A domain write and its event must be **atomically coupled**. In practice that means the module
-passes its own transaction down, or publishes inside the same one:
+A domain write and its event must be **atomically coupled**. The module opens one transaction,
+writes its rows, and appends its event through a repository *enlisted* in that same transaction:
 
 ```ts
-await db.withTransaction(async (tx) => {
-  await orders.insert(tx, order);          // the domain write
-  await events.publish({ /* … */ });       // the fact, same transaction
-});
+const client = await database.connect();
+try {
+  await client.query('BEGIN;');                        // the caller owns the transaction
+
+  await orders.insert(client, order);                  // the domain write
+  const events = new EventService(
+    types,
+    subscriptions,
+    PostgresEventRepository.enlist(client),            // enlisted, not self-opening
+    policy,
+  );
+  await events.publish({ /* … */ });                   // the fact, same transaction
+
+  await client.query('COMMIT;');                       // both, or neither
+} catch (error) {
+  await client.query('ROLLBACK;');
+  throw error;
+} finally {
+  await client.release();
+}
 ```
 
-Publishing after the transaction commits is the mistake this table layout exists to prevent: the
-process can die in between, and the fact is lost with no trace that it should have existed.
-Publishing before is worse — the event claims something that may then roll back.
+Publishing *after* the caller's commit is the mistake this exists to prevent: the process can die in
+between and the fact is lost with no trace that it should have existed. Publishing *before* is
+worse — the event announces something that may then roll back.
 
-**This coupling is not implemented.** `EventService.publish` opens its own transaction through the
-repository port. Threading a caller's transaction through the port is deliberate future work and is
-recorded as such in CURRENT_IMPLEMENTATION_STATUS §11.14; until it exists, a module cannot achieve
-the guarantee this section describes, and no module should claim it does.
+Two properties of the enlisted path are load-bearing, and both are asserted:
+
+- **It issues no transaction control.** No `BEGIN`, `COMMIT`, `ROLLBACK` or `SAVEPOINT`, ever.
+  PostgreSQL has no nested transactions: a `BEGIN` inside an open transaction is ignored with a
+  warning, and a `COMMIT` would end *the caller's* transaction, committing domain rows it had not
+  finished writing and making its later `ROLLBACK` silently roll back nothing. The enlisted client
+  refuses those statements rather than trusting nobody will add one.
+- **It releases nothing and swallows nothing.** The connection belongs to the caller, and a failure
+  inside the append propagates so the caller's `ROLLBACK` undoes it. Handling the error here would
+  commit domain state with no event — precisely the outcome the shared transaction prevents.
+
+`PostgresEventRepository`'s own `withTransaction` is unchanged and still opens and owns a
+transaction, for callers that are only publishing. Both paths write through the same
+`PostgresEventTransaction`, so there is one implementation of every statement.
 
 Consumers must be idempotent. Delivery is at-least-once, so a handler is handed
 `idempotencyKey = "<subscription>:<eventId>"`, stable across every redelivery and every replay
@@ -163,7 +204,7 @@ exactly-once *effect* out of at-least-once delivery.
 | Deferred | Waiting on | Why it is not here |
 |---|---|---|
 | Broker binding (Kafka/SQS/NATS) | a real throughput requirement | A broker chosen before a single real producer exists is a guess dressed as infrastructure. The port makes it a later decision rather than a rewrite |
-| Caller-supplied transactions | a producing module | See §4. The rule is written; the mechanism is not built, and pretending otherwise would be worse than saying so |
+| A module that actually publishes | K-02, K-04 and a business module | The enlisted mechanism in §4 exists and is tested; nothing calls it. A capability is not an integration, and this row stays until a real producer uses it |
 | Administrative API and UI | **K-02** Authentication, **K-04** Permissions | An endpoint that publishes or replays events before there is anyone to authorise it is a hole |
 | Audit of replays | **K-09** Audit Foundation | The operator and reason are recorded on the delivery, but there is no durable audit trail to write them to |
 | Consumer registration at runtime | a real consumer | Subscriptions are declared, not discovered. A runtime registry with no consumers would be untested behaviour |
@@ -194,6 +235,7 @@ npm run check:migrations                          # the FND-002a contract over d
 node --test tests/events.test.ts                  # registry, envelope, publication refusals
 node --test tests/events-delivery.test.ts         # claiming, retry, DLQ, crash window, replay
 node --test tests/events-repository.test.ts       # port conformance, adapter queries, contract
+node --test tests/events-concurrency.test.ts      # commit conflicts, retry convergence, enlistment
 npm run test:integration                          # live PostgreSQL; skips without a database
 ```
 

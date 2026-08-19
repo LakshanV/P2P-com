@@ -74,9 +74,11 @@ export type { ClaimRequest, EventRepository, EventTransaction } from './reposito
 
 export {
   DELIVERY_TABLE,
+  EnlistedEventRepository,
   EVENT_SCHEMA,
   EVENT_TABLE,
   PostgresEventRepository,
+  enlistedClient,
   RECEIPT_TABLE,
   TIMESTAMP_COLUMNS,
   decodePayload,

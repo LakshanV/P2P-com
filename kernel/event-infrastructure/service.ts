@@ -276,8 +276,50 @@ export class EventService {
 
     const subscribers = this.#subscriptions.subscribersOf(request.type);
 
+    try {
+      return await this.#append(envelope, subscribers, recordedAt);
+    } catch (error) {
+      // Two retries of one publication that overlap in time each read a store with no such
+      // idempotency key, so both try to append and one loses — at the INSERT against PostgreSQL,
+      // at commit against the reference implementation. The loser has not failed: the publication
+      // it was retrying succeeded, and it should be told what happened rather than handed a
+      // conflict it cannot act on.
+      //
+      // So the loser re-reads and converges on the winner's event. Convergence is not blind: the
+      // same content check as the sequential path runs, so a key genuinely reused for a *different*
+      // event still fails closed rather than being answered with somebody else's event.
+      //
+      // One re-read, not a loop. If the key is still absent the conflict was something else — a
+      // duplicate event id under a different key, say — and it is rethrown untouched.
+      const conflicted =
+        error instanceof EventError &&
+        (error.code === 'idempotency-key-reuse' || error.code === 'duplicate-event-id');
+      if (!conflicted) throw error;
+
+      const winner = await this.#repository.withTransaction((tx) =>
+        tx.findEventByIdempotencyKey(request.idempotencyKey),
+      );
+      if (winner === null) throw error;
+
+      assertSameLogicalEvent(winner, envelope);
+      return {
+        event: winner,
+        deliveries: await this.#repository.withTransaction((tx) =>
+          tx.findDeliveriesForEvent(winner.eventId),
+        ),
+        deduplicated: true,
+      };
+    }
+  }
+
+  /** The append itself: one transaction holding the event and every delivery it fans out to. */
+  async #append(
+    envelope: EventEnvelope,
+    subscribers: readonly { readonly subscription: string }[],
+    recordedAt: string,
+  ): Promise<PublishResult> {
     return this.#repository.withTransaction(async (tx) => {
-      const existing = await tx.findEventByIdempotencyKey(request.idempotencyKey);
+      const existing = await tx.findEventByIdempotencyKey(envelope.idempotencyKey);
       if (existing !== null) {
         assertSameLogicalEvent(existing, envelope);
         return {

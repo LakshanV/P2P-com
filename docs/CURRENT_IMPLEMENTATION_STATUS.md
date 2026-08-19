@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-003b (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -22,7 +22,7 @@
 >
 > Contributor documentation and git conventions are delivered (FND-001d) and are themselves under an executable contract: [docs/CONTRIBUTING.md](./CONTRIBUTING.md) is read by `tests/docs-contract.test.ts`, which fails the build if a documented guarantee is deleted or softened.
 >
-> There is still **no CI, no database, no kernel component, no business module and no UI**. FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `kernel/`, `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**.
+> There is still **no CI, no database, no business module and no UI**. Two kernel components now have cores — **K-05 Configuration** (§11.10–§11.13) and **K-08 Event Infrastructure** (§11.14–§11.15) — and neither is complete: no API, no authorisation, no audit, no producing or consuming module, and nothing applied to a live server. FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `kernel/`, `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**.
 >
 > Exact commands and results: §11.1 (FND-001a), §11.2 (FND-001b) and §11.4 (FND-001d).
 
@@ -52,15 +52,15 @@
 | Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement and the migration contract; no database server, no kernel. |
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
-| Migrations | 3 forward + 3 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger and the `kernel_configuration` schema with K-05's version table. No business-module tables exist. |
-| Tests | 377 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Migrations | 4 forward + 4 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, and the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables. No business-module tables exist. |
+| Tests | 392 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, K-05 Configuration and K-08 Event Infrastructure. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
 | Monitoring | None |
-| Modules implemented | 1 of 62 partially — **K-05 Configuration** core only (FND-003a); 0 business modules. All 62 registered in the architecture manifest |
+| Modules implemented | 2 of 62 partially — **K-05 Configuration** (FND-003a) and **K-08 Event Infrastructure** (FND-003b), cores only; 0 business modules. All 62 registered in the architecture manifest |
 | Boundary rules enforced | 4 of 8 (`layer-direction`, `kernel-purity`, `financial-zone-ai`, `provider-import`); the other 4 need a schema, policy values or module contracts to exist |
-| Module contracts written | 1 of 62 — [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md) |
+| Module contracts written | 2 of 62 — [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md) and [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md) |
 | Tracked requirements | 474, each with an explicit status; **4 of 472 implementation items complete** (P0-03, P0-11, P0-12, P0-13). 13 are `IN PROGRESS`, 9 are `BLOCKED`. |
 | Release gates met | 0 of 26 |
 | Open P0 defects | 0 |
@@ -112,7 +112,7 @@ Verified by direct inspection of the working tree at baseline time.
 | `tests/fixtures/**` (22 files) | Fixtures | Committed non-conforming trees, one per rule, plus a clean control. Excluded from TypeScript, ESLint and Prettier. |
 | `tests/README.md` | Tests | Ownership note, including why fixtures must not be "fixed". |
 
-**That is the entire repository.** There is no CI configuration, no database, no migration directory, no environment configuration, no kernel component, no business module and no UI.
+**That was the entire repository at FND-001b**, the point this inventory describes: no CI configuration, no database, no migration directory, no environment configuration, no kernel component, no business module and no UI. FND-002 and FND-003 have since added the migration set, the runner, local provisioning and two kernel component cores; §4 and §11 carry the current picture.
 
 DOC-001 created no source file. FND-001a was scoped to the toolchain. FND-001b was scoped to the source roots and boundary enforcement and created **no CI, database, kernel, business-module or UI functionality** — `kernel/` and `modules/` contain one README each and nothing else.
 
@@ -240,7 +240,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 377 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 392 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -288,7 +288,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 67 more, for 377 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks or, so far, in FND-003b. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction), for 392 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -302,9 +302,11 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 **Status:** IN PROGRESS. Subtasks FND-001a, FND-001b and FND-001d delivered. **FND-001c is BLOCKED by BL-10** — it is the only remaining subtask, and it cannot be delivered by any local means.
 
-**FND-003b delivered K-08 Event Infrastructure's core** (§11.14): the envelope and type registry, durable append, at-least-once delivery with consumer receipts, deterministic bounded retry, terminal dead-lettering, operator-explicit replay, and migration 0004. Build step B-1's two components now both have cores. Neither is complete: K-05 has no API, no enforced authority and no audit (§11.10–§11.13); K-08 has no producing module, no consuming module, no broker binding and no way for a module to couple a domain write to its event in one transaction — the rule for that is written in K-08's contract, the mechanism is not built.
+**FND-003b delivered K-08 Event Infrastructure's core** (§11.14): the envelope and type registry, durable append, at-least-once delivery with consumer receipts, deterministic bounded retry, terminal dead-lettering, operator-explicit replay, and migration 0004. Build step B-1's two components now both have cores. Neither is complete: K-05 has no API, no enforced authority and no audit (§11.10–§11.13); K-08 has no producing module, no consuming module and no broker binding. The mechanism for coupling a domain write to its event in one transaction was added by the FND-003b correction (§11.15) and is used by nothing.
 
-**Next genuinely unblocked task: FND-003c — caller-supplied transactions for K-08**, which is what turns the transactional-outbox rule in `kernel/event-infrastructure/CONTRACT.md` §4 from a documented instruction into something a module can actually do. It is a bounded change to the port and both implementations, it needs no live database, and until it exists the first producing module cannot publish safely. Two alternatives are equally unblocked: FND-002d (seed and fixture strategy, P0-17), and collapsing K-05's private instant module onto `platform/time/instant.ts` (the duplication recorded in §11.14).
+Caller-supplied transactions — named here previously as the next task — were delivered by the FND-003b correction (§11.15): `PostgresEventRepository.enlist(client)` appends inside a transaction the caller owns, refusing nested transaction control. The capability exists; no module uses it.
+
+**Next genuinely unblocked task: FND-002d — seed and fixture strategy (P0-17)**, which needs no live database and no further kernel work. Two alternatives are equally unblocked: collapsing K-05's private instant module onto `platform/time/instant.ts` (the duplication recorded in §11.14), and K-06 Policy Engine, whose declared dependency is K-05 and which is now satisfiable. What none of them removes is the standing constraint: no PostgreSQL runtime, so every live-database gate stays incomplete however much kernel code accumulates.
 
 The superseded reasoning, kept because it still explains why the kernel proceeds while FND-002 waits: **kernel build step B-1 (K-05 Configuration, K-08 Events).** The data foundation now has everything a module needs from it that can be built without a running server: a validated migration set, a runner, a schema-namespace convention and a provisioned local database. What FND-002 still lacks — one verified live run — is blocked on a PostgreSQL runtime rather than on engineering, and a kernel component does not wait on it: K-05 and K-08 depend only on the substrate. FND-002d (seed and fixture strategy, P0-17) is the alternative, and is equally unblocked.
 
@@ -2208,6 +2210,90 @@ STILL NOT VERIFIED: No PostgreSQL runtime is available here, so migration 0004 h
                     same guarantees; that PostgreSQL enforces them under real concurrency is
                     unobserved. K-08 also has no producing module, no consuming module, no audit
                     trail and no authorisation, so P0-35 and every live-database gate stay
+                    incomplete.
+```
+
+---
+
+### 11.15 Correction — FND-003b concurrency parity and transaction composition
+
+Two gaps in the FND-003b delivery, found by review. Neither was visible from the tests that shipped
+with it, and the second was recorded in §11.14 as future work rather than a defect — it is corrected
+here because the contract described a rule modules were expected to follow with no mechanism to
+follow it.
+
+| # | Gap | Failed invariant | Correction |
+|---|---|---|---|
+| 1 | **The reference implementation refused fewer conflicts than the database.** It detected a delivery whose row *moved* underneath a transaction, but not the three *uniqueness* conflicts PostgreSQL enforces with constraints: a second event under one `idempotency_key`, a second delivery at one `(event_id, subscription, generation)`, and two live claims holding one `claim_token`. Each is reachable by two overlapping transactions that both read a store where the row does not yet exist — so each passed in memory and would have failed against a server. That is the worst direction for a gap to run: every guarantee proved against the reference implementation was worth less than it looked. | A reference implementation must refuse what the database refuses, or the tests it backs are proving something narrower than they claim. | All three are checked at commit against the store as it stands *then*, not against the snapshot the transaction read. Events are checked before deliveries, because that is the order the statements run in — a losing publication now reports the idempotency-key conflict its `INSERT` would really have hit, rather than a delivery conflict the database would never have raised. |
+| 2 | **Two overlapping retries of one publication both failed, or one did.** Retrying a publication is the normal response to a timeout, so two retries overlapping is ordinary rather than exotic. The loser got a raw conflict for work that had *succeeded* — the publication it was retrying was already in the log. | A retry of work that succeeded is answered with what it did. The sequential path already did this; the concurrent path did not. | The loser re-reads by idempotency key and converges on the winner's event and deliveries. Convergence runs the same content check as the sequential path, so a key reused for a genuinely different event still fails closed rather than being answered with somebody else's event. One re-read, not a loop: if the key is still absent the conflict was something else and is rethrown untouched. |
+| 3 | **A module could not do what the contract told it to do.** CONTRACT.md §4 said a producer must write its domain rows and append its event in one transaction. `publish` always opened its own, so the instruction was unfollowable. | A documented rule with no mechanism is not a rule. | `PostgresEventRepository.enlist(client)` returns a repository that runs against a transaction the caller already opened. It issues no transaction control at all and never releases the connection, and both properties are enforced rather than assumed — the enlisted client *refuses* `BEGIN`, `START TRANSACTION`, `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT` and `RELEASE SAVEPOINT` with a `nested-transaction` refusal. |
+
+**Why the enlisted path refuses rather than trusts.** PostgreSQL has no nested transactions. A
+`BEGIN` inside an open transaction warns and is ignored; a `COMMIT` ends the *caller's* transaction,
+committing domain rows it had not finished writing and making its later `ROLLBACK` silently roll
+back nothing. That failure is invisible where it happens and surfaces much later as inexplicable
+partial writes. A guard turns a future refactor's stray `BEGIN` into a loud failure instead.
+
+**Tests added** — `tests/events-concurrency.test.ts`, 15 cases:
+
+```text
+commit conflicts    two overlapping appends under one idempotency key; two overlapping replays
+                    computing the same generation; two overlapping claims offering one token; and
+                    a refused commit shown to write nothing at all - the loser's delivery rolls
+                    back with its event rather than being left with nothing to deliver
+convergence         two and three concurrent identical retries return one event, one fan-out, and
+                    the same delivery list to every caller; concurrent reuse of one key for
+                    different content still fails closed; a duplicate event id under a *different*
+                    key stays a duplicate id rather than converging on an unrelated event; two
+                    operators replaying at once produce one generation-2 delivery
+enlistment          an enlisted append issues exactly the caller's BEGIN and COMMIT and none of its
+                    own, opens no second connection and releases nothing; it writes the event and
+                    both deliveries through the caller's client; a failure propagates so the
+                    caller can roll back; nine forms of transaction control are refused and none
+                    reaches the database; the repository-owned path still opens and closes its own
+```
+
+**Each correction was planted and the tests observed to fail:**
+
+```text
+the three commit-time uniqueness checks removed        6 of 15 failed
+transaction control permitted, and a BEGIN/COMMIT
+  issued by the enlisted repository                    3 of 15 failed
+retry convergence removed                              3 of 15 failed
+```
+
+```text
+STATUS AFTER CORRECTION:
+                    K-08 contract         COMPLETE (§3 gains the three implementations and the
+                                          conflict-parity rule; §4 now describes a mechanism that
+                                          exists rather than one that does not)
+                    K-08 implementation   IN PROGRESS - unchanged
+                    P0-35 IN PROGRESS - unchanged
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 392, pass 392, fail 0
+                                                                (377 before; +15)
+                    npm run check:migrations           exit 0   8 files, 0 violations
+                    npm run check:boundaries           exit 0   0 violations
+                    node --test tests/events.test.ts   exit 0   tests 22, pass 22
+                    node --test tests/events-delivery.test.ts
+                                                       exit 0   tests 22, pass 22
+                    node --test tests/events-repository.test.ts
+                                                       exit 0   tests 23, pass 23
+                    node --test tests/events-concurrency.test.ts
+                                                       exit 0   tests 15, pass 15
+                    npm run test:integration           exit 0   tests 12, pass 0, SKIPPED 12
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: **No business module uses any of this.** The enlisted path is a capability, not
+                    an integration: nothing in the repository calls it, and K-08 still has no
+                    producer and no consumer. Nor has any of it run against PostgreSQL - the
+                    conflicts are refused by a model of the constraints rather than by the
+                    constraints, and the enlisted path's central claim (that it composes correctly
+                    inside a real transaction) is proved by recording the statements it sends, not
+                    by watching a server honour them. P0-35 and every live-database gate stay
                     incomplete.
 ```
 
