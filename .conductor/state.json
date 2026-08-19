@@ -16,13 +16,13 @@
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
       "status": "in_progress",
-      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated implementation instructions, including an atomic workflow-file-only request; execution failure is now being diagnosed before further implementation. FND-001d remains afterward."
+      "notes": "FND-001a and FND-001b are accepted. FND-001c remains absent after repeated implementation instructions; GitHub still has no checks. A focused, non-mutating diagnosis is now required before another delivery attempt. FND-001d remains afterward."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": "FND-001b has documented local evidence and planted negative fixtures. GitHub still reports no checks, so CI acceptance requires a provider-observed passing workflow."
+      "notes": "FND-001b has documented local evidence and planted negative fixtures. CI acceptance remains blocked until a provider-observed passing workflow exists."
     },
     {
       "id": 5,
@@ -42,7 +42,7 @@
     "FND-001b is accepted as delivered: all source roots, the architecture manifest, four static boundary checks, and planted violation proofs are present; P0-10 remains partial because four specified checks are deferred to schema/contracts/policy artefacts.",
     "FND-001c must use immutable action SHAs, least-privilege permissions, exact toolchain pins, full verification, and a high/critical dependency-audit gate with an automated anti-weakening contract test.",
     "FND-001c delivery is split into a workflow-file task followed by the anti-weakening contract test and acceptance review.",
-    "Diagnose the local execution failure before issuing another workflow implementation instruction."
+    "Repeated absence of the workflow now warrants a non-mutating execution and Git-access diagnosis before another implementation attempt."
   ],
   "concerns": [
     "There is no database, authentication, deployment, or monitoring foundation yet.",
@@ -51,7 +51,7 @@
     "Boundary enforcement cannot detect runtime indirection, cross-module raw SQL, or unlisted provider SDKs, and treats the kernel as one layer; later checks and reviews must cover these limits.",
     "GitHub currently reports no checks, so CI-dependent gates cannot be accepted.",
     "The CI workflow must honor both exact development pins and supply-chain safety; mutable action tags are insufficient.",
-    "Repeated FND-001c instructions, including a workflow-only atomic task, produced neither repository changes nor failure evidence, indicating an unresolved agent execution or filesystem/git blocker."
+    "Repeated FND-001c attempts have produced no tracked workflow or diagnostic evidence, suggesting an unidentified local execution, filesystem, Git, or push-access blocker."
   ],
-  "last_instruction": "Investigate why the previous workflow-only instruction produced no `.github/workflows/ci.yml`, commit, or push evidence; make no repository changes, and report the exact blocker with the commands attempted, their complete output, `git status --short`, current branch name, and whether `.github/workflows/` can be created and written locally."
+  "last_instruction": "Without changing any repository files, diagnose why the prior instruction to create and push `.github/workflows/ci.yml` was not completed; report the exact attempted commands and outputs, current branch and `git status --short`, configured Git remote, push-access result using a non-mutating GitHub connectivity check, and the specific blocker that prevented artifact creation or push."
 }
