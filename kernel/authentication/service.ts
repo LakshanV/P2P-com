@@ -58,6 +58,7 @@ import {
   type AuthenticationBinding,
   type AuthenticationEvidence,
   type AuthenticationSession,
+  type FactorCategory,
   type RevocationReason,
 } from './types.ts';
 import { validateBinding, validateEvidence, validateSession } from './validate.ts';
@@ -717,6 +718,19 @@ const CONVERGEABLE_CONFLICTS: readonly AuthenticationError['code'][] = [
  * another — from being read as a coherent authentication, which matters because convergence is
  * exactly the path taken when something has already gone wrong.
  *
+ * The second question is asked of **every fact the two records duplicate**, not only of the
+ * identifiers. A session carries its own copy of the assurance and the factor categories, and that
+ * copy is the one `validate` hands to a caller deciding what this session is allowed to do — so a
+ * session claiming `multi-factor` over evidence that recorded `single-factor` is a privilege
+ * escalation sitting in two rows that are each individually well formed. Nothing in the record
+ * shapes can catch it: `validateEvidence` and `validateSession` see one row at a time, and each
+ * row is valid. It is only a lie when the two are read together, which is here.
+ *
+ * Chronology is checked for the same reason. A session issued before the proof was verified, or
+ * before the evidence that accounts for it was recorded, describes an authentication that did not
+ * happen in that order — and this component's own writer cannot produce it, because both instants
+ * come from one reading of the injected clock.
+ *
  * Returns the reasons rather than a boolean: a refusal that cannot say which field disagreed is a
  * refusal nobody can act on.
  */
@@ -731,6 +745,9 @@ function convergenceFailures(
   if (evidence.provider !== claim.provider) failures.push('provider');
   if (evidence.idempotencyKey !== claim.idempotencyKey) {
     failures.push('the evidence idempotency key');
+  }
+  if (compareInstants(evidence.recordedAt, evidence.verifiedAt) < 0) {
+    failures.push('the evidence was recorded before it was verified');
   }
 
   if (session === null) {
@@ -749,6 +766,20 @@ function convergenceFailures(
     if (session.subjectId !== evidence.subjectId) {
       failures.push('the session and the evidence disagree about the subject');
     }
+    // The assurance and the factors are the authentication's *strength*, copied onto the session
+    // because that is where a caller reads it. Two copies, so two chances to disagree.
+    if (session.assurance !== evidence.assurance) {
+      failures.push('the session and the evidence disagree about the assurance');
+    }
+    if (!sameFactorSet(session.factors, evidence.factors)) {
+      failures.push('the session and the evidence disagree about the factors');
+    }
+    if (compareInstants(session.issuedAt, evidence.verifiedAt) < 0) {
+      failures.push('the session was issued before the proof was verified');
+    }
+    if (compareInstants(session.issuedAt, evidence.recordedAt) < 0) {
+      failures.push('the session was issued before the evidence that accounts for it');
+    }
   }
 
   if (binding === null) {
@@ -765,6 +796,18 @@ function convergenceFailures(
   }
 
   return failures;
+}
+
+/**
+ * The same categories, however either list happens to be ordered.
+ *
+ * Compared as the canonical set rather than as arrays, because `['possession','knowledge']` and
+ * `['knowledge','possession']` are one authentication and a comparison that called them different
+ * would refuse a legitimate retry. `sealFactors` is the canonical form the rest of the component
+ * already uses, so this cannot drift from it.
+ */
+function sameFactorSet(left: readonly FactorCategory[], right: readonly FactorCategory[]): boolean {
+  return sealFactors(left).join(',') === sealFactors(right).join(',');
 }
 
 /** The answer a converged caller gets: the original records, and a secret it cannot have. */

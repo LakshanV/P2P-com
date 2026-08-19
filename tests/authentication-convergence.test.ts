@@ -38,6 +38,8 @@ import {
   PostgresAuthenticationRepository,
   ProviderRegistry,
   hashToken,
+  validateEvidence,
+  validateSession,
   type AuthenticateRequest,
   type AuthenticationBinding,
   type AuthenticationEvidence,
@@ -321,13 +323,19 @@ async function bound(harness: Harness): Promise<void> {
   await harness.service.bind(bindRequest({ bindingId: BINDING_ID }));
 }
 
+/** What one committed authentication consists of, as the store holds it. */
+interface WinnerRecords {
+  readonly evidence: AuthenticationEvidence;
+  readonly session: AuthenticationSession | null;
+}
+
 /** The authentication the *winner* of the race committed: the same request, its own secret. */
 function winnerRecords(
   overrides: {
     readonly evidence?: Partial<AuthenticationEvidence>;
     readonly session?: Partial<AuthenticationSession> | null;
   } = {},
-): { evidence: AuthenticationEvidence; session: AuthenticationSession | null } {
+): WinnerRecords {
   const evidence: AuthenticationEvidence = {
     evidenceId: REQUEST.evidenceId,
     bindingId: BINDING_ID,
@@ -776,6 +784,159 @@ test('an overlapping call for a different account does not converge', async () =
   });
   assert.equal(harness.repository.store.sessions().length, 1);
   assert.equal(harness.repository.store.sessions()[0]?.bindingId, 'bind_01HQZXOTHER01');
+});
+
+// ---------------------------------------------------------------------------
+// Individually valid, mutually impossible
+// ---------------------------------------------------------------------------
+
+/**
+ * Row pairs that are each well formed and together describe an authentication that never happened.
+ *
+ * These are the adversarial ones. Every identifier agrees, every relationship agrees, the binding
+ * is right, the idempotency keys match — a comparison that stopped at "do these name each other?"
+ * converges on all of them. What disagrees is a fact the two rows both carry: how strongly the
+ * subject was authenticated, which categories were confirmed, or when any of it happened.
+ *
+ * The assurance and factor cases are privilege escalation. `validate` reads the *session's* copy,
+ * so a session that says `hardware-backed` over evidence that says `single-factor` is a caller
+ * holding a stronger authentication than any verifier ever granted — and neither row is malformed,
+ * so nothing upstream of this comparison can refuse it.
+ */
+const INCONSISTENT = [
+  {
+    why: 'a session claiming stronger assurance than the evidence recorded',
+    names: /assurance/,
+    records: (): WinnerRecords => winnerRecords({ session: { assurance: 'hardware-backed' } }),
+  },
+  {
+    why: 'a session claiming a factor category the verifier never confirmed',
+    names: /factors/,
+    records: (): WinnerRecords =>
+      winnerRecords({ session: { factors: ['possession', 'knowledge'] } }),
+  },
+  {
+    why: 'a session issued before the proof was verified',
+    names: /before the proof was verified/,
+    records: (): WinnerRecords => winnerRecords({ session: { issuedAt: '2026-04-01T11:00:00Z' } }),
+  },
+  {
+    why: 'a session issued before the evidence that accounts for it',
+    names: /before the evidence that accounts for it/,
+    records: (): WinnerRecords => winnerRecords({ session: { issuedAt: '2026-04-01T11:59:45Z' } }),
+  },
+  {
+    why: 'evidence recorded before it was verified',
+    names: /recorded before it was verified/,
+    records: (): WinnerRecords =>
+      winnerRecords({ evidence: { recordedAt: '2026-04-01T11:00:00Z' } }),
+  },
+] as const;
+
+test('mutually inconsistent rows keep the refusal the store gave', async () => {
+  for (const scenario of INCONSISTENT) {
+    const refusal = await refusalFor('authentication_evidence_idempotency_unique', 'evidence');
+    const harness = build();
+    await bound(harness);
+    loseTo(harness, 'evidence', refusal, scenario.records());
+
+    await assert.rejects(
+      harness.service.authenticate({ ...REQUEST }),
+      (error: unknown) => codeOf(error) === codeOf(refusal),
+      `${scenario.why} must not be converged on`,
+    );
+    assert.equal(
+      harness.repository.store.sessions().length,
+      1,
+      `${scenario.why}: the refused call wrote nothing of its own`,
+    );
+  }
+});
+
+test('mutually inconsistent rows are idempotency-key-reuse before the verifier', async () => {
+  for (const scenario of INCONSISTENT) {
+    const harness = build();
+    await bound(harness);
+    await commitWinner(harness, scenario.records());
+
+    await assert.rejects(
+      harness.service.authenticate({ ...REQUEST }),
+      (error: unknown) => {
+        assert.equal(codeOf(error), 'idempotency-key-reuse', scenario.why);
+        assert.match((error as AuthenticationError).message, scenario.names, scenario.why);
+        return true;
+      },
+      `${scenario.why} must fail closed on the retry path too`,
+    );
+    assert.equal(
+      harness.verifier.challenges.length,
+      0,
+      `${scenario.why}: and the proof never reached the verifier`,
+    );
+  }
+});
+
+test('the planted escalation differs from an honest retry in exactly one fact', async () => {
+  // The regression, planted deliberately: rows built to pass every check that existed before the
+  // duplicated facts were compared. If this case converges, the comparison is decorative — so this
+  // test states, field by field, that nothing *else* could have refused it.
+  const planted = winnerRecords({ session: { assurance: 'hardware-backed' } });
+  const honest = winnerRecords();
+  assert.ok(planted.session !== null && honest.session !== null);
+
+  assert.equal(planted.evidence.evidenceId, REQUEST.evidenceId);
+  assert.equal(planted.evidence.provider, REQUEST.provider);
+  assert.equal(planted.evidence.idempotencyKey, REQUEST.idempotencyKey);
+  assert.equal(planted.session.sessionId, REQUEST.sessionId);
+  assert.equal(planted.session.idempotencyKey, REQUEST.idempotencyKey);
+  assert.equal(planted.session.evidenceId, planted.evidence.evidenceId);
+  assert.equal(planted.session.bindingId, planted.evidence.bindingId);
+  assert.equal(planted.session.subjectId, planted.evidence.subjectId);
+  assert.equal(planted.session.bindingId, BINDING_ID);
+  assert.deepEqual(
+    { ...planted.session, assurance: honest.session.assurance },
+    { ...honest.session },
+    'the planted session must differ from an honest one in the assurance and nothing else',
+  );
+
+  // And each row is individually well formed: no validator anywhere can see the problem, because
+  // each of them only ever sees one row.
+  assert.doesNotThrow(() => validateEvidence(planted.evidence, 'stored row'));
+  assert.doesNotThrow(() => validateSession(planted.session, 'stored row'));
+
+  // What it would have handed back: hardware-backed, granted by nobody.
+  assert.equal(planted.evidence.assurance, 'single-factor');
+  assert.equal(planted.session.assurance, 'hardware-backed');
+
+  const harness = build();
+  await bound(harness);
+  await commitWinner(harness, planted);
+
+  await assert.rejects(
+    harness.service.authenticate({ ...REQUEST }),
+    (error: unknown) => {
+      assert.equal(codeOf(error), 'idempotency-key-reuse');
+      assert.match((error as AuthenticationError).message, /assurance/);
+      return true;
+    },
+    'converging here would hand the caller an assurance level no verifier granted',
+  );
+});
+
+test('the factor comparison is by set, so an honest retry is not refused for ordering', async () => {
+  // The other half of the factor check: it must be strict about *which* categories and indifferent
+  // to how either row happens to list them, or it refuses the retries it exists to allow.
+  const harness = build();
+  await bound(harness);
+  harness.verifier.answerWith({ factors: ['possession', 'knowledge'], assurance: 'multi-factor' });
+
+  const first = await harness.service.authenticate({ ...REQUEST });
+  const retry = await harness.service.authenticate({ ...REQUEST });
+
+  assert.deepEqual([...first.evidence.factors], ['knowledge', 'possession']);
+  assert.equal(retry.deduplicated, true);
+  assert.equal(retry.session.sessionId, first.session.sessionId);
+  assert.equal(retry.session.assurance, 'multi-factor');
 });
 
 test('BINDING_REFERENCE is what the request under test authenticates against', () => {
