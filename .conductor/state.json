@@ -4,25 +4,25 @@
       "id": 1,
       "task": "Read the authoritative master guide and inspect the repository baseline",
       "status": "done",
-      "notes": "Reviewed both supplied guides. Repository contains specifications and conductor state only; no implementation or test infrastructure exists."
+      "notes": "Reviewed both supplied guides. Repository contains specifications and conductor state only; no application or test infrastructure exists."
     },
     {
       "id": 2,
       "task": "Create CURRENT_IMPLEMENTATION_STATUS.md, MASTER_IMPLEMENTATION_CHECKLIST.md, and a module/dependency map",
-      "status": "in_progress",
-      "notes": "All three documents exist, but DOC-001 requires correction of the K-09 build-order contradiction, an incorrect risk reference, and reproducible link/anchor validation evidence."
+      "status": "done",
+      "notes": "DOC-001 accepted after dependency-order and cross-reference corrections. Link validator reports 68 internal links across 3 Markdown files with 0 broken; complete documents were inspected."
     },
     {
       "id": 3,
       "task": "Identify and implement the highest-priority unblocked vertical slice",
-      "status": "todo",
-      "notes": "FND-001 remains the proposed first implementation task after the planning baseline is accepted."
+      "status": "in_progress",
+      "notes": "FND-001 remains selected. Its first bounded subtask is now the executable local toolchain and test harness; CI and adversarial boundary enforcement will follow separately."
     },
     {
       "id": 4,
       "task": "Independently review and test each implemented slice against functional, security, financial, permission, regression, and UI/UX gates",
       "status": "todo",
-      "notes": ""
+      "notes": "First review target is the FND-001 local substrate, including clean-install reproducibility and actual script output. Boundary fixtures and GitHub CI evidence remain later FND-001 review targets."
     },
     {
       "id": 5,
@@ -34,13 +34,17 @@
   "decisions": [
     "JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md is the highest-authority specification; the v1.0 guide is subordinate compatible detail.",
     "Begin as a bounded modular monolith, preserving module-owned data and public API/event contracts.",
-    "No implementation capability may be marked complete without repository evidence and applicable test results."
+    "No implementation capability may be marked complete without repository evidence and applicable test results.",
+    "DOC-001 planning baseline is accepted; FND-001 is the first implementation task.",
+    "FND-001 will be delivered as separately reviewable subtasks, beginning with the local executable toolchain before CI and boundary enforcement."
   ],
   "concerns": [
-    "There is no application, CI, database, authentication, test, deployment, or monitoring foundation yet.",
+    "There is no application, CI, database, authentication, deployment, or monitoring foundation yet.",
     "The eventual production/staging environments and external provider credentials may require later human or cloud-access escalation, but do not block local foundation work.",
     "The baseline requirement count is extensive and must remain mechanically verifiable as statuses change.",
+    "FND-001 boundary checks must inspect real source paths and have persistent negative fixtures; checks that merely pass an empty repository are not acceptable.",
+    "GitHub currently reports no checks, so CI workflow execution evidence will be required before P0-09 can be accepted.",
     "The event-direction terminology in MODULE_MAP should be watched as contracts are introduced because control-plane events can flow downward even though source dependencies cannot."
   ],
-  "last_instruction": "Correct and revalidate DOC-001: resolve the K-09/build-order dependency contradiction consistently across all three planning documents, fix the incorrect risk reference in MODULE_MAP §13, run a reproducible validation of every relative file link and Markdown anchor in docs/*.md, and update the DOC-001 evidence with the exact command and resulting counts/output without creating application scaffolding."
+  "last_instruction": "Implement and commit the first FND-001 subtask only: add a pinned Node/TypeScript package-manager toolchain, lockfile, minimal platform source/test structure, and working clean-install scripts for build, typecheck, lint, format-check, and test, including at least one real passing assertion; run every command from a clean dependency state and record the exact command results in CURRENT_IMPLEMENTATION_STATUS.md without marking FND-001 or P0-03 through P0-13 complete, and do not add CI, boundary enforcement, database, kernel, business, or UI functionality yet."
 }
