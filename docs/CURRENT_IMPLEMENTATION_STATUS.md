@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-19 by task FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-19 by task FND-003b (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -53,7 +53,7 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Migrations | 3 forward + 3 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger and the `kernel_configuration` schema with K-05's version table. No business-module tables exist. |
-| Tests | 310 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Tests | 377 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner and K-05 Configuration. A further 12 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -240,7 +240,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 310 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains seven gates and 377 tests, all green from a clean install. The residues close as CI lands (FND-001c, blocked by BL-10) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c, now blocked by BL-10 |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -288,7 +288,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests, for 310 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 67 more, for 377 today. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks or, so far, in FND-003b. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -302,7 +302,9 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 **Status:** IN PROGRESS. Subtasks FND-001a, FND-001b and FND-001d delivered. **FND-001c is BLOCKED by BL-10** — it is the only remaining subtask, and it cannot be delivered by any local means.
 
-**Next genuinely unblocked task: FND-003b — K-08 Event Infrastructure**, which completes build step B-1. **FND-003a delivered K-05 Configuration's core** (§11.10): registered keys, immutable versions, effective-time resolution, scoped overrides, an injected repository port and migration 0003. K-05 is not complete — no API, no enforced authority, no audit, no events, and nothing applied to a live server.
+**FND-003b delivered K-08 Event Infrastructure's core** (§11.14): the envelope and type registry, durable append, at-least-once delivery with consumer receipts, deterministic bounded retry, terminal dead-lettering, operator-explicit replay, and migration 0004. Build step B-1's two components now both have cores. Neither is complete: K-05 has no API, no enforced authority and no audit (§11.10–§11.13); K-08 has no producing module, no consuming module, no broker binding and no way for a module to couple a domain write to its event in one transaction — the rule for that is written in K-08's contract, the mechanism is not built.
+
+**Next genuinely unblocked task: FND-003c — caller-supplied transactions for K-08**, which is what turns the transactional-outbox rule in `kernel/event-infrastructure/CONTRACT.md` §4 from a documented instruction into something a module can actually do. It is a bounded change to the port and both implementations, it needs no live database, and until it exists the first producing module cannot publish safely. Two alternatives are equally unblocked: FND-002d (seed and fixture strategy, P0-17), and collapsing K-05's private instant module onto `platform/time/instant.ts` (the duplication recorded in §11.14).
 
 The superseded reasoning, kept because it still explains why the kernel proceeds while FND-002 waits: **kernel build step B-1 (K-05 Configuration, K-08 Events).** The data foundation now has everything a module needs from it that can be built without a running server: a validated migration set, a runner, a schema-namespace convention and a provisioned local database. What FND-002 still lacks — one verified live run — is blocked on a PostgreSQL runtime rather than on engineering, and a kernel component does not wait on it: K-05 and K-08 depend only on the substrate. FND-002d (seed and fixture strategy, P0-17) is the alternative, and is equally unblocked.
 
@@ -2039,6 +2041,174 @@ STILL NOT VERIFIED: `to_char` has never run. No PostgreSQL runtime is available 
                     microsecond survives a real INSERT and SELECT, remains unobserved. The
                     limitation in CONTRACT.md §5 was narrowed to that, and not removed. Every
                     live-database gate stays incomplete.
+```
+
+---
+
+### 11.14 Evidence — FND-003b (K-08 Event Infrastructure foundation)
+
+K-08 is how one unit tells the rest of the system that something happened without knowing who
+cares, which is what makes MODULE_MAP.md §10.3 — no sibling calls between same-layer modules —
+something other than a rule with no alternative. This slice delivers the foundation: the envelope,
+the registry, the log, delivery, retry, dead-lettering and replay. It delivers **no business events
+and no module integration**, and the contract says so in those words.
+
+**What was built**
+
+| File | Holds |
+|---|---|
+| `platform/time/instant.ts` | canonical UTC instants: calendar validation, microsecond comparison, `addSeconds` for retry scheduling. Error-agnostic, so each component refuses in its own vocabulary |
+| `kernel/event-infrastructure/types.ts` | envelope, delivery, receipt, actor, 20 refusal codes |
+| `kernel/event-infrastructure/registry.ts` | event types with immutable payload schema versions; subscriptions; credential detection at registration and at publication |
+| `kernel/event-infrastructure/repository.ts` | the injected port and its in-memory reference implementation |
+| `kernel/event-infrastructure/service.ts` | publish, deliver, replay; deterministic bounded backoff |
+| `kernel/event-infrastructure/postgres-repository.ts` | the adapter: `FOR UPDATE SKIP LOCKED` claiming, guarded completions, UTC-text timestamps, constraint translation |
+| `kernel/event-infrastructure/CONTRACT.md` | ownership, guarantees, refusals, the transactional-outbox rule, what is deferred |
+| `db/migrations/0004_…up.sql` / `.down.sql` | `kernel_event_infrastructure`: `event`, `event_delivery`, `event_receipt` |
+
+**The design decisions worth recording**
+
+- **PostgreSQL is the transport, not merely the store.** A table with `SKIP LOCKED` gives durable
+  at-least-once delivery, and it lets a producing module append its domain rows and its events in
+  one transaction. No broker can offer that, and "we published the event but the write rolled back"
+  is the incident that follows from pretending otherwise. A broker remains a later implementation
+  of the same port; no broker SDK is in the repository.
+- **A claim token identifies one claim, not one worker.** Every completion path — acknowledge,
+  reschedule, dead-letter — is predicated on `claim_token = $2 AND status = 'in-flight'`. That
+  single predicate is what stops two workers both declaring one delivery authoritatively finished.
+  It is enforced in the service, in the reference implementation, and by a `UNIQUE (claim_token)`
+  constraint in the migration.
+- **Attempts are burned at claim, not at failure.** A worker that dies mid-handler must still
+  consume an attempt, or a payload that reliably kills its consumer is retried for ever.
+- **Replay appends a generation; it never reopens a terminal delivery.** A worker still holding the
+  old row's lease is refused by the same guard as everything else, rather than by a special case
+  that could be forgotten. And replay does not discard the consumer's receipt unless the operator
+  explicitly says to, because "the notification was lost" and "the effect was lost" call for
+  different actions and only a human knows which happened.
+- **No jitter in the backoff.** A real trade-off, taken deliberately: jitter spreads retry load and
+  makes retry timing unassertable. This component reads no clock and generates no randomness, so a
+  caller that needs spread staggers its workers.
+
+**Tests** (deterministic, no database) — 67 cases:
+
+```text
+tests/events.test.ts                     22 cases
+  registry        unknown type and unknown version refused differently; versions coexist; a type
+                  with a bad name, no owner, no description or version 0 cannot be registered; a
+                  declared credential field refused; subscriptions must name registered types and
+                  a real owner; fan-out is deterministic
+  payload         an undeclared field is refused rather than dropped; missing required, wrong
+                  type, fractional integer, null-required all refused; optional-null accepted;
+                  five credential-shaped values refused under an innocent field name
+  publication     event and deliveries share one transaction; a failed publication leaves neither;
+                  identical retry returns the original; mismatched key reuse refused; payload
+                  fingerprinted and key-order-independent; the stored payload is frozen; an event
+                  may not be recorded before it happened; eight malformed envelopes fail closed;
+                  a unit may not publish another unit's type
+  AI              refused by origin and by actor, together and separately; a system actor may not
+                  claim a human decided; every stored event carries a permitted origin
+
+tests/events-delivery.test.ts            22 cases
+  delivery        acknowledged once, one receipt, claim released; other subscriptions untouched;
+                  work that is not yet due is not claimed
+  retry/DLQ       a thrown handler never acknowledges and schedules a bounded retry; backoff
+                  doubles, caps and is deterministic; attempts exhaust into a terminal dead-letter
+                  that is never retried automatically; the event is untouched throughout
+  concurrency     two simultaneous claims yield one winner and one empty batch; a stale worker is
+                  refused after the winner finished AND while the winner is still working; a claim
+                  token in use may not be reused
+  crash window    a crash after the handler succeeded but before acknowledgement: the handler runs
+                  twice, exactly one receipt and one acknowledgement result; a receipt suppresses
+                  redelivery to the handler entirely
+  replay          appends a generation and leaves the superseded row untouched; does not bypass
+                  deduplication unless the operator discards the receipt; a dead-lettered delivery
+                  can be replayed once its cause is fixed; refused while live, refused without an
+                  operator or a reason, refused for AI, refused for unknown event/subscription;
+                  the original event stays byte-identical, fingerprint included
+  AI              an AI worker may neither claim nor acknowledge
+
+tests/events-repository.test.ts          23 cases
+  conformance     append-once; the port has no operation that changes an event; one delivery per
+                  (event, subscription, generation); completion refused without the current claim
+                  token; a terminal delivery refuses all three transitions; an expired lease
+                  returns work to the pool and an already-burned attempt stays burned; a lease
+                  must be in the future; one receipt per (subscription, event); a failed
+                  transaction writes nothing
+  adapter         claiming is a single UPDATE with FOR UPDATE SKIP LOCKED and RETURNING; all three
+                  completions guarded on token and status; a zero-row completion is diagnosed
+                  rather than reported as success; timestamps projected as UTC text; ordering on
+                  the column; every value parameterised; non-scalar payloads refused on decode;
+                  a Date or an infinite timestamp refused
+  contract        the schema is the one the manifest derives; the adapter and the migration touch
+                  no other schema; the migration enforces the claim-token, generation and receipt
+                  constraints and the origin CHECK in the database; the rollback reverses exactly
+                  what was created, children before parents; CONTRACT.md records what is deferred
+```
+
+**Each guarantee was planted and the tests observed to fail:**
+
+```text
+claim-token guard removed from every completion path   2 of 45 failed (delivery + conformance)
+a thrown handler acknowledged anyway                   4 of 22 failed
+receipt check skipped + replay always discards it      2 of 22 failed
+```
+
+The first plant is worth a note. It initially failed only **one** test, because the stale worker in
+the lease-expiry case was caught by the "this delivery is already terminal" check before the token
+check could matter. That made the token guard barely covered, so a sharper case was added — the
+loser returning while the winner is still mid-handler, where the row is *not* terminal and the
+token is the only thing refusing it. The plant then failed two.
+
+**Deliberately not delivered**, and recorded as such in CONTRACT.md §4–§5 rather than implied:
+
+- **No module publishes anything.** The event types in the tests are fixtures. There is no producer
+  and no consumer.
+- **No caller-supplied transaction.** `publish` opens its own transaction through the port, so a
+  module *cannot yet* atomically couple a domain write to its event. The rule is written down in
+  CONTRACT.md §4 with the mechanism it needs; the mechanism is future work. Claiming the guarantee
+  exists would be worse than saying it does not.
+- No broker SDK, no API, no UI, no runtime consumer registration, no retention policy.
+
+**A known duplication was created and is recorded rather than hidden.** `platform/time/instant.ts`
+duplicates logic K-05 already has in `kernel/configuration/instant.ts`. FND-003b is explicitly not
+permitted to change K-05's behaviour, and the two differ in one real way — K-05's throws
+`ConfigurationError` while the platform one is error-agnostic — so collapsing them is a bounded
+follow-up rather than a free deletion.
+
+Two existing test files moved with this change: `tests/migration-runner.test.ts` had ledger
+fixtures listing migrations by hand, which went stale the moment 0004 existed and failed in tests
+about something else entirely. They now derive from `discover(directory)`, so the next migration
+cannot repeat it.
+
+```text
+STATUS AFTER THIS TASK:
+                    K-08 contract         COMPLETE (kernel/event-infrastructure/CONTRACT.md)
+                    K-08 implementation   IN PROGRESS - core only
+                    P0-35 IN PROGRESS - not complete: no live PostgreSQL, no module integration
+                    Nothing moved to COMPLETE.
+
+TEST RESULTS:       npm run verify                     exit 0   tests 377, pass 377, fail 0
+                                                                (310 before; +67)
+                    npm run check:migrations           exit 0   8 files, 0 violations
+                    npm run check:boundaries           exit 0   0 violations
+                    node --test tests/events.test.ts   exit 0   tests 22, pass 22
+                    node --test tests/events-delivery.test.ts
+                                                       exit 0   tests 22, pass 22
+                    node --test tests/events-repository.test.ts
+                                                       exit 0   tests 23, pass 23
+                    npm run test:integration           exit 0   tests 12, pass 0, SKIPPED 12
+                    npm audit --audit-level=high       exit 0   found 0 vulnerabilities
+                    node docs/tools/validate-doc-links.mjs      exit 0   0 broken
+                    git diff --check                   exit 0
+
+STILL NOT VERIFIED: No PostgreSQL runtime is available here, so migration 0004 has never been
+                    applied and the `FOR UPDATE SKIP LOCKED` claim statement — the single most
+                    important statement in the component — has never executed. What is proved is
+                    that the adapter issues it and that the reference implementation enforces the
+                    same guarantees; that PostgreSQL enforces them under real concurrency is
+                    unobserved. K-08 also has no producing module, no consuming module, no audit
+                    trail and no authorisation, so P0-35 and every live-database gate stay
+                    incomplete.
 ```
 
 ---

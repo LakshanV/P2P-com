@@ -1,0 +1,201 @@
+# K-08 Event Infrastructure — module contract
+
+**Component:** K-08, `kernel/event-infrastructure`
+**Schema:** `kernel_event_infrastructure` (derived from the architecture manifest)
+**Build step:** B-1 — depends only on the platform substrate
+**Delivered by:** FND-003b
+
+An event is a statement that something happened, addressed to nobody in particular. That is what
+makes it the only sanctioned way for two modules in the same layer to affect each other:
+MODULE_MAP.md §10.3 forbids sibling calls, so a module that needs another to react publishes a fact
+and stops caring who reads it.
+
+The hard part is not fan-out. It is that a fact must survive a crash, must reach each consumer at
+least once, must not be silently applied twice, must stop being retried at some point, and must
+never be quietly rewritten. Everything below exists for one of those five.
+
+---
+
+## 1. What this component owns
+
+| Owns | Does not own |
+|---|---|
+| The event envelope, the type registry and payload schema versions | What any event *means*. Business events belong to the modules that publish them |
+| The append-only log, delivery state, retry scheduling and dead-lettering | Consumer effects. A handler's idempotency is the consumer's, using the key this component supplies |
+| The `kernel_event_infrastructure` schema and everything in it | Any other unit's schema. This component reads and writes nothing else |
+| Who may publish and who may acknowledge | Authentication and authorisation — **K-02** and **K-04**. `Actor` is supplied by the caller and checked |
+
+It touches no other schema, in code or in SQL, and `tests/events-repository.test.ts` asserts that
+mechanically against both the adapter and the migration.
+
+---
+
+## 2. Public contract
+
+Everything another unit may use is exported from `kernel/event-infrastructure/index.ts`.
+
+```ts
+service.publish(request): Promise<PublishResult>          // append + fan out, one transaction
+service.register(subscription, handler): void
+service.deliver({ subscription, worker, claimToken, now, limit? }): Promise<DeliveryOutcome[]>
+service.replay({ eventId, subscription, deliveryId, operator, reason, now, discardReceipt? })
+service.eventById(eventId): Promise<EventEnvelope>
+service.deliveriesForEvent(eventId): Promise<readonly Delivery[]>
+```
+
+**Provider-neutral.** No broker vocabulary appears in any type. Kafka, SQS, NATS and a PostgreSQL
+table are all implementations of the port in `repository.ts`; choosing one later must not change a
+caller. There is deliberately no broker SDK in this repository.
+
+**Deterministic.** `now`, every identifier and every claim token come from the caller. This
+component reads no clock and generates no randomness — including no jitter in the backoff, which is
+a real trade-off: jitter would spread retry load, and it would also make retry timing unassertable.
+A caller that needs spread can stagger its workers.
+
+### Guarantees
+
+| Guarantee | Meaning |
+|---|---|
+| Durable append | An event and every delivery it fans out to share one transaction. Either the fact and all its work exist, or neither does |
+| Immutable events | Content is fixed at append and fingerprinted with SHA-256. The port offers no operation that changes an event, and replay creates deliveries rather than touching one |
+| At-least-once delivery | A handler is acknowledged only after it returns. The alternative — acknowledging first — is at-most-once, and silently losing an event is worse than processing one twice |
+| Consumer-side idempotency | A receipt per (subscription, event), written in the same transaction as the acknowledgement. A redelivered event whose receipt exists never reaches the handler |
+| Safe concurrent claiming | `FOR UPDATE SKIP LOCKED`, and every completion predicated on the claim token. Two workers cannot both authoritatively finish one delivery |
+| Deterministic bounded retry | `base × 2^(attempt−1)`, capped at `maxBackoffSeconds`. `backoffSeconds` is exported, so an operator can compute a `nextAttemptAt` rather than infer it |
+| Terminal dead-lettering | After `maxAttempts` a delivery is dead-lettered and never retried automatically. It stays for inspection and can only return through an explicit replay |
+| Operator-explicit replay | A replay appends the next generation, names its operator and carries a reason. It never reopens a terminal delivery |
+| Schema-version validation | An envelope is validated against the exact declared version of its type. Unknown types, unknown versions and undeclared fields are refused |
+
+### Refusals
+
+| Code | Refused because |
+|---|---|
+| `unknown-event-type` | An unregistered type has no declared payload, so nothing can say whether the envelope is well formed |
+| `unknown-schema-version` | The type is known at other versions. Usually a producer running ahead of its own deployment |
+| `malformed-envelope` | An identifier or instant is not well formed, or the event claims to have been recorded before it happened |
+| `invalid-payload` | A field is undeclared, missing, wrongly typed, or nested. Undeclared fields are refused rather than dropped: dropping one lets a producer believe it published something no consumer will ever see |
+| `secret-bearing-payload` | A field name or a value carries a credential. An event is fanned out and kept; a credential in one is published and cannot be unpublished |
+| `origin-not-permitted` | `ai-suggested`, or a system actor claiming a human decided |
+| `producer-not-permitted` | A unit tried to publish a type another unit owns. A unit that could do that could fabricate another's history |
+| `ai-not-permitted` | AI tried to publish, claim or acknowledge. See below |
+| `duplicate-event-id` | An event is evidence and is never rewritten |
+| `idempotency-key-reuse` | The key was already used for a different event |
+| `stale-claim` | The lease was lost and another worker owns this delivery |
+| `claim-token-reuse` | A token identifies one claim, not one worker. Two claims that cannot be told apart defeat the stale-worker guard |
+| `obsolete-delivery` | The delivery is terminal. A replay appends a new generation instead |
+| `delivery-not-terminal` | Replaying live work would put two deliveries of one event in front of one consumer |
+| `replay-not-authorised` | Replay needs an operator and a reason. Automatic replay is how one incident becomes two |
+| `no-such-event` / `no-such-delivery` | Nothing to act on |
+| `concurrent-modification` | Something moved underneath the transaction |
+| `unknown-subscription` | Not registered, or registered with no handler. Claiming work with nothing to run it would burn attempts and dead-letter events that were never delivered |
+
+### AI is not an authority here
+
+Two separate refusals, because they protect different things:
+
+- **AI may not publish.** `origin: 'ai-suggested'` and `actor.kind: 'ai'` are both refused, and the
+  database `CHECK` refuses the origin as well, so a write around the service still could not record
+  one. An event is trusted evidence that a fact occurred; a fabricated one is indistinguishable
+  from a real one to every consumer downstream. AI may propose a fact to a human or to a
+  deterministic system, which publishes it and owns it.
+- **AI may not mark a delivery successful.** Acknowledging asserts that a consumer really processed
+  the event — which AI cannot know — and an acknowledgement suppresses redelivery for ever. AI may
+  not order a replay either.
+
+---
+
+## 3. Persistence and transport
+
+An injected `EventRepository` port with two implementations: `InMemoryEventRepository` (the
+reference implementation, used by the tests) and `PostgresEventRepository`.
+
+**PostgreSQL is the transport, not merely the store**, and that is the point rather than a
+compromise. A table with `FOR UPDATE SKIP LOCKED` gives durable at-least-once delivery, and it lets
+a producing module append its domain rows and its events in the **same transaction**. No broker can
+offer that.
+
+| Table | Holds | Why separate |
+|---|---|---|
+| `event` | the append-only log | never updated; there is no UPDATE against it anywhere in the adapter |
+| `event_delivery` | one row per (event, subscription, generation) | delivery state on the event would make a consumer's retry loop rewrite history |
+| `event_receipt` | one row per (subscription, event) | written with the acknowledgement, so it exists if and only if the delivery was acknowledged |
+
+Timestamps are projected as UTC text through `to_char`, never left to the driver's `Date` parser —
+lease expiry and retry due-times are comparisons, and precision lost in the driver is lost before
+anything here can notice. Same reasoning, and the same projection, as K-05's adapter.
+
+---
+
+## 4. How a module must publish (not yet integrated)
+
+**No module publishes events yet.** K-08 has no producing module and no consuming module; the
+subscriptions used in the tests are fixtures. What follows is the rule future modules must follow,
+recorded now so the first integration does not have to invent it.
+
+A domain write and its event must be **atomically coupled**. In practice that means the module
+passes its own transaction down, or publishes inside the same one:
+
+```ts
+await db.withTransaction(async (tx) => {
+  await orders.insert(tx, order);          // the domain write
+  await events.publish({ /* … */ });       // the fact, same transaction
+});
+```
+
+Publishing after the transaction commits is the mistake this table layout exists to prevent: the
+process can die in between, and the fact is lost with no trace that it should have existed.
+Publishing before is worse — the event claims something that may then roll back.
+
+**This coupling is not implemented.** `EventService.publish` opens its own transaction through the
+repository port. Threading a caller's transaction through the port is deliberate future work and is
+recorded as such in CURRENT_IMPLEMENTATION_STATUS §11.14; until it exists, a module cannot achieve
+the guarantee this section describes, and no module should claim it does.
+
+Consumers must be idempotent. Delivery is at-least-once, so a handler is handed
+`idempotencyKey = "<subscription>:<eventId>"`, stable across every redelivery and every replay
+generation. A handler that writes that key alongside its own effect, in its own transaction, gets
+exactly-once *effect* out of at-least-once delivery.
+
+---
+
+## 5. Deliberately deferred
+
+| Deferred | Waiting on | Why it is not here |
+|---|---|---|
+| Broker binding (Kafka/SQS/NATS) | a real throughput requirement | A broker chosen before a single real producer exists is a guess dressed as infrastructure. The port makes it a later decision rather than a rewrite |
+| Caller-supplied transactions | a producing module | See §4. The rule is written; the mechanism is not built, and pretending otherwise would be worse than saying so |
+| Administrative API and UI | **K-02** Authentication, **K-04** Permissions | An endpoint that publishes or replays events before there is anyone to authorise it is a hole |
+| Audit of replays | **K-09** Audit Foundation | The operator and reason are recorded on the delivery, but there is no durable audit trail to write them to |
+| Consumer registration at runtime | a real consumer | Subscriptions are declared, not discovered. A runtime registry with no consumers would be untested behaviour |
+| Retention and archival | an operational requirement | The log grows without bound. Deliberate: deleting evidence needs a policy, not a default |
+
+---
+
+## 6. Migration limitations
+
+- **Never executed.** No PostgreSQL runtime is available to this repository, so
+  `0004_create_kernel_event_infrastructure_schema` has been validated statically and applied
+  nowhere. Its SQL is unproven, including the `SKIP LOCKED` claim statement — the single most
+  important statement in the component.
+- The rollback drops the schema with `RESTRICT` and drops child tables before the parent, because
+  both `event_delivery` and `event_receipt` carry foreign keys into `event`.
+- Rolling back discards the event log. That is a consequence of removing the component rather than
+  an accident: an event log with no component to read it is not evidence anybody can use.
+- There is no retention policy and no partitioning. Both are real operational needs at volume and
+  neither is guessed at here.
+
+---
+
+## 7. Verification
+
+```bash
+npm run verify                                    # everything, including the tests below
+npm run check:migrations                          # the FND-002a contract over db/migrations
+node --test tests/events.test.ts                  # registry, envelope, publication refusals
+node --test tests/events-delivery.test.ts         # claiming, retry, DLQ, crash window, replay
+node --test tests/events-repository.test.ts       # port conformance, adapter queries, contract
+npm run test:integration                          # live PostgreSQL; skips without a database
+```
+
+`npm run verify` is the gate. The live suites skip with a stated reason when no database is
+configured, and a skipped run is not evidence of anything.
