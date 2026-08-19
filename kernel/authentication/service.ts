@@ -245,6 +245,20 @@ export class AuthenticationService {
    * outcome never reaches anything. Then the provider, the binding and the subject, so a verifier
    * is only troubled for a party that exists. Only then the verifier, whose answer is checked
    * against what was asked before anything is written.
+   *
+   * A retry is recognised twice, because it can arrive at two different moments:
+   *
+   *   - **before the verifier**, when the first call has already committed. The proof is not
+   *     re-presented, because an assertion is consumed once and a caller retrying after a timeout
+   *     must not be told it attacked the platform;
+   *   - **after the write is refused**, when the two calls overlapped and the other one won. The
+   *     conflict surfaces as whichever uniqueness constraint the store happened to select, which
+   *     is not something a caller can be asked to interpret.
+   *
+   * Both converge through the same complete comparison (`convergenceFailures`), and both hand back
+   * a **spent** token: the secret was presented once, to the call that actually authenticated.
+   * Converging on anything less than a complete match is how a caller ends up holding a session
+   * for a request it did not make, so anything short of it keeps the refusal it already had.
    */
   async authenticate(request: AuthenticateRequest): Promise<AuthenticateResult> {
     assertPermittedKeys(request, AUTHENTICATE_KEYS, 'an authenticate request');
@@ -258,24 +272,19 @@ export class AuthenticationService {
     const sessionId = assertAuthIdentifier(request.sessionId, 'sessionId');
     const idempotencyKey = assertAuthIdentifier(request.idempotencyKey, 'idempotencyKey');
 
+    const claim: AuthenticationClaim = {
+      evidenceId,
+      sessionId,
+      provider,
+      providerReference,
+      idempotencyKey,
+    };
+
     // An identical retry must not re-present the proof to the verifier: assertions are consumed
     // once, so a second presentation would be refused as a replay and a caller retrying after a
     // timeout would be told it had attacked the platform.
-    const alreadyDone = await this.#repository.withTransaction(async (tx) => {
-      const evidence = await tx.findEvidenceByIdempotencyKey(idempotencyKey);
-      if (evidence === null) return null;
-      const session = await tx.findSessionByIdempotencyKey(idempotencyKey);
-      return { evidence, session };
-    });
-    if (alreadyDone !== null) {
-      return this.#convergedAuthentication(alreadyDone, {
-        evidenceId,
-        sessionId,
-        provider,
-        providerReference,
-        idempotencyKey,
-      });
-    }
+    const alreadyDone = await this.#findAuthentication(idempotencyKey);
+    if (alreadyDone !== null) return this.#convergedAuthentication(alreadyDone, claim);
 
     const binding = await this.#repository.withTransaction((tx) =>
       tx.findBindingByReference(provider, providerReference),
@@ -355,10 +364,20 @@ export class AuthenticationService {
     // Evidence and session in one transaction. An evidence row with no session would consume the
     // assertion and hand back nothing; a session with no evidence would be a session nobody can
     // account for.
-    await this.#repository.withTransaction(async (tx) => {
-      await tx.insertEvidence(evidence);
-      await tx.insertSession(session);
-    });
+    try {
+      await this.#repository.withTransaction(async (tx) => {
+        await tx.insertEvidence(evidence);
+        await tx.insertSession(session);
+      });
+    } catch (error) {
+      // The other half of an overlapping identical call may have committed between the read above
+      // and this write. Which constraint refused us — evidence id, assertion, either idempotency
+      // key, session id, token hash — is the store's choice and carries no meaning for the caller,
+      // so every one of them is offered the same recovery and the same complete comparison.
+      const converged = await this.#recoverFromConflict(error, claim);
+      if (converged === null) throw error;
+      return converged;
+    }
 
     return { session, evidence, token, deduplicated: false };
   }
@@ -576,48 +595,191 @@ export class AuthenticationService {
   }
 
   /**
+   * Everything recorded under one idempotency key, read together.
+   *
+   * The binding is read too, and it is not decoration: evidence records a provider but never a
+   * provider reference, so without the binding a key reused against a *different handle on the
+   * same provider* compares equal on every field there is and converges. The reference is the
+   * thing that says which account was authenticated, so it has to be in the comparison, and the
+   * only place it lives is the binding.
+   *
+   * One transaction, so the three records cannot be read across a commit that lands between them.
+   */
+  #findAuthentication(idempotencyKey: string): Promise<PersistedAuthentication | null> {
+    return this.#repository.withTransaction(async (tx) => {
+      const evidence = await tx.findEvidenceByIdempotencyKey(idempotencyKey);
+      if (evidence === null) return null;
+      const session = await tx.findSessionByIdempotencyKey(idempotencyKey);
+      const binding = await tx.findBindingById(evidence.bindingId);
+      return { binding, evidence, session };
+    });
+  }
+
+  /**
+   * A write refused by a uniqueness constraint: was it the other half of this same call?
+   *
+   * Returns the converged result when what is now stored under this idempotency key is completely
+   * and coherently the request that was just made, and `null` otherwise — and `null` means the
+   * caller keeps the refusal it already had. That is the important half. A replay presented under
+   * a fresh idempotency key finds nothing to converge on and stays `assertion-replayed`; a token
+   * hash collision between two unrelated sessions stays `insufficient-entropy`; a half-written
+   * authentication with evidence and no session converges on nothing and stays refused. Recovery
+   * that guessed here would turn a replay into a session.
+   */
+  async #recoverFromConflict(
+    error: unknown,
+    claim: AuthenticationClaim,
+  ): Promise<AuthenticateResult | null> {
+    const found = await this.#converge(error, CONVERGEABLE_CONFLICTS, () =>
+      this.#findAuthentication(claim.idempotencyKey),
+    );
+    if (found === null || found.session === null) return null;
+    if (convergenceFailures(found, claim).length > 0) return null;
+    return convergedResult(found.evidence, found.session);
+  }
+
+  /**
    * A retry that has already succeeded.
    *
    * Returns the original session and evidence, and **no token**: the secret was presented once, to
    * the call that actually authenticated. A retry that received a fresh secret would be minting a
    * second live session for one authentication.
+   *
+   * Unlike `#recoverFromConflict` this one throws on a mismatch rather than returning null, because
+   * here there is no earlier refusal to preserve: the key names an authentication that is not the
+   * one being asked for, and that is `idempotency-key-reuse` however it is reached.
    */
   #convergedAuthentication(
-    found: { evidence: AuthenticationEvidence; session: AuthenticationSession | null },
-    incoming: {
-      evidenceId: string;
-      sessionId: string;
-      provider: string;
-      providerReference: string;
-      idempotencyKey: string;
-    },
+    found: PersistedAuthentication,
+    claim: AuthenticationClaim,
   ): AuthenticateResult {
-    const differences: string[] = [];
-    if (found.evidence.evidenceId !== incoming.evidenceId) differences.push('evidenceId');
-    if (found.evidence.provider !== incoming.provider) differences.push('provider');
-    if (found.session !== null && found.session.sessionId !== incoming.sessionId) {
-      differences.push('sessionId');
-    }
-    if (differences.length > 0 || found.session === null) {
+    const failures = convergenceFailures(found, claim);
+    if (failures.length > 0 || found.session === null) {
       throw new AuthenticationError(
         'idempotency-key-reuse',
-        `idempotency key "${incoming.idempotencyKey}" was already used for a different ` +
-          `authentication (${differences.join(', ') || 'no session was recorded under it'}). ` +
-          'Returning the earlier one would hand back a session for something the caller did not ask for',
+        `idempotency key "${claim.idempotencyKey}" was already used for a different ` +
+          `authentication (${failures.join(', ')}). Returning the earlier one would hand back a ` +
+          'session for something the caller did not ask for',
       );
     }
-
-    return {
-      session: sealSession(found.session),
-      evidence: sealEvidence(found.evidence),
-      // Already revealed, so `reveal()` throws. The retry gets the session, never a second secret.
-      token: spentToken(),
-      deduplicated: true,
-    };
+    return convergedResult(found.evidence, found.session);
   }
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The complete non-secret logical request, and the only thing a converged retry may match against.
+ *
+ * Complete is the operative word. Every field a caller supplies that identifies *what* was
+ * authenticated is here; the proof is not, because it is never stored and comparing it would mean
+ * storing it.
+ */
+interface AuthenticationClaim {
+  readonly evidenceId: string;
+  readonly sessionId: string;
+  readonly provider: string;
+  readonly providerReference: string;
+  readonly idempotencyKey: string;
+}
+
+/** What is recorded under one idempotency key, plus the binding the evidence hangs off. */
+interface PersistedAuthentication {
+  readonly binding: AuthenticationBinding | null;
+  readonly evidence: AuthenticationEvidence;
+  readonly session: AuthenticationSession | null;
+}
+
+/**
+ * The refusals an overlapping identical authentication can arrive as.
+ *
+ * Six unique constraints can refuse the evidence-and-session write — evidence id, `(provider,
+ * assertionId)`, evidence idempotency key, session id, token hash, session idempotency key — and
+ * which one the database reports is its own business: with two rows conflicting on all of them it
+ * reports whichever index it checked first. So the recovery cannot be keyed on one of them. It is
+ * offered to every code they normalise to, and what decides the outcome is the comparison, not the
+ * code.
+ */
+const CONVERGEABLE_CONFLICTS: readonly AuthenticationError['code'][] = [
+  'idempotency-key-reuse',
+  'assertion-replayed',
+  'malformed-record',
+  'insufficient-entropy',
+];
+
+/**
+ * Everything that must hold before what is stored may be handed back as this caller's own.
+ *
+ * Two questions, and both have to be answered: does the stored authentication match the request
+ * **completely**, and do the three records agree with **each other**? The first stops a key reused
+ * for another authentication from returning a session the caller never asked for. The second stops
+ * a partially written or repointed set of rows — evidence naming one binding, a session naming
+ * another — from being read as a coherent authentication, which matters because convergence is
+ * exactly the path taken when something has already gone wrong.
+ *
+ * Returns the reasons rather than a boolean: a refusal that cannot say which field disagreed is a
+ * refusal nobody can act on.
+ */
+function convergenceFailures(
+  found: PersistedAuthentication,
+  claim: AuthenticationClaim,
+): readonly string[] {
+  const { binding, evidence, session } = found;
+  const failures: string[] = [];
+
+  if (evidence.evidenceId !== claim.evidenceId) failures.push('evidenceId');
+  if (evidence.provider !== claim.provider) failures.push('provider');
+  if (evidence.idempotencyKey !== claim.idempotencyKey) {
+    failures.push('the evidence idempotency key');
+  }
+
+  if (session === null) {
+    failures.push('no session was recorded under it');
+  } else {
+    if (session.sessionId !== claim.sessionId) failures.push('sessionId');
+    if (session.idempotencyKey !== claim.idempotencyKey) {
+      failures.push('the session idempotency key');
+    }
+    if (session.evidenceId !== evidence.evidenceId) {
+      failures.push('the session names other evidence');
+    }
+    if (session.bindingId !== evidence.bindingId) {
+      failures.push('the session and the evidence disagree about the binding');
+    }
+    if (session.subjectId !== evidence.subjectId) {
+      failures.push('the session and the evidence disagree about the subject');
+    }
+  }
+
+  if (binding === null) {
+    failures.push('the binding it was recorded against is gone');
+  } else {
+    if (binding.bindingId !== evidence.bindingId) {
+      failures.push('the binding it names is another one');
+    }
+    if (binding.provider !== claim.provider) failures.push('the binding names another provider');
+    if (binding.providerReference !== claim.providerReference) failures.push('providerReference');
+    if (binding.subjectId !== evidence.subjectId) {
+      failures.push('the binding and the evidence disagree about the subject');
+    }
+  }
+
+  return failures;
+}
+
+/** The answer a converged caller gets: the original records, and a secret it cannot have. */
+function convergedResult(
+  evidence: AuthenticationEvidence,
+  session: AuthenticationSession,
+): AuthenticateResult {
+  return {
+    session: sealSession(session),
+    evidence: sealEvidence(evidence),
+    // Already revealed, so `reveal()` throws. The retry gets the session, never a second secret.
+    token: spentToken(),
+    deduplicated: true,
+  };
+}
 
 /** A token that has already been presented. Its `reveal()` throws, which is the honest answer. */
 function spentToken(): SessionToken {
