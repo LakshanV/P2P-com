@@ -92,7 +92,7 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 
 | ID | Requirement | Status | Evidence |
 |---|---|---|---|
-| P0-01 | `/docs` planning baseline created, with reproducible link validation | `[x]` COMPLETE | `docs/CURRENT_IMPLEMENTATION_STATUS.md`, `docs/MASTER_IMPLEMENTATION_CHECKLIST.md`, `docs/MODULE_MAP.md`, `docs/tools/validate-doc-links.mjs` — created by DOC-001. Validated by `node docs/tools/validate-doc-links.mjs` → 74 internal links across 3 files, 0 broken, exit 0 (count as of the FND-001a reconciliation; re-run the command for the current figure). Full evidence block: [CURRENT_IMPLEMENTATION_STATUS.md §11](./CURRENT_IMPLEMENTATION_STATUS.md#11-evidence-register). Documentation artefact, not an implementation capability. |
+| P0-01 | `/docs` planning baseline created, with reproducible link validation | `[x]` COMPLETE | `docs/CURRENT_IMPLEMENTATION_STATUS.md`, `docs/MASTER_IMPLEMENTATION_CHECKLIST.md`, `docs/MODULE_MAP.md`, `docs/tools/validate-doc-links.mjs` — created by DOC-001. Validated by `node docs/tools/validate-doc-links.mjs` → 79 internal links across 3 files, 0 broken, exit 0 (count as of the FND-001b reconciliation; re-run the command for the current figure). Full evidence block: [CURRENT_IMPLEMENTATION_STATUS.md §11](./CURRENT_IMPLEMENTATION_STATUS.md#11-evidence-register). Documentation artefact, not an implementation capability. |
 | P0-02 | Remaining `/docs` set from v3 §42 (ARCHITECTURE, DATABASE_SCHEMA, API_CONTRACTS, EVENT_CATALOG, AI_ARCHITECTURE, AI_MODEL_REGISTRY, SECURITY_MODEL, PERMISSIONS_MATRIX, POLICY_CATALOG, TEST_STRATEGY, UX_SYSTEM, DEPLOYMENT_GUIDE, OPERATIONS_RUNBOOK, DECISIONS_LEDGER, KNOWN_LIMITATIONS, CHANGELOG, MASTER_PRODUCT_SPEC) | `[ ]` NOT STARTED | NONE — files do not exist |
 | P0-03 | Repository source structure (`/platform`, `/kernel`, `/modules`, `/design-system`, `/apps`, `/tests`) | `[x]` COMPLETE | All six roots exist, are tracked and carry an ownership README (FND-001b). `kernel/`, `modules/`, `design-system/` and `apps/` are empty of implementation by design — this item is about structure, not content. Evidence [§11.2](./CURRENT_IMPLEMENTATION_STATUS.md#112-evidence--fnd-001b-source-roots-architecture-manifest-boundary-enforcement). |
 | P0-04 | Runtime and package manifest chosen and committed | `[~]` IN PROGRESS | Satisfied by FND-001a. **Pinned toolchain:** Node 26.7.0 (`.nvmrc`), npm 11.19.0 (`packageManager`). **Supported ranges:** `engines.node >=22.18.0`, `engines.npm >=10.0.0`. Exact devDependency pins, committed lockfile, `npm ci` exit 0. Automated assertions bind each pin to its range. Held at IN PROGRESS until FND-001 completes. Evidence [§11.1](./CURRENT_IMPLEMENTATION_STATUS.md#111-evidence--fnd-001a-pinned-toolchain-and-test-harness). |
@@ -813,14 +813,14 @@ The v1.0 guide is subordinate to v3 (see the hierarchy decision in [CURRENT_IMPL
 
 ## K. Baseline counts
 
-**474 tracked items** carry an explicit status. Counts verified mechanically over this file after FND-001a.
+**474 tracked items** carry an explicit status. Counts verified mechanically over this file after FND-001b.
 
 | Status | Count | Notes |
 |---|---:|---|
-| `[ ]` NOT STARTED | 453 | |
-| `[~]` IN PROGRESS | 7 | X-52 (standing documentation obligation) plus P0-03…P0-08, advanced by FND-001a. |
+| `[ ]` NOT STARTED | 449 | |
+| `[~]` IN PROGRESS | 9 | X-52 (standing documentation obligation); P0-04…P0-08 (satisfied by FND-001a, held while FND-001 is unfinished); P0-10 (four of eight MODULE_MAP §13 checks built); X-44 and X-46 (the checks exist but are not yet **CI** checks). |
 | `[?]` NEEDS REVIEW | 0 | Nothing has been submitted for review. |
-| `[x]` COMPLETE | 1 | P0-01 only — the three documentation artefacts of DOC-001, each backed by a file that exists. Not an implementation capability. |
+| `[x]` COMPLETE | 3 | P0-01 (DOC-001 documentation artefacts), P0-03 (all six source roots tracked and documented) and P0-11 (financial-zone and provider-import checks, proven by planted fixtures). |
 | `[!]` BLOCKED | 8 | P0-19, P0-22, P0-24, P0-26, P0-28, P0-40, P6-04, P14-04 — all external credentials or legal decisions (§I). |
 | `[-]` DEFERRED WITH REASON | 3 | RC-03, RC-04, RC-05. |
 | `[o]` OUT OF SCOPE WITH REASON | 2 | RC-01, RC-02. |
@@ -838,8 +838,10 @@ The v1.0 guide is subordinate to v3 (see the hierarchy decision in [CURRENT_IMPL
 | J. Guide reconciliation | 8 |
 | **Total** | **474** |
 
-**Implementation items complete: 0 of 472.** (474 tracked items, less P0-01 and X-52, neither of which is an implementation capability.)
+**Implementation items complete: 2 of 472** — P0-03 (source structure) and P0-11 (financial-zone and provider-import checks). The 474 tracked items less P0-01 and X-52, neither of which is an implementation capability.
 
-**Statuses in use at baseline:** NOT STARTED, IN PROGRESS, COMPLETE (documentation artefacts only), BLOCKED, DEFERRED WITH REASON, OUT OF SCOPE WITH REASON. `NEEDS REVIEW` is unused because nothing has been submitted for review.
+**Business capabilities complete: 0.** No kernel component, no business module, no phase, no release gate. Phase 0 itself is not complete: the data layer (§A.2), environments (§A.3), platform conventions (§A.4) and every foundation capability (§A.5) remain outstanding.
 
-**Baseline assertion:** no implementation capability is complete, in progress, or under review. The next task is stated in [CURRENT_IMPLEMENTATION_STATUS.md](./CURRENT_IMPLEMENTATION_STATUS.md) §8.
+**Statuses in use:** NOT STARTED, IN PROGRESS, COMPLETE, BLOCKED, DEFERRED WITH REASON, OUT OF SCOPE WITH REASON. `NEEDS REVIEW` is unused because nothing has been submitted for review.
+
+The next task is stated in [CURRENT_IMPLEMENTATION_STATUS.md §8](./CURRENT_IMPLEMENTATION_STATUS.md#8-next-highest-priority-unblocked-task).

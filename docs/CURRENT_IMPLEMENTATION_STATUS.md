@@ -227,7 +227,7 @@ Risks are ranked by expected damage to the programme, not by likelihood alone.
 
 | ID | Risk | Severity | Why it matters | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains five gates and 15 tests, all green from a clean install. The residues close as CI lands (FND-001c) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c |
+| R-01 | **Unverifiable baseline.** ~~Nothing is executable.~~ **Largely mitigated by FND-001a and FND-001b.** | Was High, now Low | A test can now run, so a completion claim can be checked rather than asserted. Two residues remain: the harness proves only substrate behaviour, because no business behaviour exists yet; and with no CI, it runs only when somebody chooses to run it. | Toolchain and harness delivered — `npm run verify` chains six gates and 32 tests, all green from a clean install. The residues close as CI lands (FND-001c) and as modules arrive with their own tests. | Closed for substrate; CI residue owned by FND-001c |
 | R-02 | **Boundary rules are partly unenforced.** Four of the eight checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are executable; four are not. | Was High, now Medium | The four that matter before any module exists — layer direction, kernel purity, financial-zone AI exclusion, provider-import — now fail `npm run verify`, each proven by a committed planted-violation fixture. The remainder (table ownership, policy-literal scan, contract presence, cycle detection) still depend on artefacts that do not exist. Two further limits: the checks read static imports only, and the kernel is treated as one layer. | Delivered in FND-001b. The remaining four land in B-1 alongside FND-002/FND-003, when there is something for them to check. | FND-002, FND-003 |
 | R-03 | **Financial-authority drift.** v3 §38 forbids AI as financial authority; the natural implementation path (asking a model to compute or approve) violates it silently. | High (P0 class) | A single AI-sourced monetary value or authorisation is a P0 defect that stops all progression. | Financial zone declared in [MODULE_MAP.md](./MODULE_MAP.md) §11 with rules F-1…F-9; CI check X-44 forbids the AI Gateway import inside the zone. | M-11…M-16 owners |
 | R-04 | **Policy values leaking into source.** The ~45-day hold, ~24-hour accelerated payout and 50% coverage target read naturally as constants. | High | v3 §20 and §35 require them to be versioned configuration. Constants make historical economics unrewritable in the wrong direction and force a code deploy for a commercial change. | Policy engine (K-06) lands before the financial core (B-3 before B-10); policy-literal scan in CI. | K-06 / M-14 / M-16 owners |
@@ -272,7 +272,7 @@ Full detail: [MASTER_IMPLEMENTATION_CHECKLIST.md §I](./MASTER_IMPLEMENTATION_CH
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a added two substrate modules and 15 passing tests, and no defect was found in them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
+**Zero open defects still means almost no code.** FND-001a and FND-001b together added five substrate modules and 32 passing tests, and no defect was found in them during implementation or review. The register will carry little information about system health until business capability exists to defect — a green suite over a toolchain is a much weaker signal than a green suite over a commerce platform.
 
 **Recording protocol.** Each defect, when found, records: id, severity, description, owning module, reproduction steps, detection source, the regression test that reproduces it, the fix commit, and — per v3 §58 — whether the defect was introduced by a previous correction, in which case the failed invariant and the adjacent flows inspected are recorded too.
 
@@ -284,7 +284,9 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 ### TASK FND-001 — Platform substrate, boundary enforcement, and test harness
 
-**Status:** IN PROGRESS. Subtask FND-001a delivered; the remaining subtasks are not started. No blocker applies.
+**Status:** IN PROGRESS. Subtasks FND-001a and FND-001b delivered; FND-001c and FND-001d are not started. No blocker applies.
+
+**Next subtask: FND-001c — GitHub Actions CI.** It is the only remaining item on the critical path to a boundary rule that holds without somebody remembering to run a command.
 
 ### Subtask breakdown
 
@@ -294,14 +296,19 @@ reproducible result rather than as a single large change.
 | Subtask | Scope | Checklist items | State |
 |---|---|---|---|
 | **FND-001a** | Pinned Node/TypeScript/npm toolchain, lockfile, minimal `platform/` and `tests/` structure, working clean-install `build` / `typecheck` / `lint` / `format:check` / `test` | P0-04 fully; P0-03, P0-05…P0-08 partially | **Delivered** — evidence §11.1. Nothing marked COMPLETE. |
-| FND-001b | Remaining source roots (`kernel/`, `modules/`, `design-system/`, `apps/`), architecture manifest, and the four executable boundary checks with planted-violation tests | P0-03, P0-10, P0-11 | Not started |
-| FND-001c | GitHub Actions CI running every command, plus dependency audit | P0-09 | Not started |
+| **FND-001b** | Remaining source roots (`kernel/`, `modules/`, `design-system/`, `apps/`), architecture manifest, and the four executable boundary checks with planted-violation fixtures | P0-03 and P0-11 fully; P0-10 partially | **Delivered** — evidence §11.2 |
+| **FND-001c** | GitHub Actions CI running every command, plus dependency audit | P0-09 | **Next** — not started |
 | FND-001d | Contributor documentation and git workflow conventions | P0-12, P0-13 | Not started |
 
-**No item is COMPLETE.** P0-03 through P0-08 are `IN PROGRESS`; P0-09 through P0-13 remain
-`NOT STARTED`. FND-001 itself cannot be complete until FND-001b, FND-001c and FND-001d land and
-its acceptance criteria — including a planted violation being rejected by each boundary check —
-are met.
+**Two items are COMPLETE: P0-03 and P0-11**, each backed by a checklist evidence row and the
+§11.2 evidence block. P0-04 through P0-08 remain `IN PROGRESS` — satisfied by FND-001a but held
+there while FND-001 is unfinished — and P0-10 is `IN PROGRESS` because it references
+[MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification), which lists eight checks of
+which four are built. P0-09, P0-12 and P0-13 remain `NOT STARTED`.
+
+FND-001 itself cannot be complete until FND-001c and FND-001d land. Its acceptance criterion that
+each boundary check demonstrably rejects a planted violation **is** now met (§11.2); what is not
+met is CI running the chain, and contributor documentation.
 
 | Field | Value |
 |---|---|
@@ -311,7 +318,7 @@ are met.
 | **PHASE** | Phase 0 — Foundation |
 | **OBJECTIVE** | Establish a repository that builds, type-checks, lints, tests, and mechanically enforces the module boundaries — so that every subsequent claim of completion is verifiable by running a command. |
 | **BUSINESS PURPOSE** | Nothing in this programme can be honestly marked complete until a test can run. This is the single dependency shared by all 62 owned units. |
-| **CURRENT STATE** | Subtask FND-001a delivered (commits `221ab12`, `d40bf37`): pinned toolchain — Node 26.7.0 via `.nvmrc`, npm 11.19.0 via `packageManager`, exact devDependency pins, committed lockfile — plus `platform/` and `tests/`, and working `build` / `typecheck` / `lint` / `format:check` / `test` from a clean install, 15 tests passing. Still absent: the `kernel/`, `modules/`, `design-system/` and `apps/` roots, every boundary check, and CI. |
+| **CURRENT STATE** | Subtasks FND-001a and FND-001b delivered. Pinned toolchain (Node 26.7.0 via `.nvmrc`, npm 11.19.0 via `packageManager`, exact devDependency pins, committed lockfile); all six source roots tracked and documented; architecture manifest encoding 15 kernel components and 47 modules; four executable boundary checks wired into `npm run verify`, each proven by a committed planted-violation fixture. 32 tests passing from a clean install. Still absent: **CI** (FND-001c), **contributor documentation and git conventions** (FND-001d), and the four B-1 checks that need a schema, policy values or module contracts to exist. |
 | **IN SCOPE** | Runtime and package manifest (P0-04); source directory structure per [MODULE_MAP.md §2](./MODULE_MAP.md#2-architectural-shape--modular-monolith) (P0-03); build (P0-05); type checking (P0-06); lint and format (P0-07); test framework with at least one real assertion exercising the harness (P0-08); CI running build + typecheck + lint + test on every change, plus the existing documentation link validator (P0-09); import-boundary and layering checks (P0-10); financial-zone and AI-provider-import checks (P0-11); contributor documentation (P0-12); git workflow conventions (P0-13). |
 | **OUT OF SCOPE** | Database, migrations, authentication, permissions, any kernel component, any business module, any UI, the design system, deployment, cloud environments. Those are FND-002 and later. |
 | **DEPENDENCIES** | None. This is the root of the build order. |
@@ -384,7 +391,7 @@ The first true vertical slice is scheduled as **build step B-5 / Phase 1**: *acc
 
 **Phase 0 exit gate:** not met (P0-G1…P0-G5, all `NOT STARTED`).
 
-**Production completion rule (v3 §64):** the project may not be described as complete until every gate above is met, no P0 or P1 defect is open, the critical journeys and adversarial suites pass, and this document is accurate. None of those conditions holds. Permitted description today: **"planning baseline established; FND-001a toolchain substrate delivered."** Not "FND-001 complete", not "Phase 0 complete", not "MVP candidate".
+**Production completion rule (v3 §64):** the project may not be described as complete until every gate above is met, no P0 or P1 defect is open, the critical journeys and adversarial suites pass, and this document is accurate. None of those conditions holds. Permitted description today: **"planning baseline established; toolchain and boundary enforcement delivered."** Not "FND-001 complete", not "Phase 0 complete", not "MVP candidate".
 
 ---
 
@@ -398,7 +405,8 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | P0-01b — checklist baseline | COMPLETE | File | [`docs/MASTER_IMPLEMENTATION_CHECKLIST.md`](./MASTER_IMPLEMENTATION_CHECKLIST.md) |
 | P0-01c — module map baseline | COMPLETE | File | [`docs/MODULE_MAP.md`](./MODULE_MAP.md) |
 | P0-01d — link validator | COMPLETE | File + reproducible command | `docs/tools/validate-doc-links.mjs`, run as `node docs/tools/validate-doc-links.mjs` |
-| FND-001a — pinned toolchain and test harness | DELIVERED, not COMPLETE | Commands + exit codes | See §11.1. P0-04 satisfied; P0-03, P0-05…P0-08 partial and `IN PROGRESS`; P0-09…P0-13 `NOT STARTED`. |
+| FND-001a — pinned toolchain and test harness | DELIVERED | Commands + exit codes | See §11.1. P0-04 satisfied; P0-05…P0-08 satisfied but held `IN PROGRESS` while FND-001 is unfinished. |
+| FND-001b — source roots, architecture manifest, boundary enforcement | DELIVERED | Commands + exit codes + planted fixtures | See §11.2. **P0-03 and P0-11 COMPLETE**; P0-10 `IN PROGRESS` (four of the eight MODULE_MAP §13 checks are built). |
 
 **Evidence block for DOC-001:**
 
@@ -418,10 +426,10 @@ TEST COMMANDS:      node docs/tools/validate-doc-links.mjs
                     (exit 0 = pass, exit 1 = at least one broken link or anchor)
 TEST RESULTS:       PASS — exit 0.
                       files scanned  : 3
-                      CURRENT_IMPLEMENTATION_STATUS.md    internal links: 29  anchors: 33
-                      MASTER_IMPLEMENTATION_CHECKLIST.md  internal links: 28  anchors: 61
+                      CURRENT_IMPLEMENTATION_STATUS.md    internal links: 31  anchors: 34
+                      MASTER_IMPLEMENTATION_CHECKLIST.md  internal links: 31  anchors: 61
                       MODULE_MAP.md                       internal links: 17  anchors: 25
-                      internal links : 74
+                      internal links : 79
                       external links : 0 (skipped — out of scope)
                       broken         : 0
                     Negative test: a temporary copy of the validator run over a planted
@@ -434,9 +442,10 @@ MIGRATIONS:         None.
 EVENTS:             None.
 CONFIG / POLICY:    None. No business constants introduced; policy values in v3 §20 are
                     recorded as configuration requirements, not as values.
-KNOWN LIMITATIONS:  Documents describe intent only. None of the architectural rules is
-                    machine-enforced until FND-001b delivers the boundary checks (risk
-                    R-02). The validator checks document integrity, not the correctness of
+KNOWN LIMITATIONS:  (As recorded at FND-001a. Superseded in part by FND-001b — see §11.2.)
+                    Documents describe intent only. None of the architectural rules was
+                    machine-enforced at this point; FND-001b has since delivered four of the
+                    eight MODULE_MAP §13 checks (risk R-02, now Medium). The validator checks document integrity, not the correctness of
                     any statement inside a document. External URLs are not checked. The
                     validator requires a Node runtime; the repository now pins one —
                     Node 26.7.0 via .nvmrc and npm 11.19.0 via packageManager, added by
@@ -601,8 +610,9 @@ FILES:              .nvmrc, .gitignore, .gitattributes, .editorconfig, .prettier
                     change. (Absolute link counts move as the documents change; the current
                     figure is whatever the validator prints — see the DOC-001 block above.)
 
-FOLLOW-UP:          FND-001b (source roots + boundary enforcement), then FND-001c (CI),
-                    then FND-001d (contributor docs). FND-001 stays IN PROGRESS until all land.
+FOLLOW-UP:          FND-001b (source roots + boundary enforcement) — since DELIVERED, §11.2.
+                    Then FND-001c (CI), then FND-001d (contributor docs). FND-001 stays
+                    IN PROGRESS until both land.
 ```
 
 **Reproducing it:** `npm ci && npm run verify` from a clean clone. Exit 0 means every claim above
@@ -674,7 +684,7 @@ TEST COMMANDS:      npm ci
                     npm run verify
 
 TEST RESULTS:       npm ci                    exit 0   added 91 packages
-                    validate-doc-links        exit 0   3 files, 74 internal links, 0 broken
+                    validate-doc-links        exit 0   3 files, 79 internal links, 0 broken
                     npm run typecheck         exit 0
                     npm run lint              exit 0
                     npm run format:check      exit 0
@@ -785,4 +795,4 @@ Neither defect changed any status, count or gate: the baseline remains 474 track
 4. **Defects are recorded when found, not when fixed.** A P0 stops all progression the moment it is identified.
 5. **New requirements are classified before implementation** (v3 §67): new module, module extension, policy change, configuration change, UI/UX change, AI change, data change, or security/risk change — then impact-analysed against the owning module and its contracts.
 6. **Nothing is deleted.** Superseded requirements move to `OUT OF SCOPE WITH REASON` and remain visible (v3 §53).
-7. **Language discipline.** Use only accurate status words: phase complete, module complete, MVP candidate, release candidate, partially complete, blocked (v3 §64). Today the only accurate description is *"planning baseline established; FND-001a toolchain substrate delivered"* — not "FND-001 complete", not "Phase 0 complete", not "MVP candidate" (matching §10).
+7. **Language discipline.** Use only accurate status words: phase complete, module complete, MVP candidate, release candidate, partially complete, blocked (v3 §64). Today the only accurate description is *"planning baseline established; toolchain and boundary enforcement delivered"* — not "FND-001 complete", not "Phase 0 complete", not "MVP candidate" (matching §10).

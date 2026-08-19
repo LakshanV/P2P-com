@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "JAYA — AI-native universal P2P commerce platform. Toolchain substrate (FND-001a).",
+  "description": "JAYA — AI-native universal P2P commerce platform. Platform substrate: pinned toolchain and architectural boundary enforcement (FND-001a, FND-001b).",
   "license": "UNLICENSED",
   "packageManager": "npm@11.19.0",
   "engines": {
