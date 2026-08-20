@@ -177,49 +177,74 @@ export function assertMeasureFamily(value: unknown, field: string): MeasureFamil
 /** The whole of a unit of measure. There is no third field, and there is no room for one. */
 const MEASURE_FIELDS: readonly string[] = ['family', 'unit'];
 
+/** An owner scope is one field, or two when it names a tenant. Never three. */
+const OWNER_FIELDS: readonly string[] = ['kind', 'tenantId'];
+
+/** Who authored something: the kind of actor, and the opaque handle. */
+const ORIGIN_FIELDS: readonly string[] = ['kind', 'id'];
+
+/** What a canonical nested record is, in the words its own refusals should use. */
+interface CanonicalRecordSpec {
+  readonly code: CommerceUnitErrorCode;
+  /** "A unit of measure", "An owner scope", "An origin". */
+  readonly subject: string;
+  /** The literal shape, as a reader would write it down. */
+  readonly shape: string;
+  /** Which own property names are permitted at all. */
+  readonly fields: readonly string[];
+  /** Why an extra field is refused rather than dropped, in this record's own terms. */
+  readonly note: string;
+  /** The closing clause of the non-enumerable refusal. */
+  readonly declares: string;
+}
+
 /**
- * Refuse a measure entry that is anything but a plain `{ family, unit }` record.
+ * Refuse a nested record that is anything but a plain data record of exactly the fields it has.
  *
- * `assertMeasure` reads two properties and rebuilds the record from them, so anything else a
- * caller attached was *dropped* rather than refused — and dropped is the dangerous one. Three
- * consequences, none of which leaves a trace:
+ * The three nested structures in this component — a measure, an owner scope, an origin — were each
+ * read for the properties they declare and rebuilt from them, so anything else attached was
+ * *dropped* rather than refused. Dropped is the dangerous one, in three ways that leave no trace:
  *
- *   - **A field nobody reads is a property somebody believes the vocabulary carries.** A caller
- *     who writes `{ family, unit, price: 500 }` has recorded a price with the registry, as far as
- *     they can tell: no error came back. K-11 holds no price, no currency and no display text —
- *     that is v3's boundary — and silently discarding one lets a caller build on a belief that the
- *     next reader of the stored type has no way to discover.
- *   - **`familly` spelt wrong is not an unqualified unit.** It is a measure the author thinks they
- *     qualified. The top-level request is already checked field-by-field so a typo cannot be
- *     ignored (`assertKnownFields`); measures were the one nested structure where it could.
- *   - **What is dropped is invisible to the fingerprint.** `canonicalMeasures` hashes
- *     `family/unit` pairs, so two publications differing *only* in what a measure secretly carried
- *     fingerprint identically — and a retry on the same idempotency key converges, handing back a
- *     type version id for a request that was not the one made. That is precisely the failure K-04
- *     shipped (§11.27), reached through a nested object instead of through the key.
+ *   - **A field nobody reads is a property somebody believes the record carries.** A caller who
+ *     writes `{ family, unit, price: 500 }`, or an `owner` carrying `permissions`, has recorded
+ *     that with the registry as far as any response tells them: no error came back. K-11 holds no
+ *     price, no currency, no display text and no authority — every one of those belongs to a
+ *     component that exists or will — so the belief is wrong and nothing in the stored type lets
+ *     the next reader discover it.
+ *   - **A misspelling is not an absence.** `familly` is a measure its author believes they
+ *     qualified; `tennantId` is a scope its author believes they narrowed. The top-level request
+ *     is already checked field-by-field so a typo cannot be ignored (`assertKnownFields`); the
+ *     nested records were where it could.
+ *   - **What is dropped is invisible to the fingerprint.** The canonical forms hash `family/unit`
+ *     pairs and `ownerKey(owner)`, so two publications differing *only* in what a nested record
+ *     secretly carried fingerprint identically — and a retry on the same idempotency key
+ *     converges, handing back a type version id for a request that was not the one made. That is
+ *     precisely the failure K-04 shipped (§11.27), reached through a nested object instead of
+ *     through the key.
  *
- * An allowlist and not a denylist. A list of forbidden names — `price`, `currency`, `label` —
- * refuses what somebody thought of and admits `unitPrice`; requiring exactly the two fields the
- * vocabulary has refuses everything nobody has thought of yet, which is the set that matters.
+ * An allowlist and not a denylist. A list of forbidden names — `price`, `role`, `label` — refuses
+ * what somebody thought of and admits `unitPrice`; requiring exactly the fields the contract
+ * defines refuses everything nobody has thought of yet, which is the set that matters.
  *
  * Every way of hiding a field is closed, not just the obvious one: inherited through a prototype,
  * defined as a getter, keyed by a symbol, or made non-enumerable — each is invisible to
  * `Object.keys`, and the first three are invisible to `JSON.stringify` too, so a review of the
  * request payload would not show them.
+ *
+ * Runs to completion **before any field is read**, so no property access this component makes can
+ * reach a getter or a prototype. After it returns, the record is inert: reading a field is reading
+ * a value that was there when it was checked.
  */
-function assertCanonicalMeasure(value: object, path: string): void {
+function assertCanonicalRecord(value: object, path: string, spec: CanonicalRecordSpec): void {
   if (Array.isArray(value)) {
-    throw new CommerceUnitError(
-      'unsupported-measure',
-      `${path} is an array; expected { family, unit }`,
-    );
+    throw new CommerceUnitError(spec.code, `${path} is an array; expected ${spec.shape}`);
   }
 
   const prototype: unknown = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
     throw new CommerceUnitError(
-      'unsupported-measure',
-      `${path} is not a plain record: it inherits from something. A unit of measure carries what ` +
+      spec.code,
+      `${path} is not a plain record: it inherits from something. ${spec.subject} carries what ` +
         'it declares and nothing a prototype supplies, because what a prototype supplies is not ' +
         'in the request anybody reviewed and not in the fingerprint anybody compared',
     );
@@ -228,26 +253,24 @@ function assertCanonicalMeasure(value: object, path: string): void {
   const symbols = Object.getOwnPropertySymbols(value);
   if (symbols.length > 0) {
     throw new CommerceUnitError(
-      'unsupported-measure',
-      `${path} carries ${symbols.length} symbol-keyed field(s). A unit of measure is { family, ` +
-        'unit }, and a key that cannot be written down is one no stored record can carry',
+      spec.code,
+      `${path} carries ${symbols.length} symbol-keyed field(s). ${spec.subject} is ${spec.shape}` +
+        ', and a key that cannot be written down is one no stored record can carry',
     );
   }
 
   for (const field of Object.getOwnPropertyNames(value)) {
-    if (!MEASURE_FIELDS.includes(field)) {
+    if (!spec.fields.includes(field)) {
       throw new CommerceUnitError(
-        'unsupported-measure',
-        `${path} carries the field "${field}". A unit of measure is exactly { family, unit }: ` +
-          'this component holds no price, no currency, no conversion factor, no tax rule and no ' +
-          'display text, and dropping the field silently would let a caller believe it had ' +
-          'recorded one here',
+        spec.code,
+        `${path} carries the field "${field}". ${spec.subject} is exactly ${spec.shape}: ` +
+          spec.note,
       );
     }
     const descriptor = Object.getOwnPropertyDescriptor(value, field);
     if (descriptor === undefined || descriptor.get !== undefined || descriptor.set !== undefined) {
       throw new CommerceUnitError(
-        'unsupported-measure',
+        spec.code,
         `${path}.${field} is an accessor rather than a value. What it answers can differ between ` +
           'the read that validated it and the read that stored it, so the type recorded need not ' +
           'be the type checked',
@@ -255,13 +278,65 @@ function assertCanonicalMeasure(value: object, path: string): void {
     }
     if (!descriptor.enumerable) {
       throw new CommerceUnitError(
-        'unsupported-measure',
+        spec.code,
         `${path}.${field} is non-enumerable, so it is absent from the request as anybody reading ` +
-          'it would see it. A unit of measure declares both its fields plainly',
+          `it would see it. ${spec.declares}`,
       );
     }
   }
 }
+
+const MEASURE_RECORD: CanonicalRecordSpec = {
+  code: 'unsupported-measure',
+  subject: 'A unit of measure',
+  shape: '{ family, unit }',
+  fields: MEASURE_FIELDS,
+  note:
+    'this component holds no price, no currency, no conversion factor, no tax rule and no ' +
+    'display text, and dropping the field silently would let a caller believe it had ' +
+    'recorded one here',
+  declares: 'A unit of measure declares both its fields plainly',
+};
+
+/**
+ * An owner scope decides who may extend and who may retire a category, so a field smuggled into
+ * one is a claim about authority sitting in the record every listing keys off.
+ *
+ * K-11 answers no authority question — that is K-04's, and the isolation rule here is `sameOwner`
+ * over two fields and nothing else. An `owner` carrying `role`, `permissions` or `admin` is a
+ * caller describing authority to a component that will never read it, which reads back as though
+ * it had been accepted and reviewed.
+ */
+const OWNER_RECORD: CanonicalRecordSpec = {
+  code: 'malformed-record',
+  subject: 'An owner scope',
+  shape: '{ kind } or { kind, tenantId }',
+  fields: OWNER_FIELDS,
+  note:
+    'this component decides no authority and holds no attribute of a tenant beyond the handle. ' +
+    'A permission, a role or a limit recorded here would be read by nobody and believed by ' +
+    'whoever wrote it',
+  declares: 'An owner scope declares every field it has plainly',
+};
+
+/**
+ * An origin is who authored a record, permanently.
+ *
+ * The one thing it must never say is that an agent did (v3 §38), which is why `ai` is refused by
+ * name below. A hidden field here is worse than an unread one: it is provenance nobody can audit
+ * on a record that is never rewritten.
+ */
+const ORIGIN_RECORD: CanonicalRecordSpec = {
+  code: 'malformed-record',
+  subject: 'An origin',
+  shape: '{ kind, id }',
+  fields: ORIGIN_FIELDS,
+  note:
+    'authorship is the actor kind and the opaque handle, and nothing that travels beside them — ' +
+    'a credential, a session, a role or a display name attached here would be permanent, ' +
+    'unread, and copied wherever the record goes',
+  declares: 'An origin declares both its fields plainly',
+};
 
 /**
  * Validate one unit of measure, qualified by its family.
@@ -281,7 +356,7 @@ export function assertMeasure(value: unknown, path: string): UnitOfMeasure {
       `${path} is ${value === null ? 'null' : typeof value}; expected { family, unit }`,
     );
   }
-  assertCanonicalMeasure(value, path);
+  assertCanonicalRecord(value, path, MEASURE_RECORD);
   const candidate = value as { family?: unknown; unit?: unknown };
   const family = assertMeasureFamily(candidate.family, `${path}.family`);
   const permitted: readonly string[] = MEASURE_FAMILIES[family];
@@ -347,7 +422,15 @@ export function assertMeasures(
   );
 }
 
-/** An owner scope: the shared platform vocabulary, or one tenant's extension of it. */
+/**
+ * An owner scope: the shared platform vocabulary, or one tenant's extension of it.
+ *
+ * The shape is checked before either field is read, against the union of what the two scopes may
+ * carry; which of the two applies is then decided from `kind`, on a record already proven to be
+ * inert data. That ordering matters — reading `kind` first to decide the allowlist would mean
+ * reading a property before knowing it is not a getter answering one thing here and another thing
+ * where the record is stored.
+ */
 export function assertOwner(value: unknown, field = 'owner'): OwnerScope {
   if (value === null || typeof value !== 'object') {
     throw new CommerceUnitError(
@@ -355,9 +438,14 @@ export function assertOwner(value: unknown, field = 'owner'): OwnerScope {
       `${field} is ${value === null ? 'null' : typeof value}; expected { kind } or { kind, tenantId }`,
     );
   }
+  assertCanonicalRecord(value, field, OWNER_RECORD);
+
   const owner = value as { kind?: unknown; tenantId?: unknown };
   if (owner.kind === 'platform') {
-    if (owner.tenantId !== undefined) {
+    // The *field*, not its value. A platform scope declaring `tenantId: undefined` is a record
+    // written as though it were a tenant one and left blank, and the difference between "this is
+    // the platform" and "this is a tenant nobody named" is the whole isolation rule.
+    if (Object.hasOwn(value, 'tenantId')) {
       throw new CommerceUnitError(
         'malformed-record',
         `${field} is the platform scope and also names a tenant; it can only be one of those`,
@@ -412,6 +500,9 @@ export function assertKnownFields(
  * boundary. An agent that could register a commerce unit type could define the categories every
  * risk pack, commission rule and fulfilment path keys off, which is authority over the platform's
  * economics one indirection out (v3 §38).
+ *
+ * The shape is checked before either field is read, so `kind` cannot be a getter that answers
+ * `system` to the check and something else to whatever reads the record next.
  */
 export function assertOrigin(
   value: unknown,
@@ -423,6 +514,7 @@ export function assertOrigin(
       `${field} is ${value === null ? 'null' : typeof value}; expected { kind, id }`,
     );
   }
+  assertCanonicalRecord(value, field, ORIGIN_RECORD);
   const origin = value as { kind?: unknown; id?: unknown };
   if (origin.kind === 'ai') {
     throw new CommerceUnitError(
