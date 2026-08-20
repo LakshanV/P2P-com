@@ -196,11 +196,7 @@ test('two identical grants racing produce one grant', async () => {
     2,
     'both callers get an answer: one wrote it, the other converged on it',
   );
-  assert.equal(
-    repository.store.grants().length,
-    2,
-    'the administration grant and one raced grant',
-  );
+  assert.equal(repository.store.grants().length, 2, 'the administration grant and one raced grant');
 });
 
 test('a grant and its revocation racing leave exactly one revocation', async () => {

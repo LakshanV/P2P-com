@@ -74,7 +74,9 @@ function administrations(harness: Awaited<ReturnType<typeof withPolicy>>) {
 
 test('every administration operation requires a session that validates', async () => {
   const harness = await withPolicy();
-  harness.sessions.answerWith({ adminRefuseWith: new Error(`the secret ${ADMIN_TOKEN} was wrong`) });
+  harness.sessions.answerWith({
+    adminRefuseWith: new Error(`the secret ${ADMIN_TOKEN} was wrong`),
+  });
 
   for (const [operation, run] of administrations(harness)) {
     await assert.rejects(
@@ -371,14 +373,11 @@ test('presenting a session takes the authenticated path even on an empty store',
   // rather than waved through into bootstrap because the store happens to be empty.
   const harness = build();
 
-  await assert.rejects(
-    harness.service.publishPolicy(policyRequest()),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'no-such-policy');
-      assert.match((error as PermissionError).message, /from the injected bootstrap authority/);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.publishPolicy(policyRequest()), (error: unknown) => {
+    assert.equal(codeOf(error), 'no-such-policy');
+    assert.match((error as PermissionError).message, /from the injected bootstrap authority/);
+    return true;
+  });
   assert.equal(harness.repository.policies().length, 0);
 });
 
@@ -518,12 +517,9 @@ test('concurrent administrations from different administrators do not converge',
     adminSubjectId: 'sub_01HQZXADMIN003',
     adminSessionId: 'sess_01HQZXADMIN03',
   });
-  await assert.rejects(
-    harness.service.grant({ ...request }),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'idempotency-key-reuse');
-      assert.match((error as PermissionError).message, /the administrator, session or account/);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.grant({ ...request }), (error: unknown) => {
+    assert.equal(codeOf(error), 'idempotency-key-reuse');
+    assert.match((error as PermissionError).message, /the administrator, session or account/);
+    return true;
+  });
 });

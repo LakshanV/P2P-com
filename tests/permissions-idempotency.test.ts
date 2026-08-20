@@ -279,7 +279,10 @@ test('a grant retry from a different administrator is refused', async () => {
   // administrator's idempotency key and replay it as a *different* administrator. Converging would
   // record the first administrator as the author of the second one's change.
   const harness = await withPolicy();
-  const grant = grantRequest({ grantId: 'grant_01HQZXAUTHOR1', idempotencyKey: 'idem_01HQZXAUTH01' });
+  const grant = grantRequest({
+    grantId: 'grant_01HQZXAUTHOR1',
+    idempotencyKey: 'idem_01HQZXAUTH01',
+  });
   await harness.service.grant(grant);
 
   // A second administrator, holding the same administration authority.
@@ -349,26 +352,20 @@ test('a policy or revocation retry from a different administrator is refused', a
   // The same administrator, a new session — the narrowest possible change of actor.
   harness.sessions.answerWith({ adminSessionId: 'sess_01HQZXADMINR2' });
 
-  await assert.rejects(
-    harness.service.publishPolicy({ ...policy }),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'idempotency-key-reuse');
-      assert.match(
-        (error as PermissionError).message,
-        /the administrator, session, account or bootstrap status/,
-      );
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.publishPolicy({ ...policy }), (error: unknown) => {
+    assert.equal(codeOf(error), 'idempotency-key-reuse');
+    assert.match(
+      (error as PermissionError).message,
+      /the administrator, session, account or bootstrap status/,
+    );
+    return true;
+  });
 
-  await assert.rejects(
-    harness.service.revoke({ ...revocation }),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'idempotency-key-reuse');
-      assert.match((error as PermissionError).message, /the administrator, session or account/);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.revoke({ ...revocation }), (error: unknown) => {
+    assert.equal(codeOf(error), 'idempotency-key-reuse');
+    assert.match((error as PermissionError).message, /the administrator, session or account/);
+    return true;
+  });
 });
 
 test('an identical retry from the same administrator still converges', async () => {

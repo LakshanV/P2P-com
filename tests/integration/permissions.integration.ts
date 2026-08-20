@@ -223,7 +223,7 @@ test(
           revokedAt: '2026-04-01T12:05:00.123456Z',
           reason: 'access-no-longer-needed',
           revokedBy: { kind: 'human', id: 'ops-alice-console' },
-        requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
           idempotencyKey: 'idem_01HQZXLIVR01',
         });
       });
@@ -334,7 +334,7 @@ test(
           revokedAt: '2026-04-01T12:05:00.123456Z',
           reason: 'granted-in-error',
           revokedBy: { kind: 'human', id: 'ops-alice-console' },
-        requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
           idempotencyKey: 'idem_01HQZXLIVR01',
         });
       });
@@ -347,7 +347,7 @@ test(
             revokedAt: '2026-04-01T13:00:00.123456Z',
             reason: 'security-event',
             revokedBy: { kind: 'human', id: 'ops-bob-console' },
-          requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+            requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
             idempotencyKey: 'idem_01HQZXLIVR02',
           }),
         ),
