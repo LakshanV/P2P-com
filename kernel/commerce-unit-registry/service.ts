@@ -186,7 +186,7 @@ export class CommerceUnitRegistryService {
   async publish(request: PublishTypeRequest): Promise<PublishResult> {
     this.#checkRequest(request, PUBLISH_KEYS, 'publish');
     const author = this.#registrarIdentity();
-    const owner = this.#registrar.owner as OwnerScope;
+    const owner: OwnerScope = this.#registrar.owner;
     const typeKey = assertTypeKey(request.typeKey);
     const idempotencyKey = assertUnitIdentifier(request.idempotencyKey, 'idempotencyKey');
 
@@ -232,7 +232,8 @@ export class CommerceUnitRegistryService {
         await tx.insertVersion(version);
         return { version, deduplicated: false };
       },
-      () => this.#repository.withTransaction((tx) => tx.findVersionByIdempotencyKey(idempotencyKey)),
+      () =>
+        this.#repository.withTransaction((tx) => tx.findVersionByIdempotencyKey(idempotencyKey)),
       (found) => {
         assertSameFingerprint(found.requestFingerprint, fingerprint, 'type version');
         return { version: sealVersion(found), deduplicated: true };
@@ -296,7 +297,8 @@ export class CommerceUnitRegistryService {
         const riskPolicyVersionId =
           target.riskPolicyKey === null
             ? null
-            : (await this.#policy.evaluate({ policyKey: target.riskPolicyKey, at })).policyVersionId;
+            : (await this.#policy.evaluate({ policyKey: target.riskPolicyKey, at }))
+                .policyVersionId;
 
         const candidate = validateActivation(
           {
@@ -364,7 +366,11 @@ export class CommerceUnitRegistryService {
       async (tx) => {
         const existing = await tx.findRetirementByIdempotencyKey(idempotencyKey);
         if (existing !== null) {
-          assertSameFingerprint(existing.requestFingerprint, candidate.requestFingerprint, 'retirement');
+          assertSameFingerprint(
+            existing.requestFingerprint,
+            candidate.requestFingerprint,
+            'retirement',
+          );
           return { retirement: sealRetirement(existing), deduplicated: true };
         }
         await this.#refuseRetired(tx, typeKey, 'retire');
@@ -470,7 +476,7 @@ export class CommerceUnitRegistryService {
 
   /** A registrar writes for its own scope and no other. This is the isolation rule at the boundary. */
   #assertMayAdminister(target: OwnerScope, attempt: string): void {
-    const actor = this.#registrar.owner as OwnerScope;
+    const actor: OwnerScope = this.#registrar.owner;
     if (sameOwner(actor, target)) return;
     throw new CommerceUnitError(
       'cross-owner-relationship',

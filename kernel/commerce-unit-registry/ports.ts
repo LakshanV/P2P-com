@@ -114,7 +114,8 @@ export interface RegistrarAuthority {
   /** The opaque handle written as the author of everything this authority does. */
   readonly authorityId: string;
   /** The scope this authority writes for: the platform vocabulary, or one tenant's extension. */
-  readonly owner: { readonly kind: 'platform' } | { readonly kind: 'tenant'; readonly tenantId: string };
+  readonly owner:
+    { readonly kind: 'platform' } | { readonly kind: 'tenant'; readonly tenantId: string };
   permitsRegistration(): boolean;
 }
 

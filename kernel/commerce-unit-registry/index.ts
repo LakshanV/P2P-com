@@ -69,12 +69,7 @@ export {
   type LookupInForce,
 } from './hierarchy.ts';
 
-export {
-  sealActivation,
-  sealResolved,
-  sealRetirement,
-  sealVersion,
-} from './immutable.ts';
+export { sealActivation, sealResolved, sealRetirement, sealVersion } from './immutable.ts';
 
 export {
   inStoredRow,

@@ -149,10 +149,18 @@ function reasonText(value: unknown, field: string): string {
  */
 function policyKey(value: unknown, field: string): string | null {
   if (value === null || value === undefined) return null;
-  if (typeof value !== 'string' || !/^[a-z][a-z0-9-]{1,30}(\.[a-z][a-z0-9-]{1,30}){1,3}$/.test(value)) {
+  if (
+    typeof value !== 'string' ||
+    !/^[a-z][a-z0-9-]{1,30}(\.[a-z][a-z0-9-]{1,30}){1,3}$/.test(value)
+  ) {
+    // A value that is not text is reported by its type, the way every other refusal in this
+    // component reports one. Rendering it as text would print `[object Object]` for exactly the
+    // rows worth investigating — and a refusal nobody can trace back to a row is one somebody
+    // works around rather than fixes.
+    const shown = typeof value === 'string' ? `"${value}"` : typeof value;
     throw new CommerceUnitError(
       'malformed-record',
-      `${field} is "${String(value)}"; expected a dotted policy key K-06 would recognise`,
+      `${field} is ${shown}; expected a dotted policy key K-06 would recognise`,
     );
   }
   return value;

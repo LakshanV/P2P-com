@@ -62,7 +62,9 @@ export function assertEffective(version: UnitTypeVersion, at: string, requested:
     throw new CommerceUnitError(
       'version-not-effective',
       `version ${version.version} of ${version.typeKey} ${
-        before ? `takes effect at ${String(version.effectiveFrom)}` : `ceased at ${String(version.effectiveUntil)}`
+        before
+          ? `takes effect at ${String(version.effectiveFrom)}`
+          : `ceased at ${String(version.effectiveUntil)}`
       }, and ${at} is outside that window`,
     );
   }

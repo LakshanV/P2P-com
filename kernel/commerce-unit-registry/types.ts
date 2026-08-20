@@ -65,7 +65,18 @@ export type UnitKind = (typeof UNIT_KINDS)[number];
  * the kind allows.
  */
 export const MEASURE_FAMILIES = {
-  goods: ['each', 'gram', 'kilogram', 'tonne', 'litre', 'metre', 'box', 'pallet', 'lot', 'container'],
+  goods: [
+    'each',
+    'gram',
+    'kilogram',
+    'tonne',
+    'litre',
+    'metre',
+    'box',
+    'pallet',
+    'lot',
+    'container',
+  ],
   accommodation: ['night', 'week', 'month', 'room', 'property', 'guest'],
   service: ['hour', 'job', 'visit', 'kilometre', 'quotation', 'fixed-package'],
   rental: ['hour', 'day', 'week', 'month'],
@@ -109,8 +120,7 @@ export const KIND_FAMILIES: Readonly<Record<UnitKind, readonly MeasureFamily[]>>
  * is a field rather than a convention.
  */
 export type OwnerScope =
-  | { readonly kind: 'platform' }
-  | { readonly kind: 'tenant'; readonly tenantId: string };
+  { readonly kind: 'platform' } | { readonly kind: 'tenant'; readonly tenantId: string };
 
 export function sameOwner(a: OwnerScope, b: OwnerScope): boolean {
   if (a.kind === 'platform' && b.kind === 'platform') return true;

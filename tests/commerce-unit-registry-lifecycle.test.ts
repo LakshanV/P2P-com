@@ -150,22 +150,16 @@ test('a retired type accepts no further writes, and its versions stay readable',
     idempotencyKey: nextId('idem'),
   });
 
-  await assert.rejects(
-    harness.service.publish(publishRequest()),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'type-retired');
-      assert.match((error as Error).message, /make the retirement advisory/);
-      return true;
-    },
-  );
-  await assert.rejects(
-    harness.service.resolve({ typeKey: ROOT }),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'type-retired');
-      assert.match((error as Error).message, /still reference them/);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.publish(publishRequest()), (error: unknown) => {
+    assert.equal(codeOf(error), 'type-retired');
+    assert.match((error as Error).message, /make the retirement advisory/);
+    return true;
+  });
+  await assert.rejects(harness.service.resolve({ typeKey: ROOT }), (error: unknown) => {
+    assert.equal(codeOf(error), 'type-retired');
+    assert.match((error as Error).message, /still reference them/);
+    return true;
+  });
 
   // The version listings were created under is still there, unchanged.
   const stored = harness.repository
@@ -250,7 +244,7 @@ test('a key reused with any authority-bearing input changed is refused', async (
 
   for (const [why, change] of changes) {
     await assert.rejects(
-      harness.service.publish({ ...request, ...change } as never),
+      harness.service.publish({ ...request, ...change }),
       (error: unknown) => {
         assert.equal(codeOf(error), 'idempotency-key-reuse', why);
         assert.match((error as Error).message, /copied into every listing/);

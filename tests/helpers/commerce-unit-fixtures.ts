@@ -52,8 +52,15 @@ export class FixedClock implements Clock {
 }
 
 export interface StubConfigurationOptions {
-  /** Which kinds this deployment permits. Defaults to all of v3 §11's. */
-  readonly permitted?: readonly string[] | unknown;
+  /**
+   * Which kinds this deployment permits. Defaults to all of v3 §11's.
+   *
+   * Typed `unknown` and not `readonly string[]`, because the cases worth having are the ones where
+   * K-05 answers with something that is not a list of kinds at all — a string, a number, an object,
+   * `null`. K-11 must refuse each of those rather than guess a vocabulary, and a fixture that could
+   * only hand back a well-formed list could not ask it to.
+   */
+  readonly permitted?: unknown;
   readonly refuseWith?: Error;
 }
 

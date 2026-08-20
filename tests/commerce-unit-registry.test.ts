@@ -107,7 +107,13 @@ test('a unit outside the register, or unqualified, is refused', async () => {
     ['a family nobody registered', [{ family: 'digital', unit: 'each' }]],
     ['an unqualified unit', ['each']],
     ['no units at all', []],
-    ['the same unit twice', [{ family: 'goods', unit: 'each' }, { family: 'goods', unit: 'each' }]],
+    [
+      'the same unit twice',
+      [
+        { family: 'goods', unit: 'each' },
+        { family: 'goods', unit: 'each' },
+      ],
+    ],
   ];
 
   for (const [why, measures] of cases) {
@@ -206,7 +212,7 @@ test('a type may not carry money, tax, conversion or display text', async () => 
 
   for (const [field, owner] of forbidden) {
     await assert.rejects(
-      harness.service.publish(publishRequest({ [field]: 'anything' } as never)),
+      harness.service.publish(publishRequest({ [field]: 'anything' })),
       (error: unknown) => {
         assert.equal(codeOf(error), 'caller-asserted-outcome', field);
         assert.match((error as Error).message, owner, field);
@@ -304,14 +310,11 @@ test('a service with no injected registrar publishes, activates and retires noth
   ];
 
   for (const [operation, run] of attempts) {
-    await assert.rejects(
-      run(),
-      (error: unknown) => {
-        assert.equal(codeOf(error), 'registration-refused', operation);
-        assert.match((error as Error).message, /what the platform believes it is selling/);
-        return true;
-      },
-    );
+    await assert.rejects(run(), (error: unknown) => {
+      assert.equal(codeOf(error), 'registration-refused', operation);
+      assert.match((error as Error).message, /what the platform believes it is selling/);
+      return true;
+    });
   }
   assert.equal(repository.versions().length, 0);
 });

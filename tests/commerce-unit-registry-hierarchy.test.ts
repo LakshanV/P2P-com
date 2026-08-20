@@ -45,7 +45,10 @@ const codeOf = (error: unknown): string | undefined =>
 /** A bare version, for the pure cases that are about `hierarchy.ts` rather than the service. */
 function version(typeKey: string, parentTypeKey: string | null): UnitTypeVersion {
   return {
-    typeVersionId: `typever_01HQZX${typeKey.replace(/[^a-z]/g, '').slice(0, 6).padEnd(6, 'x')}`,
+    typeVersionId: `typever_01HQZX${typeKey
+      .replace(/[^a-z]/g, '')
+      .slice(0, 6)
+      .padEnd(6, 'x')}`,
     typeKey,
     version: 1,
     kind: 'new-product',
@@ -57,7 +60,10 @@ function version(typeKey: string, parentTypeKey: string | null): UnitTypeVersion
     effectiveUntil: null,
     publishedAt: '2026-04-01T12:00:00Z',
     publishedBy: { kind: 'system', id: 'k11-registry-console' },
-    idempotencyKey: `idem_01HQZX${typeKey.replace(/[^a-z]/g, '').slice(0, 8).padEnd(8, 'x')}`,
+    idempotencyKey: `idem_01HQZX${typeKey
+      .replace(/[^a-z]/g, '')
+      .slice(0, 8)
+      .padEnd(8, 'x')}`,
     requestFingerprint: 'a'.repeat(64),
   };
 }
@@ -87,9 +93,11 @@ test('a lineage resolves from the immediate parent outwards to the root', async 
   assert.match(root.explanation, /a root type/);
 });
 
-test('a cycle is refused as a cycle, and names the path', async () => {
+test('a cycle is refused as a cycle, and names the path', () => {
   // Pure, because the service refuses to activate the second half of a cycle — this proves the
-  // resolver would catch one that reached the store by any other route.
+  // resolver would catch one that reached the store by any other route. Synchronous for the same
+  // reason: `resolveAncestry` reads nothing and awaits nothing, and a test that said `async`
+  // anyway would read as though it did.
   const cycle = [version(ROOT, LEAF), version(BRANCH, ROOT), version(LEAF, BRANCH)];
 
   assert.throws(
@@ -206,14 +214,11 @@ test('a version outside its window breaks a lineage but is reported as not effec
     harness.service.resolve({ typeKey: ROOT }),
     (error: unknown) => codeOf(error) === 'version-not-effective',
   );
-  await assert.rejects(
-    harness.service.resolve({ typeKey: BRANCH }),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'missing-parent');
-      assert.match((error as Error).message, /is not in force at/);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.resolve({ typeKey: BRANCH }), (error: unknown) => {
+    assert.equal(codeOf(error), 'missing-parent');
+    assert.match((error as Error).message, /is not in force at/);
+    return true;
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -307,7 +312,7 @@ test('a caller may not state the lineage it wants', async () => {
   const { harness } = await withLineage();
   for (const field of ['ancestry', 'ancestors', 'depth', 'path', 'root']) {
     await assert.rejects(
-      harness.service.resolve({ typeKey: LEAF, [field]: [ROOT] } as never),
+      harness.service.resolve({ typeKey: LEAF, [field]: [ROOT] }),
       (error: unknown) => {
         assert.equal(codeOf(error), 'caller-asserted-outcome', field);
         assert.match((error as Error).message, /derived/);
