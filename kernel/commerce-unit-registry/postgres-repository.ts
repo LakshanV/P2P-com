@@ -13,7 +13,10 @@
  *     is enforced in the service and in the shape of the data, not by a key into K-03.
  *   - **The version in force is the end of the activation chain, not the newest row.** `ORDER BY
  *     activated_at DESC LIMIT 1` would be wrong: two activations can share an instant, and a clock
- *     is not a history. The query finds the activation nothing else supersedes.
+ *     is not a history. The query finds the activation nothing else supersedes — and if the store
+ *     holds *two* such activations for one type, this adapter says so rather than picking one.
+ *     `LIMIT 1` over an ambiguous chain is a coin toss reported as a fact, and the fact it reports
+ *     is which definition described every listing created since.
  *
  * There is no `UPDATE` and no `DELETE` in this file. Not one. A type is referenced by every record
  * ever created under it, so the adapter has no statement that could rewrite one even if a caller
@@ -185,7 +188,8 @@ function utcText(column: string, qualifier = ''): string {
 const projectionOf = (columns: readonly string[], qualifier = ''): string =>
   columns
     .map((column) => {
-      if ((TIMESTAMP_COLUMNS as readonly string[]).includes(column)) return utcText(column, qualifier);
+      if ((TIMESTAMP_COLUMNS as readonly string[]).includes(column))
+        return utcText(column, qualifier);
       return qualifier === '' ? column : `${qualifier}.${column}`;
     })
     .join(', ');
@@ -321,6 +325,42 @@ export function toUnitTypeRetirement(row: Record<string, unknown>): UnitTypeReti
         'stored row',
       ),
     ),
+  );
+}
+
+/**
+ * An identifier read straight off a row, for a message about a row too broken to decode.
+ *
+ * A refusal that cannot name the rows it is refusing sends whoever reads it back to the table with
+ * nothing to search for, so the id is quoted as it stands — including when what stands there is
+ * not text.
+ */
+function rawIdentifier(value: unknown, column: string): string {
+  if (typeof value === 'string' && value !== '') return value;
+  return `<unreadable ${column}>`;
+}
+
+/**
+ * Two activations at the end of one chain, which is a question with no answer.
+ *
+ * The two partial unique indexes in migration 0012 make this unreachable through the service: an
+ * activation either supersedes a version nobody else has superseded, or is the one first
+ * activation for the key. Reaching it means a row was written around them — a restored dump, a
+ * hand-run `INSERT`, an index dropped during maintenance.
+ *
+ * `LIMIT 1` would resolve it by whichever row the plan happened to reach first. That is not a
+ * repair: both activations name a version, both versions describe listings, and the adapter has no
+ * basis whatsoever for preferring one. Refusing keeps the disagreement visible in the one place
+ * that can still fix it — the store — instead of settling it silently on every read.
+ */
+function refuseAmbiguousChain(typeKey: string, activationIds: readonly string[]): never {
+  throw new CommerceUnitError(
+    'malformed-record',
+    `${typeKey} has more than one activation that nothing supersedes ` +
+      `(${activationIds.join(', ')}), so which version is in force has no answer. The partial ` +
+      'unique indexes on the activation table make this impossible through this component, so ' +
+      'the chain was written around it. Refusing rather than picking one: every listing created ' +
+      'since names one of these versions, and choosing here would decide which, invisibly',
   );
 }
 
@@ -477,9 +517,15 @@ class PostgresCommerceUnitTransaction implements CommerceUnitTransaction {
    * Not `ORDER BY activated_at DESC LIMIT 1`: two activations can share an instant, and the chain
    * is the history. An anti-join is also the query that stays correct if a clock ever goes
    * backwards, which is exactly when somebody most needs to know which version described a listing.
+   *
+   * `LIMIT 2` rather than `LIMIT 1`, and it is not a limit on the answer — it is one row more than
+   * an answer is allowed to be. A well-formed chain has exactly one end, so a second row is the
+   * store contradicting itself and is reported as that (`refuseAmbiguousChain`). The bound is kept
+   * so a broken table cannot make this read drag an unbounded set back on a path every listing
+   * read goes through.
    */
-  findCurrentActivation(typeKey: string): Promise<UnitTypeActivation | null> {
-    return this.#one(
+  async findCurrentActivation(typeKey: string): Promise<UnitTypeActivation | null> {
+    const result = await this.#client.query<Record<string, unknown>>(
       `SELECT ${ACTIVATION_PROJECTION} FROM ${ACTIVATION_TABLE} current
         WHERE current.type_key = $1
           AND NOT EXISTS (
@@ -487,10 +533,20 @@ class PostgresCommerceUnitTransaction implements CommerceUnitTransaction {
              WHERE later.type_key = current.type_key
                AND later.supersedes_version_id = current.type_version_id
           )
-        LIMIT 1;`,
+        ORDER BY current.activation_id
+        LIMIT 2;`,
       [typeKey],
-      toUnitTypeActivation,
     );
+
+    const [first, second] = result.rows;
+    if (first === undefined) return null;
+    if (second !== undefined) {
+      refuseAmbiguousChain(
+        typeKey,
+        [first, second].map((row) => rawIdentifier(row.activation_id, 'activation_id')),
+      );
+    }
+    return toUnitTypeActivation(first);
   }
 
   findActivationByIdempotencyKey(idempotencyKey: string): Promise<UnitTypeActivation | null> {
@@ -568,6 +624,24 @@ class PostgresCommerceUnitTransaction implements CommerceUnitTransaction {
    * bound — this sits on the path of every listing read. Retired types are excluded here rather
    * than filtered afterwards, so a retired ancestor breaks a lineage rather than silently
    * remaining part of one.
+   *
+   * The three ways this set can be malformed are all refused rather than papered over, because the
+   * service turns it into a map keyed by type key (`#inForceIndex`) and every one of them lands as
+   * a *plausible* map with the wrong contents:
+   *
+   *   - **Two terminal activations for one key.** Both would be decoded, both written into the
+   *     map, and the second would quietly win — an arbitrary choice of which version described
+   *     every listing created since, made per read and reported as the answer.
+   *   - **An activation whose version row is absent.** A plain `JOIN` drops that row, so the type
+   *     reads as "never registered" and a lineage descending from it reads as `missing-parent`.
+   *     A category that exists and cannot be read is not the same fact as one that does not exist,
+   *     and the second is the one a caller would act on. So this is a `LEFT JOIN` and the absence
+   *     is refused where it can still be seen.
+   *   - **An activation and its version disagreeing about the type key.** The join is on the
+   *     version id alone, deliberately: adding `AND definition.type_key = current.type_key` would
+   *     turn a mismatch back into a dropped row, hiding it in the same way. Unrefused, the map
+   *     files the entry under the *version's* key — so one type silently answers with another
+   *     type's definition, and its own disappears.
    */
   async listInForce(): Promise<
     readonly { activation: UnitTypeActivation; version: UnitTypeVersion }[]
@@ -580,7 +654,7 @@ class PostgresCommerceUnitTransaction implements CommerceUnitTransaction {
                   : `definition.${column} AS version_${column}`,
               ).join(', ')}
          FROM ${ACTIVATION_TABLE} current
-         JOIN ${VERSION_TABLE} definition
+         LEFT JOIN ${VERSION_TABLE} definition
            ON definition.type_version_id = current.type_version_id
         WHERE NOT EXISTS (
                 SELECT 1 FROM ${ACTIVATION_TABLE} later
@@ -591,18 +665,61 @@ class PostgresCommerceUnitTransaction implements CommerceUnitTransaction {
                 SELECT 1 FROM ${RETIREMENT_TABLE} retired
                  WHERE retired.type_key = current.type_key
               )
-        ORDER BY current.type_key;`,
+        ORDER BY current.type_key, current.activation_id;`,
       [],
     );
+
+    // Ambiguity is a property of the whole result, not of a row, so it is settled before anything
+    // is decoded. Otherwise which refusal a caller sees would depend on where in the set the
+    // second terminal activation happened to sit.
+    //
+    // A row whose `type_key` is not text is left out of the grouping rather than counted under a
+    // placeholder: two such rows are two separately broken activations, and reporting them as one
+    // type with two ends would describe a fault that is not there. The decode below refuses them
+    // by name.
+    const terminalByKey = new Map<string, string[]>();
+    for (const row of result.rows) {
+      if (typeof row.type_key !== 'string' || row.type_key === '') continue;
+      const found = terminalByKey.get(row.type_key);
+      const activationId = rawIdentifier(row.activation_id, 'activation_id');
+      if (found === undefined) terminalByKey.set(row.type_key, [activationId]);
+      else found.push(activationId);
+    }
+    for (const [typeKey, activationIds] of terminalByKey) {
+      if (activationIds.length > 1) refuseAmbiguousChain(typeKey, activationIds);
+    }
 
     return Object.freeze(
       result.rows.map((row) => {
         const versionRow: Record<string, unknown> = {};
         for (const column of VERSION_COLUMNS) versionRow[column] = row[`version_${column}`];
-        return {
-          activation: toUnitTypeActivation(row),
-          version: toUnitTypeVersion(versionRow),
-        };
+
+        const activation = toUnitTypeActivation(row);
+
+        if (versionRow.type_version_id === null || versionRow.type_version_id === undefined) {
+          throw new CommerceUnitError(
+            'malformed-record',
+            `activation ${activation.activationId} puts ${activation.typeKey} in force on version ` +
+              `${activation.typeVersionId}, and no such version row exists. A type in force whose ` +
+              'definition cannot be read is not a type that was never registered, and reporting it ' +
+              'as one would make every listing under it, and every type descending from it, ' +
+              'unresolvable for a reason nobody could find',
+          );
+        }
+
+        const version = toUnitTypeVersion(versionRow);
+        if (version.typeKey !== activation.typeKey) {
+          throw new CommerceUnitError(
+            'malformed-record',
+            `activation ${activation.activationId} puts ${activation.typeKey} in force on version ` +
+              `${version.typeVersionId}, which is a version of ${version.typeKey}. An activation ` +
+              'and the version it activates name one type or the row was not written by this ' +
+              'component; taking it would answer for one category with a different category’s ' +
+              'definition',
+          );
+        }
+
+        return { activation, version };
       }),
     );
   }
