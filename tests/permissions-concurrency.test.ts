@@ -77,7 +77,10 @@ class GatedRepository implements PermissionRepository {
 
 test('an identical grant retry converges on the original, and a different one fails closed', async () => {
   const harness = await withPolicy();
-  const request = grantRequest({ grantId: 'grant_01HQZXRETRY01', idempotencyKey: 'idem_01HQZXRT01' });
+  const request = grantRequest({
+    grantId: 'grant_01HQZXRETRY01',
+    idempotencyKey: 'idem_01HQZXRT01',
+  });
 
   const first = await harness.service.grant(request);
   const retry = await harness.service.grant({ ...request });
@@ -180,7 +183,10 @@ test('two identical grants racing produce one grant', async () => {
   const gated = build({ repository: repository.store });
   await gated.service.publishPolicy(policyRequest({ version: 2 })).catch(() => undefined);
 
-  const request = grantRequest({ grantId: 'grant_01HQZXRACE001', idempotencyKey: 'idem_01HQZXRACE1' });
+  const request = grantRequest({
+    grantId: 'grant_01HQZXRACE001',
+    idempotencyKey: 'idem_01HQZXRACE1',
+  });
   const outcomes = await Promise.allSettled([
     harness.service.grant({ ...request }),
     harness.service.grant({ ...request }),
@@ -355,7 +361,12 @@ test('the port exposes no way to update or delete authority', () => {
       [],
       'an edited grant answers "who may do this" and destroys "who could have, and who said so"',
     );
-    for (const required of ['insertGrant', 'insertRevocation', 'insertDecision', 'insertPolicyVersion']) {
+    for (const required of [
+      'insertGrant',
+      'insertRevocation',
+      'insertDecision',
+      'insertPolicyVersion',
+    ]) {
       assert.ok(operations.has(required));
     }
     return Promise.resolve();
@@ -389,13 +400,22 @@ test('no source file in this component can update or delete a record', async () 
   const path = await import('node:path');
   const { fileURLToPath } = await import('node:url');
 
-  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'kernel', 'permissions');
+  const dir = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '..',
+    'kernel',
+    'permissions',
+  );
   const stripComments = (source: string): string =>
     source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/[^\n]*/g, ' ');
 
   for (const file of readdirSync(dir).filter((name) => name.endsWith('.ts'))) {
     const code = stripComments(readFileSync(path.join(dir, file), 'utf8'));
-    for (const forbidden of [/\bUPDATE\s+\$?\{?kernel_permissions/i, /\bDELETE\s+FROM/i, /\bTRUNCATE\b/i]) {
+    for (const forbidden of [
+      /\bUPDATE\s+\$?\{?kernel_permissions/i,
+      /\bDELETE\s+FROM/i,
+      /\bTRUNCATE\b/i,
+    ]) {
       assert.ok(
         !forbidden.test(code),
         `${file} contains ${String(forbidden)} — authority history is append-only at every layer`,

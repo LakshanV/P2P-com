@@ -137,7 +137,11 @@ export type RevocationReason = (typeof REVOCATION_REASONS)[number];
 export type Predicate =
   | { readonly kind: 'always' }
   | { readonly kind: 'attribute-equals'; readonly attribute: string; readonly value: string }
-  | { readonly kind: 'attribute-in'; readonly attribute: string; readonly values: readonly string[] }
+  | {
+      readonly kind: 'attribute-in';
+      readonly attribute: string;
+      readonly values: readonly string[];
+    }
   | { readonly kind: 'assurance-at-least'; readonly assurance: AssuranceLevel }
   | { readonly kind: 'all'; readonly of: readonly Predicate[] }
   | { readonly kind: 'any'; readonly of: readonly Predicate[] };
@@ -245,6 +249,14 @@ export interface Decision {
   readonly purpose: Purpose | null;
   readonly decidedAt: string;
   readonly idempotencyKey: string;
+  /**
+   * SHA-256 over every input this decision depended on, including the session it was computed
+   * for and the ABAC context that satisfied it (fingerprint.ts).
+   *
+   * A retry is answered from storage only when this matches. Without it an idempotency key is a
+   * bearer token for somebody else’s answer.
+   */
+  readonly requestFingerprint: string;
 }
 
 /**

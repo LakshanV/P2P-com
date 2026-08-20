@@ -143,10 +143,16 @@ export class InMemoryPermissionRepository implements PermissionRepository {
   #commit(working: WorkingSet): void {
     for (const policy of working.newPolicies) {
       if (this.#policies.some((held) => held.policyVersionId === policy.policyVersionId)) {
-        throw conflict('malformed-record', `policy version ${policy.policyVersionId} already exists`);
+        throw conflict(
+          'malformed-record',
+          `policy version ${policy.policyVersionId} already exists`,
+        );
       }
       if (this.#policies.some((held) => held.version === policy.version)) {
-        throw conflict('duplicate-policy-version', `policy version number ${policy.version} is taken`);
+        throw conflict(
+          'duplicate-policy-version',
+          `policy version number ${policy.version} is taken`,
+        );
       }
       if (this.#policies.some((held) => held.idempotencyKey === policy.idempotencyKey)) {
         throw conflict(
@@ -287,7 +293,10 @@ class InMemoryPermissionTransaction implements PermissionTransaction {
   }
 
   findGrantById(grantId: string): Promise<Grant | null> {
-    return one(this.#state.grants.find((entry) => entry.grantId === grantId), sealGrant);
+    return one(
+      this.#state.grants.find((entry) => entry.grantId === grantId),
+      sealGrant,
+    );
   }
 
   findGrantByIdempotencyKey(idempotencyKey: string): Promise<Grant | null> {
@@ -324,7 +333,10 @@ class InMemoryPermissionTransaction implements PermissionTransaction {
   }
 
   findRevocationByGrantId(grantId: string): Promise<Revocation | null> {
-    return one(this.#state.revocations.find((entry) => entry.grantId === grantId), sealRevocation);
+    return one(
+      this.#state.revocations.find((entry) => entry.grantId === grantId),
+      sealRevocation,
+    );
   }
 
   findRevocationByIdempotencyKey(idempotencyKey: string): Promise<Revocation | null> {
@@ -368,7 +380,10 @@ class InMemoryPermissionTransaction implements PermissionTransaction {
   }
 
   findDecisionById(decisionId: string): Promise<Decision | null> {
-    return one(this.#state.decisions.find((entry) => entry.decisionId === decisionId), sealDecision);
+    return one(
+      this.#state.decisions.find((entry) => entry.decisionId === decisionId),
+      sealDecision,
+    );
   }
 
   findDecisionByIdempotencyKey(idempotencyKey: string): Promise<Decision | null> {

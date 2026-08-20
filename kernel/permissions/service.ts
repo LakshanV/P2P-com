@@ -36,6 +36,7 @@
 import { compareInstants } from '../../platform/time/instant.ts';
 
 import { evaluate, type EvaluationInput } from './decide.ts';
+import { fingerprintDecisionRequest, type DecisionRequestFacts } from './fingerprint.ts';
 import { sealDecision, sealGrant, sealPolicyVersion, sealRevocation } from './immutable.ts';
 import type { AccountLookup, Clock, SessionAssertion, SessionValidator } from './ports.ts';
 import {
@@ -62,12 +63,20 @@ import {
   type Revocation,
   type Role,
 } from './types.ts';
-import { validateDecision, validateGrant, validatePolicyVersion, validateRevocation } from './validate.ts';
+import {
+  validateDecision,
+  validateGrant,
+  validatePolicyVersion,
+  validateRevocation,
+} from './validate.ts';
 
 export interface PublishPolicyRequest {
   readonly policyVersionId: string;
   readonly version: number;
-  readonly roles: readonly { readonly role: string; readonly capabilities: readonly { readonly action: string; readonly resourceType: string }[] }[];
+  readonly roles: readonly {
+    readonly role: string;
+    readonly capabilities: readonly { readonly action: string; readonly resourceType: string }[];
+  }[];
   readonly publishedBy: Origin;
   readonly idempotencyKey: string;
 }
@@ -287,7 +296,10 @@ export class PermissionService {
       const converged = await this.#converge(
         error,
         ['duplicate-grant', 'idempotency-key-reuse'],
-        () => this.#repository.withTransaction((tx) => tx.findGrantByIdempotencyKey(grant.idempotencyKey)),
+        () =>
+          this.#repository.withTransaction((tx) =>
+            tx.findGrantByIdempotencyKey(grant.idempotencyKey),
+          ),
       );
       if (converged === null) throw error;
       if (differencesBetweenGrants(converged, grant).length > 0) throw error;
@@ -371,19 +383,16 @@ export class PermissionService {
         ? null
         : assertPermissionIdentifier(request.resourceId, 'resourceId');
     const purpose: Purpose | null =
-      request.purpose === undefined || request.purpose === null ? null : assertPurpose(request.purpose);
+      request.purpose === undefined || request.purpose === null
+        ? null
+        : assertPurpose(request.purpose);
     const context = assertContext(request.context);
 
-    // A retry of a decision that has already been recorded returns the decision that was taken,
-    // not a fresh one: re-deciding would let a caller retry until the answer changed.
-    const already = await this.#repository.withTransaction((tx) =>
-      tx.findDecisionByIdempotencyKey(idempotencyKey),
-    );
-    if (already !== null) {
-      assertSameDecisionRequest(already, { decisionId, accountId, action, resourceType, resourceId, purpose });
-      return { decision: sealDecision(already), deduplicated: true };
-    }
-
+    // The session is resolved **before** anything is read from storage, including a retry. The
+    // first revision looked the idempotency key up first, which made the key a bearer token for
+    // somebody else's answer: present a stolen key with any garbage token and the stored `allow`
+    // came back without the token ever being validated. Nothing is returned from storage until
+    // this component knows who is asking.
     const session = await this.#validateSession(request.presentedToken);
     const account = await this.#accounts.findAccountForSubject(session.subjectId);
     if (account === null) {
@@ -409,24 +418,53 @@ export class PermissionService {
       );
     }
 
+    // Everything the answer depends on, in a canonical form. The session and the ABAC context are
+    // in here precisely because they are the two a stolen key would otherwise let somebody change.
+    const facts: DecisionRequestFacts = {
+      decisionId,
+      subjectId: session.subjectId,
+      sessionId: session.sessionId,
+      accountId,
+      action,
+      resourceType,
+      resourceId,
+      purpose,
+      context,
+    };
+    const requestFingerprint = fingerprintDecisionRequest(facts);
+
+    // Only now: a retry of a decision that has already been recorded returns the decision that was
+    // taken, rather than a fresh one — re-deciding would let a caller retry until the answer
+    // changed. The session behind this retry has been validated and the account checked, and the
+    // fingerprint says it is the same question.
+    const already = await this.#repository.withTransaction((tx) =>
+      tx.findDecisionByIdempotencyKey(idempotencyKey),
+    );
+    if (already !== null) {
+      assertSameDecisionRequest(already, facts, requestFingerprint);
+      return { decision: sealDecision(already), deduplicated: true };
+    }
+
     const now = this.#now();
-    const { policy, grants, revokedGrantIds } = await this.#repository.withTransaction(async (tx) => {
-      const active = await tx.findActivePolicy();
-      if (active === null) {
-        throw new PermissionError(
-          'no-such-policy',
-          'no policy version has been published, so no role permits anything and nothing can be ' +
-            'authorised. That is the correct answer, not a configuration error to work around',
-        );
-      }
-      const held = await tx.listGrantsForSubject(session.subjectId, accountId);
-      const revocations = await tx.listRevocationsForGrants(held.map((grant) => grant.grantId));
-      return {
-        policy: active,
-        grants: held,
-        revokedGrantIds: new Set(revocations.map((revocation) => revocation.grantId)),
-      };
-    });
+    const { policy, grants, revokedGrantIds } = await this.#repository.withTransaction(
+      async (tx) => {
+        const active = await tx.findActivePolicy();
+        if (active === null) {
+          throw new PermissionError(
+            'no-such-policy',
+            'no policy version has been published, so no role permits anything and nothing can be ' +
+              'authorised. That is the correct answer, not a configuration error to work around',
+          );
+        }
+        const held = await tx.listGrantsForSubject(session.subjectId, accountId);
+        const revocations = await tx.listRevocationsForGrants(held.map((grant) => grant.grantId));
+        return {
+          policy: active,
+          grants: held,
+          revokedGrantIds: new Set(revocations.map((revocation) => revocation.grantId)),
+        };
+      },
+    );
 
     const input: EvaluationInput = {
       subjectId: session.subjectId,
@@ -462,6 +500,7 @@ export class PermissionService {
           purpose,
           decidedAt: now,
           idempotencyKey,
+          requestFingerprint,
         },
         'request',
       ),
@@ -475,10 +514,13 @@ export class PermissionService {
       const converged = await this.#converge(
         error,
         ['idempotency-key-reuse', 'malformed-record'],
-        () => this.#repository.withTransaction((tx) => tx.findDecisionByIdempotencyKey(idempotencyKey)),
+        () =>
+          this.#repository.withTransaction((tx) => tx.findDecisionByIdempotencyKey(idempotencyKey)),
       );
       if (converged === null) throw error;
-      assertSameDecisionRequest(converged, { decisionId, accountId, action, resourceType, resourceId, purpose });
+      // The same complete comparison the pre-insert path uses. A convergence that checked less than
+      // a retry checks would be the same hole reached by a different route.
+      assertSameDecisionRequest(converged, facts, requestFingerprint);
       return { decision: sealDecision(converged), deduplicated: true };
     }
 
@@ -488,7 +530,9 @@ export class PermissionService {
   /** One decision, by id, or null. */
   async findDecision(decisionId: string): Promise<Decision | null> {
     assertPermissionIdentifier(decisionId, 'decisionId');
-    const decision = await this.#repository.withTransaction((tx) => tx.findDecisionById(decisionId));
+    const decision = await this.#repository.withTransaction((tx) =>
+      tx.findDecisionById(decisionId),
+    );
     return decision === null ? null : sealDecision(decision);
   }
 
@@ -693,6 +737,11 @@ function differencesBetweenPolicies(existing: PolicyVersion, incoming: PolicyVer
   if (existing.policyVersionId !== incoming.policyVersionId) differences.push('policyVersionId');
   if (existing.version !== incoming.version) differences.push('version');
   if (JSON.stringify(existing.roles) !== JSON.stringify(incoming.roles)) differences.push('roles');
+  // Who published it is part of the authority statement, not metadata about it. `publishedAt` is
+  // excluded because this component generates it, so including it would make every retry a
+  // mismatch and idempotency impossible.
+  if (existing.publishedBy.kind !== incoming.publishedBy.kind) differences.push('publishedBy.kind');
+  if (existing.publishedBy.id !== incoming.publishedBy.id) differences.push('publishedBy.id');
   return differences;
 }
 
@@ -728,6 +777,10 @@ function differencesBetweenGrants(existing: Grant, incoming: Grant): string[] {
   if (JSON.stringify(existing.condition) !== JSON.stringify(incoming.condition)) {
     differences.push('condition');
   }
+  // Who granted it. A retry under one key that changes the grantor is a different record of who
+  // decided somebody could do this. `grantedAt` is excluded: it is service-generated.
+  if (existing.grantedBy.kind !== incoming.grantedBy.kind) differences.push('grantedBy.kind');
+  if (existing.grantedBy.id !== incoming.grantedBy.id) differences.push('grantedBy.id');
   return differences;
 }
 
@@ -747,6 +800,10 @@ function differencesBetweenRevocations(existing: Revocation, incoming: Revocatio
   for (const field of ['revocationId', 'grantId', 'reason'] as const) {
     if (existing[field] !== incoming[field]) differences.push(field);
   }
+  // Who revoked it. `revokedAt` is excluded: it is service-generated, and it is the one thing a
+  // second revocation must never be able to move.
+  if (existing.revokedBy.kind !== incoming.revokedBy.kind) differences.push('revokedBy.kind');
+  if (existing.revokedBy.id !== incoming.revokedBy.id) differences.push('revokedBy.id');
   return differences;
 }
 
@@ -768,28 +825,32 @@ function assertSameRevocation(existing: Revocation, incoming: Revocation): void 
  */
 function assertSameDecisionRequest(
   existing: Decision,
-  incoming: {
-    decisionId: string;
-    accountId: string;
-    action: string;
-    resourceType: string;
-    resourceId: string | null;
-    purpose: Purpose | null;
-  },
+  incoming: DecisionRequestFacts,
+  requestFingerprint: string,
 ): void {
+  // The fingerprint is the decision. Everything below only exists to say *which* input moved, so a
+  // caller is told what it got wrong rather than being handed two hashes.
+  if (existing.requestFingerprint === requestFingerprint) return;
+
   const differences: string[] = [];
   if (existing.decisionId !== incoming.decisionId) differences.push('decisionId');
+  if (existing.subjectId !== incoming.subjectId) differences.push('the authenticated subject');
+  if (existing.sessionId !== incoming.sessionId) differences.push('the session it was decided for');
   if (existing.accountId !== incoming.accountId) differences.push('accountId');
   if (existing.action !== incoming.action) differences.push('action');
   if (existing.resourceType !== incoming.resourceType) differences.push('resourceType');
   if (existing.resourceId !== incoming.resourceId) differences.push('resourceId');
   if (existing.purpose !== incoming.purpose) differences.push('purpose');
-  if (differences.length === 0) return;
+
+  // Every named field agrees and the fingerprints do not, so what moved is the one input the
+  // record does not carry as a column: the ABAC context that satisfied the condition.
+  if (differences.length === 0) differences.push('the ABAC context');
 
   throw new PermissionError(
     'idempotency-key-reuse',
     `idempotency key "${existing.idempotencyKey}" already recorded a decision about a different ` +
       `question (${differences.join(', ')}). Returning it would hand back an answer computed for ` +
-      'something else, which is how a confused deputy is built',
+      'something else, which is how a confused deputy is built — and how a stolen idempotency key ' +
+      'would otherwise buy somebody else’s authorisation',
   );
 }

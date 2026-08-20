@@ -255,6 +255,7 @@ CREATE TABLE IF NOT EXISTS kernel_permissions.permission_decision (
   purpose            text,
   decided_at         timestamptz NOT NULL,
   idempotency_key    text        NOT NULL,
+  request_fingerprint text       NOT NULL,
 
   CONSTRAINT permission_decision_pkey PRIMARY KEY (decision_id),
   CONSTRAINT permission_decision_idempotency_unique UNIQUE (idempotency_key),
@@ -269,6 +270,83 @@ CREATE TABLE IF NOT EXISTS kernel_permissions.permission_decision (
   CONSTRAINT permission_decision_allow_is_traceable
     CHECK (effect <> 'allow' OR deciding_grant_id IS NOT NULL),
   CONSTRAINT permission_decision_explained CHECK (length(btrim(explanation)) >= 10),
+  -- The fingerprint over every input the decision depended on, including the session it was
+  -- computed for and the ABAC context that satisfied it. A retry is answered from this row only
+  -- when the fingerprint matches, so a stolen idempotency key buys nothing.
+  CONSTRAINT permission_decision_fingerprint_shape
+    CHECK (request_fingerprint ~ '^[0-9a-f]{64}
+  CONSTRAINT permission_decision_purpose_known
+    CHECK (purpose IS NULL OR purpose IN ('dispute-investigation', 'fraud-investigation',
+                                          'support-request', 'regulatory-request',
+                                          'payment-investigation', 'safety-review',
+                                          'system-maintenance')),
+  CONSTRAINT permission_decision_id_opaque
+    CHECK (kernel_permissions.is_opaque_identifier(decision_id)),
+  CONSTRAINT permission_decision_subject_opaque
+    CHECK (kernel_permissions.is_opaque_identifier(subject_id)),
+  CONSTRAINT permission_decision_account_opaque
+    CHECK (kernel_permissions.is_opaque_identifier(account_id)),
+  CONSTRAINT permission_decision_session_opaque
+    CHECK (kernel_permissions.is_opaque_identifier(session_id)),
+  CONSTRAINT permission_decision_grant_opaque
+    CHECK (deciding_grant_id IS NULL OR kernel_permissions.is_opaque_identifier(deciding_grant_id)),
+  CONSTRAINT permission_decision_policy_opaque
+    CHECK (kernel_permissions.is_opaque_identifier(policy_version_id)),
+  CONSTRAINT permission_decision_idempotency_opaque
+    CHECK (kernel_permissions.is_opaque_identifier(idempotency_key)),
+  CONSTRAINT permission_decision_decided_at_finite
+    CHECK (decided_at > '-infinity'::timestamptz AND decided_at < 'infinity'::timestamptz)
+);
+
+COMMENT ON TABLE kernel_permissions.permission_decision IS
+  'What was decided, for whom, on what, and why. The explanation is a column because a denial nobody can explain is one nobody can appeal.';
+
+COMMENT ON COLUMN kernel_permissions.permission_decision.request_fingerprint IS
+  'SHA-256 over every decision-authoritative input, including the session and the ABAC context. A retry is answered from this row only when it matches.';
+
+CREATE INDEX IF NOT EXISTS permission_decision_subject_idx
+  ON kernel_permissions.permission_decision (subject_id, account_id, decided_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- Authority history is append-only
+-- ---------------------------------------------------------------------------
+
+-- Written as a trigger rather than as column privileges because no roles exist yet: this holds for
+-- every connection, including the one an operator opens by hand. What it stops is the UPDATE that
+-- quietly widens a grant, and the DELETE that removes the evidence a grant ever existed.
+CREATE OR REPLACE FUNCTION kernel_permissions.refuse_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $guard$
+BEGIN
+  RAISE EXCEPTION
+    'authority history is append-only: % on % is refused. Withdraw a grant by appending a revocation',
+    TG_OP, TG_TABLE_NAME
+    USING ERRCODE = 'restrict_violation';
+END;
+$guard$;
+
+COMMENT ON FUNCTION kernel_permissions.refuse_mutation() IS
+  'Raises on any UPDATE or DELETE against any table in this schema.';
+
+CREATE TRIGGER permission_policy_version_is_append_only
+  BEFORE UPDATE OR DELETE ON kernel_permissions.permission_policy_version
+  FOR EACH ROW EXECUTE FUNCTION kernel_permissions.refuse_mutation();
+
+CREATE TRIGGER permission_grant_is_append_only
+  BEFORE UPDATE OR DELETE ON kernel_permissions.permission_grant
+  FOR EACH ROW EXECUTE FUNCTION kernel_permissions.refuse_mutation();
+
+CREATE TRIGGER permission_revocation_is_append_only
+  BEFORE UPDATE OR DELETE ON kernel_permissions.permission_revocation
+  FOR EACH ROW EXECUTE FUNCTION kernel_permissions.refuse_mutation();
+
+CREATE TRIGGER permission_decision_is_append_only
+  BEFORE UPDATE OR DELETE ON kernel_permissions.permission_decision
+  FOR EACH ROW EXECUTE FUNCTION kernel_permissions.refuse_mutation();
+
+COMMIT;
+),
   CONSTRAINT permission_decision_purpose_known
     CHECK (purpose IS NULL OR purpose IN ('dispute-investigation', 'fraud-investigation',
                                           'support-request', 'regulatory-request',

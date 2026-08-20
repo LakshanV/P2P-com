@@ -80,7 +80,8 @@ export class StubSessionValidator implements SessionValidator {
 
   /** Stop refusing, for a test that makes the validator misbehave and then behave. */
   clearRefusal(): void {
-    const { refuseWith: _ignored, ...rest } = this.#options;
+    const rest = { ...this.#options };
+    delete (rest as { refuseWith?: Error }).refuseWith;
     this.#options = rest;
   }
 
@@ -106,7 +107,9 @@ export class StubAccountLookup implements AccountLookup {
   readonly asked: string[] = [];
   #accounts: Map<string, AccountAssertion>;
 
-  constructor(accounts: readonly AccountAssertion[] = [{ accountId: ACCOUNT, subjectId: SUBJECT }]) {
+  constructor(
+    accounts: readonly AccountAssertion[] = [{ accountId: ACCOUNT, subjectId: SUBJECT }],
+  ) {
     this.#accounts = new Map(accounts.map((account) => [account.subjectId, account]));
   }
 
@@ -322,6 +325,9 @@ export function decisionRow(overrides: Record<string, unknown> = {}): Record<str
     purpose: null,
     decided_at: '2026-04-01T12:00:00.000000Z',
     idempotency_key: 'idem_01HQZXTESTROW',
+    // The fingerprint over the decision request's authoritative inputs — subject, session and
+    // context included — so a retry cannot be answered from somebody else's stored decision.
+    request_fingerprint: 'a'.repeat(64),
     ...overrides,
   };
 }

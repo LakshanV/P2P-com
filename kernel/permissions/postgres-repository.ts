@@ -23,12 +23,7 @@
 import type { Database, DatabaseClient } from '../../platform/db/client.ts';
 import { InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
 
-import {
-  sealDecision,
-  sealGrant,
-  sealPolicyVersion,
-  sealRevocation,
-} from './immutable.ts';
+import { sealDecision, sealGrant, sealPolicyVersion, sealRevocation } from './immutable.ts';
 import type { PermissionRepository, PermissionTransaction } from './repository.ts';
 import {
   PermissionError,
@@ -182,6 +177,7 @@ const DECISION_COLUMNS = [
   'purpose',
   'decided_at',
   'idempotency_key',
+  'request_fingerprint',
 ] as const;
 
 /** Every `timestamptz` in this schema. All are projected as text; nothing parses one as a Date. */
@@ -306,7 +302,10 @@ export function toGrant(row: Record<string, unknown>): Grant {
           resourceType: row.resource_type,
           resourceId: optionalText(row.resource_id, 'resource_id'),
           purpose: row.purpose ?? null,
-          condition: row.condition === null || row.condition === undefined ? null : json(row.condition, 'condition'),
+          condition:
+            row.condition === null || row.condition === undefined
+              ? null
+              : json(row.condition, 'condition'),
           policyVersionId: text(row.policy_version_id, 'policy_version_id'),
           grantedAt: instant(row.granted_at, 'granted_at'),
           notBefore: optionalInstant(row.not_before, 'not_before'),
@@ -358,6 +357,7 @@ export function toDecision(row: Record<string, unknown>): Decision {
           purpose: row.purpose ?? null,
           decidedAt: instant(row.decided_at, 'decided_at'),
           idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
+          requestFingerprint: text(row.request_fingerprint, 'request_fingerprint'),
         },
         'stored row',
       ),
@@ -636,7 +636,7 @@ class PostgresPermissionTransaction implements PermissionTransaction {
     try {
       await this.#client.query(
         `INSERT INTO ${DECISION_TABLE} (${DECISION_COLUMNS.join(', ')})
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15);`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);`,
         [
           decision.decisionId,
           decision.subjectId,
@@ -653,6 +653,7 @@ class PostgresPermissionTransaction implements PermissionTransaction {
           decision.purpose,
           decision.decidedAt,
           decision.idempotencyKey,
+          decision.requestFingerprint,
         ],
       );
     } catch (error) {

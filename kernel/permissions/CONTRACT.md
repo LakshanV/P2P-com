@@ -79,7 +79,7 @@ Seven operations, three of which are reads. There is no update, no delete, no su
 | **Purpose limitation** | A staff role must declare a purpose from a closed vocabulary, and it must be the purpose the grant names. Enforced in the service, in the record validator and by a database `CHECK` |
 | **Typed ABAC** | Conditions are one of six predicate kinds over an **allowlisted** context. A predicate over an undeclared attribute is refused when the grant is written, because it would otherwise never match and the grant would silently never apply |
 | **Deterministic explanations** | The same inputs produce the same decision *and the same words*. Ties break by grant id. A decision nobody can reproduce is one nobody can appeal |
-| **Exact idempotency** | A retry under the same key returns the decision that was taken. A key reused for a *different* question is refused — returning it would hand back an answer computed for something else |
+| **Exact idempotency** | A retry under the same key returns the decision that was taken — but only after its session is validated, and only when a stored SHA-256 over every authoritative input, the ABAC context included, matches exactly (§8). A key reused for a different question, session or context is refused |
 | **Concurrency safety** | Uniqueness is enforced at commit against the store as it stands, in the reference repository and by constraints in PostgreSQL. Two identical grants racing produce one grant; two revocations produce one revocation |
 | **Immutability at every boundary** | Every record crossing a boundary is deep-frozen, including nested condition trees and capability lists |
 | **Determinism** | Identifiers, keys and context come from the caller; time from an injected `Clock`. This component reads no wall clock and generates no randomness |
@@ -258,6 +258,34 @@ because the record is the evidence of what was permitted at that moment.
 A caller that wants the *current* answer asks a new question with a new key. The two are different
 questions and the API makes them look different.
 
+**An idempotency key is not a bearer token for an answer.** Two rules make that true, and both were
+added as a correction after the first revision got them wrong:
+
+1. **The session is validated before anything is read from storage.** A retry resolves its subject
+   through K-02's port and its account through K-03's, and is refused for a bad session or a
+   mismatched account *before* the key is looked up at all. The first revision looked the key up
+   first, which meant presenting somebody else's key with any garbage token returned their `allow`
+   without the caller ever holding a session.
+2. **Every decision stores a SHA-256 over all of its authoritative inputs** — decision id, subject,
+   **session**, account, action, resource type and id, purpose, and the **allowlisted ABAC
+   context**, in a canonical form (`fingerprint.ts`). A stored decision is returned only when the
+   retry's fingerprint matches it exactly. The context is in there because it is not a column: a
+   grant conditioned on one region could otherwise be satisfied once and replayed from anywhere.
+
+Two consequences worth stating, because both are deliberate:
+
+- **Idempotency keys are scoped to the session that earned the answer.** The same person on a
+  rotated session is asking a new question and gets a new decision rather than the old one.
+- **Anything short of a complete match is refused, not answered** — `idempotency-key-reuse`, naming
+  the input that moved. The same comparison runs on the post-conflict convergence path, because a
+  convergence that checked less than a retry checks would be the same hole reached by another route.
+
+The equality checks on policy versions, grants and revocations follow the same rule: every
+caller-supplied authority-bearing field is compared, **including the author** (`publishedBy`,
+`grantedBy`, `revokedBy`). Only the service-generated instants (`publishedAt`, `grantedAt`,
+`revokedAt`) are excluded, because including them would make every retry a mismatch and idempotency
+impossible.
+
 Decision records are append-only and are never pruned by this component. Retention is undelivered
 work (§9), and until it exists the table grows without bound — stated here because a growing table
 is an operational fact somebody should learn from a contract rather than from a disk alert.
@@ -300,6 +328,7 @@ npm run check:migrations                           # the FND-002a contract over 
 node --test tests/permissions.test.ts              # the trust boundary, refusals, AI limits
 node --test tests/permissions-decisions.test.ts    # RBAC, ABAC, deny precedence, purpose, isolation
 node --test tests/permissions-concurrency.test.ts  # races, idempotency, append-only history
+node --test tests/permissions-idempotency.test.ts  # stolen keys, changed context, changed session, authors
 node --test tests/permissions-repository.test.ts   # port conformance, adapter, migration, this contract
 npm run test:integration                           # live PostgreSQL; skips without a database
 ```

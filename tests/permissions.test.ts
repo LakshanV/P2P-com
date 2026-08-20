@@ -204,7 +204,11 @@ test('the subject comes from the session, and the session is re-checked here', a
     'an unknown assurance is refused rather than ranked lowest',
   );
 
-  assert.equal(harness.repository.decisions().length, 0, 'none of these produced a decision record');
+  assert.equal(
+    harness.repository.decisions().length,
+    0,
+    'none of these produced a decision record',
+  );
 });
 
 test('a subject with no universal account cannot be authorised', async () => {
@@ -394,7 +398,7 @@ test('actions, resource types, purposes and context keys are closed and document
     }
   }
   assert.ok(PURPOSES.length >= 5, 'the purpose vocabulary must cover the real staff reasons');
-  assert.deepEqual([...IDENTITY_REFUSALS ? Object.keys(IDENTITY_REFUSALS) : []].sort(), [
+  assert.deepEqual([...(IDENTITY_REFUSALS ? Object.keys(IDENTITY_REFUSALS) : [])].sort(), [
     'malformed-identifier',
     'natural-identifier',
     'secret-bearing-input',
@@ -485,9 +489,7 @@ test('AI_AGENT may hold only explicitly granted tool capabilities', async () => 
   }
   for (const resourceType of AI_FORBIDDEN_RESOURCES) {
     await assert.rejects(
-      harness.service.grant(
-        grantRequest({ role: 'AI_AGENT', action: 'read', resourceType }),
-      ),
+      harness.service.grant(grantRequest({ role: 'AI_AGENT', action: 'read', resourceType })),
       (error: unknown) => codeOf(error) === 'ai-not-permitted',
       `AI is never the authority over ${resourceType}`,
     );
@@ -527,7 +529,10 @@ test('AI can never grant a permission, and a policy cannot widen it', async () =
   // And AI cannot author policy or a grant at all.
   await harness.service.publishPolicy(policyRequest());
   for (const write of [
-    () => harness.service.publishPolicy(policyRequest({ version: 2, publishedBy: { kind: 'ai', id: 'agent-1' } })),
+    () =>
+      harness.service.publishPolicy(
+        policyRequest({ version: 2, publishedBy: { kind: 'ai', id: 'agent-1' } }),
+      ),
     () => harness.service.grant(grantRequest({ grantedBy: { kind: 'ai', id: 'agent-1' } })),
   ]) {
     await assert.rejects(
@@ -544,7 +549,7 @@ test('AI can never grant a permission, and a policy cannot widen it', async () =
 
 test('the service exposes no bypass, no update and no delete', () => {
   const operations = new Set<string>();
-  let proto: object | null = PermissionService.prototype as object;
+  let proto: object | null = PermissionService.prototype;
   while (proto !== null && proto !== Object.prototype) {
     for (const key of Object.getOwnPropertyNames(proto)) operations.add(key);
     proto = Object.getPrototypeOf(proto) as object | null;
@@ -567,7 +572,10 @@ test('every record crossing the boundary is sealed all the way down', async () =
     }),
   );
 
-  assert.ok(isSealed(granted.grant), 'a returned grant must be frozen, including its condition tree');
+  assert.ok(
+    isSealed(granted.grant),
+    'a returned grant must be frozen, including its condition tree',
+  );
   const policy = await harness.service.activePolicy();
   assert.ok(isSealed(policy), 'and a policy version, including every capability list');
 

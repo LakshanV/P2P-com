@@ -53,8 +53,8 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures` and by every runner path (FND-002d, as corrected). **Never loaded into a live server.** No business-module, financial-policy or production data. |
-| Migrations | 8 forward + 8 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, the `kernel_identity` schema with K-01's write-once subject table, the `kernel_accounts` schema with K-03's universal-account table and its `UNIQUE (subject_id)` one-account-per-party constraint, and the `kernel_authentication` schema with K-02's binding, evidence and session tables. Five carry triggers that refuse to update or delete a row; K-02's session trigger permits exactly two changes — rotate the secret, record a revocation — and refuses everything else. No business-module tables exist. |
-| Tests | 819 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-02 Authentication, K-03 Accounts, K-05 Configuration, K-08 Event Infrastructure and K-09 Audit Foundation suites. A further 41 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Migrations | 9 forward + 9 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, the `kernel_identity` schema with K-01's write-once subject table, the `kernel_accounts` schema with K-03's universal-account table and its `UNIQUE (subject_id)` one-account-per-party constraint, the `kernel_authentication` schema with K-02's binding, evidence and session tables, and the `kernel_permissions` schema with K-04's policy-version, grant, revocation and decision tables. Nine triggers across six tables refuse to update or delete a row — all four of K-04's, because authority history is append-only; K-02's session trigger permits exactly two changes — rotate the secret, record a revocation — and refuses everything else. No business-module tables exist. |
+| Tests | 901 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, K-05 Configuration, K-08 Event Infrastructure and K-09 Audit Foundation suites. A further 47 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
@@ -211,7 +211,7 @@ a live server** — a foundation is not a finished component.
 | Identity | **Foundation only** — FND-004a, §11.21–§11.22. K-03 is its first consumer | K-01 |
 | Accounts | **Foundation only** — FND-004b, §11.23–§11.24. One account per subject; no caller | K-03 |
 | Authentication | **Foundation only** — FND-004c, §11.25. Bindings, evidence and sessions with rotation and revocation; **no verifier ships**, so nothing can authenticate a real person, and no unit consumes a session | K-02 |
-| Permissions framework | Absent | K-04 |
+| Permissions framework | **Foundation only** — FND-004d, §11.26. Deny by default, explicit grants, deny precedence, staff purpose limitation; **nothing calls it**, so no path is guarded | K-04 |
 | Audit framework | **Foundation only** — FND-003c, §11.19–§11.20. No unit records anything | K-09 |
 | Configuration | **Foundation only** — FND-003a, §11.10–§11.13 | K-05 |
 | Policy engine | Absent | K-06 |
@@ -311,36 +311,44 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 **Status:** IN PROGRESS. Subtasks FND-001a, FND-001b and FND-001d delivered. **FND-001c is BLOCKED by BL-10** — it is the only remaining subtask, and it cannot be delivered by any local means.
 
-**Six kernel components now have foundations**, and none is complete. Build step B-1 is covered — K-05 Configuration (§11.10–§11.13) and K-08 Event Infrastructure (§11.14–§11.15) — and four of B-2 are: K-09 Audit Foundation (§11.19–§11.20), K-01 Identity (§11.21–§11.22), K-03 Accounts (§11.23–§11.24) and K-02 Authentication (§11.25). K-09 was buildable ahead of its declared K-01 dependency because the audit *mechanism* needs no identity; K-01 has now landed underneath it, and K-02 and K-03 on top of it.
+**Seven kernel components now have foundations**, and none is complete. Build step B-1 is covered — K-05 Configuration (§11.10–§11.13) and K-08 Event Infrastructure (§11.14–§11.15) — and five of B-2 are: K-09 Audit Foundation (§11.19–§11.20), K-01 Identity (§11.21–§11.22), K-03 Accounts (§11.23–§11.24), K-02 Authentication (§11.25) and K-04 Permissions (§11.26). K-09 was buildable ahead of its declared K-01 dependency because the audit *mechanism* needs no identity; K-01 has now landed underneath it, and K-02, K-03 and K-04 on top of it.
 
-**FND-004b was the first time one kernel component depended on another and was proved to**, and FND-004c has made the second: K-02 asks K-01, through the same one-method public contract K-03 uses, whether the subject a binding names exists. Five transaction-enlisted paths now exist (K-01, K-02, K-03, K-08, K-09), each letting a caller couple a domain write to a kernel write in one transaction; all five are capabilities and **no unit uses any of them**. What every one of the six components still lacks is the same list: no API, no UI, no enforced authority, no caller, and nothing ever applied to a running PostgreSQL server.
+**Every link of the kernel's internal chain `K-01 → K-02/K-03 → K-04` now exists in code, and none of them has a caller.** K-02 asks K-01 whether a subject exists; K-03 asks the same; K-04 asks K-02 who is asking and K-03 which account they hold, each through a one-method public contract and nothing else. Six transaction-enlisted paths now exist (K-01, K-02, K-03, K-04, K-08, K-09), each letting a caller couple a domain write to a kernel write in one transaction; all six are capabilities and **no unit uses any of them**. What every one of the seven components still lacks is the same list: no API, no UI, no caller, and nothing ever applied to a running PostgreSQL server.
 
-FND-002d (seed and fixture strategy, P0-17), named here previously as the next task, was delivered and twice corrected (§11.16–§11.18). FND-003c delivered K-09 (§11.19) and was corrected once (§11.20). FND-004a delivered K-01 (§11.21) and was corrected once (§11.22). FND-004b delivered K-03 (§11.23) and was corrected once (§11.24). FND-004c has now delivered K-02 (§11.25). Each of those was, when selected, the next genuinely unblocked task; this section records the current one below.
+FND-002d (seed and fixture strategy, P0-17), named here previously as the next task, was delivered and twice corrected (§11.16–§11.18). FND-003c delivered K-09 (§11.19) and was corrected once (§11.20). FND-004a delivered K-01 (§11.21) and was corrected once (§11.22). FND-004b delivered K-03 (§11.23) and was corrected once (§11.24). FND-004c delivered K-02 (§11.25). FND-004d has now delivered K-04 (§11.26). Each of those was, when selected, the next genuinely unblocked task; this section records the current one below.
 
-**Next genuinely unblocked task: FND-004d — K-04 Permissions foundation.** It is next by
-dependency order, and the dependency order now confirms it rather than merely permitting it:
-[MODULE_MAP.md §3](./MODULE_MAP.md#3-the-commerce-kernel) fixes the internal chain as
-`K-01 → K-02/K-03 → K-04` and declares K-04's dependencies to be **K-01 and K-03** — both built
-(§11.21–§11.24). With K-02 landed (§11.25), every component upstream of K-04 in that chain exists,
-and K-04 is the last unbuilt component in it. Nothing else in build step B-2 is closer to the front.
+**Next genuinely unblocked task: FND-005a — the first provider adapter behind K-02's `Verifier` port.**
 
-It also repays a debt **five** components are now carrying. K-09 refuses every actor that claims an
-authentication method. K-01 and K-03 each record an origin nothing has verified. K-02 can now say
-who a party is and how strongly that is known — and says plainly, in its own contract §8, that
-**authentication is not authorisation**: nothing decides what a validated session may do. K-04 is
-the component that turns "who this is" into "what they may do", and until it exists every one of
-those placeholders stays a placeholder. K-09 and K-01 will each still need a bounded migration to
-relax a `CHECK` deliberately rather than silently once a real verifier and a real authority exist.
+It is selected because it is the only remaining change that turns a foundation into a capability
+anybody can use, and because every other candidate now waits on it. Every link of the kernel chain
+`K-01 → K-02/K-03 → K-04` now exists in code (§11.21–§11.26), and none of it **can be exercised by a
+real party**: K-02 ships no verifier, so no real person can authenticate, so no real session reaches
+K-04, so no authorisation decision in this repository has ever been about anybody. A single
+provider adapter — one implementation of a two-method port, with its own bounded slice of tests —
+is what removes that.
 
-Two alternatives are worth naming, both unblocked and both smaller. The **registration path** — a
-K-01 subject and a K-03 account created in one transaction through both enlisted paths — would give
-K-01 and K-03 their first real caller. The argument against taking it first has weakened but not
-gone: K-02 now exists, so a registration path *could* sit behind a session, except that K-02 ships
-no verifier, so the session behind it would still be one nobody had to earn. The other is the
-**first provider adapter** — a real verifier behind K-02's `Verifier` port, which is the single
-change that would turn K-02 from a contract into a login. It is not selected here because it is a
-provider integration rather than a kernel foundation slice, and because K-04 unblocks more of the
-graph.
+It is unblocked in the sense that matters: the port exists, its contract is fixed, and a passkey or
+TOTP adapter needs no credential from outside the repository to be *written and tested against a
+deterministic double*. What it cannot do without BL-04-style external access is prove itself against
+a live provider, and that limit should be stated in its own evidence block rather than discovered
+later.
+
+The alternatives, and why each waits:
+
+- **The registration path** — a K-01 subject and a K-03 account created in one transaction through
+  both enlisted paths — is still unblocked and still small. It would give K-01 and K-03 their first
+  real caller. It waits because a registration path with no verifier behind it is a way to fill the
+  party table with anything, and that argument has not weakened.
+- **Wiring K-09 audit and K-08 events to K-02 and K-04** is the integration the two most obviously
+  need: v3 §53 lists permission changes and account changes as auditable, and neither is recorded.
+  It waits because auditing decisions nobody makes about parties nobody authenticated records
+  nothing worth reading, and because K-09's actor `CHECK` needs a bounded migration to accept a
+  real authenticated actor — which should happen once there is one.
+- **K-07 Feature Flags** and **K-06 Policy Engine** are both unblocked (B-2 and B-3), and both are
+  further from the critical path than a verifier.
+- **The operational role matrix** (v3 §47 Level 4) is now derivable from K-04's vocabulary and
+  policy structure, and nobody has derived or reviewed one. That is a documentation slice, not a
+  foundation slice.
 
 Also still unblocked, and still worth doing: collapsing K-05's private instant module onto
 `platform/time/instant.ts` (§11.14) and `platform/fixtures/fingerprint.ts` onto K-08's
@@ -468,7 +476,7 @@ The first true vertical slice is scheduled as **build step B-5 / Phase 1**: *acc
 
 ## 11. Evidence register
 
-Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository: four documentation artefacts from DOC-001 and twelve delivered engineering tasks, each backed by named commands with recorded exit codes. Six of those tasks were subsequently corrected after review, and each correction has its own numbered block rather than being folded into the original — an over-claim that is quietly edited away teaches nobody anything. The full set of blocks is §11.1–§11.25.
+Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository: four documentation artefacts from DOC-001 and thirteen delivered engineering tasks, each backed by named commands with recorded exit codes. Seven of those tasks were subsequently corrected after review, and each correction has its own numbered block rather than being folded into the original — an over-claim that is quietly edited away teaches nobody anything. The full set of blocks is §11.1–§11.27.
 
 | Item | Status | Evidence type | Evidence |
 |---|---|---|---|
@@ -489,6 +497,8 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | FND-004b — K-03 Universal Account foundation | DELIVERED | Commands + exit codes + thirteen planted regressions | See §11.23, corrected in §11.24. **Nothing marked COMPLETE.** The checklist K-03 row moves to `IN PROGRESS`: no caller, no authentication, no permissions, no profile, no capability model, and `UNIQUE (subject_id)` has never refused an insert. |
 | FND-004a — K-01 Identity foundation | DELIVERED | Commands + exit codes + sixteen planted regressions | See §11.21, corrected in §11.22. **Nothing marked COMPLETE.** The checklist K-01 row moves to `IN PROGRESS`: no consumer, no authentication, no permission check, no audit integration, and the write-once trigger has never refused anything. |
 | FND-004c — K-02 Authentication foundation | DELIVERED | Commands + exit codes + planted regressions on every guard | See §11.25. **Nothing marked COMPLETE.** The checklist K-02 row moves to `IN PROGRESS`: **no verifier ships**, so nothing can authenticate a real person; no API, no UI, no permissions (K-04), no audit (K-09), no events (K-08), no registration, no recovery, and the schema has never been applied to a live server. |
+| FND-004d — K-04 Permissions foundation | DELIVERED | Commands + exit codes + planted regressions on every guard | See §11.26. **Nothing marked COMPLETE.** The checklist K-04 row moves to `IN PROGRESS`: **nothing calls it**, so no path in this repository is guarded; no API, no UI, no policy studio, no audit record (K-09), no event (K-08), no business-module actions, no operational role matrix, and the schema has never been applied to a live server. |
+| FND-004d — K-04 idempotency correction | DELIVERED | Commands + exit codes + a planted regression failing 5 of 13 adversarial cases | See §11.27. **Nothing marked COMPLETE.** An idempotency key was a bearer token for somebody else’s decision: the stored answer was returned before the presented session was validated, and the retry comparison omitted the subject, the session and the ABAC context. Both are closed, and every decision now stores a fingerprint of its own inputs. |
 
 **Evidence block for DOC-001:**
 
@@ -3455,6 +3465,188 @@ STILL NOT VERIFIED: **No verifier ships**, so nothing here can authenticate a re
                     triggers and the session-rewrite guard are declared and unproven, and the
                     opt-in suite that would prove them (tests/integration/authentication.
                     integration.ts, 9 cases) skips with its reason stated.
+```
+
+---
+
+### 11.26 Evidence — FND-004d (K-04 Permissions foundation)
+
+**Task:** FND-004d — K-04 Permissions foundation.
+**Selected in:** §8, as the last unbuilt component of the kernel's internal chain.
+**Status:** DELIVERED. **Nothing marked COMPLETE.** The checklist K-04 contract row moves to
+`COMPLETE`; the K-04 implementation row moves to `IN PROGRESS`.
+
+**What K-04 is, in one sentence:** the component that answers *may this authenticated subject take
+this action on this resource, in this account, right now* — by evaluating grants it stored itself
+against a policy version it published, and **never by asking the caller**.
+
+**Delivered:**
+
+| Area | What landed |
+|---|---|
+| Trust model | Three injected ports: a **provider-neutral** `SessionValidator` (K-02's `AuthenticationService.validate` satisfies it structurally), an `AccountLookup` (K-03's `findAccountForSubject`), and a `Clock`. What a port asserts is **re-checked**: a revoked session, one past either expiry, or one carrying an unrecognised assurance is refused. `NO_SESSIONS` and `NO_ACCOUNTS` fail closed |
+| Caller cannot decide | `allowed`, `effect`, `decision`, `subjectId`, `role`, `roles`, `permissions`, `grants`, `purposeSatisfied`, `isStaff`, `bypass`, `superAdmin`, `override`, `aiAuthority` and `policyVersionId` are refused **by name** (`caller-asserted-authorization`), before the session is even validated |
+| Deny by default | The answer is `deny` before anything is examined; only an explicit, in-force, policy-permitted grant moves it |
+| Deny precedence | Any applicable deny wins over any allow, whatever the specificity and whatever the write order. No scoring, no most-recent-wins |
+| Least privilege | A grant with a `resourceId` covers one resource; without, the type **inside one account**. There is no grant shape covering every account |
+| Roles | The v1.0 guide §52 vocabulary, in order, with **no role-to-authority mapping in the code**: what a role may do is a published, numbered policy version. `SUPER_ADMIN` confers nothing and has no code path |
+| Staff purpose | v3 §5.3's role-based, purpose-based, audited access: a closed purpose vocabulary, mandatory for the seven staff roles, refused for the others, enforced in the service, the validator and a database `CHECK` |
+| ABAC | Six typed predicate kinds over an **allowlisted** context. A predicate over an undeclared attribute is refused at write time, because it would otherwise never match and the grant would silently never apply. Context values pass the K-01 identifier rules, so an email cannot be a region |
+| Temporal validity | `notBefore` / `expiresAt` honoured against the injected clock, plus append-only revocation with one revocation per grant |
+| Decision records | Effect, machine-readable reason, deterministic explanation, deciding grant, policy version, session and purpose. An `allow` always names a grant — the database refuses one that does not |
+| AI authority | Three separate checks: AI may not author policy, a grant or a revocation; may never hold `grant-permission`, `approve`, `impersonate`, `delete`, `export`, or anything on `permission`, `ledger-entry` or `payment`; and may hold **only** `invoke-tool` on `tool`. Enforced in the shared validator (so a stored row cannot walk past it) and by two database constraints |
+| Idempotency | An identical retry converges; a key reused for a *different* question is refused, which is the confused-deputy shape |
+| Persistence | Migration 0009 (`kernel_permissions`): four tables, opacity `CHECK`s calling one SQL rule set, and **four append-only triggers** refusing every `UPDATE` and `DELETE`. In-memory reference repository checking uniqueness at commit, PostgreSQL adapter, and an enlisted repository refusing transaction control |
+| Contract | [`kernel/permissions/CONTRACT.md`](../kernel/permissions/CONTRACT.md) — ten sections including the trust model stated as assumptions, decision-record semantics, and the full deferred list |
+
+**Commands and results** (all run in this working tree, exit codes recorded):
+
+```text
+ITEM ID:            K-04 (FND-004d)
+MODULE / PHASE:     K-04 Permissions / Phase 0, build step B-2
+STATUS:             DELIVERED — implementation IN PROGRESS, contract COMPLETE
+IMPLEMENTED:        kernel/permissions/{types,registry,ports,immutable,validate,decide,
+                    repository,postgres-repository,service,index}.ts, CONTRACT.md, and
+                    db/migrations/0009_create_kernel_permissions_schema.{up,down}.sql
+
+COMMANDS:           npm run verify                                exit 0   tests 901, pass 901
+                    node --test tests/permissions.test.ts         exit 0   tests 18, pass 18
+                    node --test tests/permissions-decisions.test.ts
+                                                                  exit 0   tests 21, pass 21
+                    node --test tests/permissions-concurrency.test.ts
+                                                                  exit 0   tests 12, pass 12
+                    node --test tests/permissions-repository.test.ts
+                                                                  exit 0   tests 18, pass 18
+                    npm run check:migrations                      exit 0   18 files, 0 violations
+                    npm run check:boundaries                      exit 0   81 files, 278 imports
+                    npm run test:integration                      exit 0   tests 47, skipped 47
+                    node docs/tools/validate-doc-links.mjs        exit 0   0 broken
+                    npm audit --audit-level=high                  exit 0   0 vulnerabilities
+                    git diff --check                              exit 0
+
+ADVERSARIAL COVER:  Permission-escalation attempts (a caller supplying its own subject, role,
+                    permissions, effect or policy version — nineteen field names, each refused
+                    before the session is validated); forged authentication context (a validator
+                    asserting a revoked, expired or unknown-assurance session, each refused);
+                    cross-account reads (a request naming another account, refused before any
+                    grant is read; a grant in another account invisible to this one); concurrent
+                    grant/revoke races (two identical grants produce one grant; two revocations
+                    produce one revocation and one stale-revocation); stale decisions (a retry
+                    returns the decision that was taken, not a re-decision, and a key reused for
+                    a different question is refused); and malformed state (a grant row with an
+                    unreadable effect authorises nothing).
+
+PLANTED REGRESSION: The shared AI rule was found by test rather than by review: validateGrant did
+                    not apply it, so an AI grant row written around the service decoded cleanly.
+                    The rule moved into registry.ts, where the validator and the service both call
+                    it, and the decode case now fails without it.
+
+UI/UX:              N/A — no user-facing surface exists in this repository.
+
+SECURITY:           No credential, session secret or proof material is stored, logged or echoed.
+                    The presented token is handed to the session port unread; a validator's
+                    refusal is normalised without its message being inspected, because a session
+                    error can carry a fragment of the secret.
+
+STILL NOT VERIFIED: **Nothing calls K-04**, so no path in this repository is actually guarded and
+                    every decision so far is about a subject a test created. K-02 ships no
+                    verifier, so no real session has ever reached it. No API, no UI, no policy
+                    studio, no operational role matrix (v3 §47 Level 4), no business-module action
+                    registration, no delegation, no groups, no role hierarchy, no retention of
+                    decision records. No audit record (K-09) and no event (K-08) follows a grant,
+                    a revocation or a decision — the two integrations v3 §53 most obviously wants.
+                    **Nothing has been applied to a live PostgreSQL server:** migration 0009,
+                    every CHECK, all four append-only triggers and every constraint are declared
+                    and unproven, and the opt-in suite that would prove them
+                    (tests/integration/permissions.integration.ts, 6 cases) skips with its reason
+                    stated.
+```
+
+---
+
+### 11.27 Correction — FND-004d idempotency was a bearer token for somebody else's answer
+
+**Task:** FND-004d, corrected after review.
+**Severity:** the highest of any correction recorded here. The other blocks in this register are
+about records that could be rewritten, races that could be lost, or claims that were unproven. This
+one is about **an authorisation obtainable without authenticating**.
+
+**What was wrong.** `authorize` treated the idempotency key as though it identified the request. It
+does not; it identifies the *caller's intent to retry*, and on its own it is a bearer token for
+whatever answer was stored under it. Two defects followed, and they compounded:
+
+| # | Defect | Why it mattered |
+|---|---|---|
+| 1 | **The stored decision was looked up before the presented session was validated.** | Presenting somebody else's idempotency key with any garbage token — or no working session at all — returned their decision. If it was an `allow`, the caller had just been authorised without authenticating. Every other control in the component ran *after* this point and so never ran at all. |
+| 2 | **The retry comparison covered six of the nine facts the decision depended on.** It compared `decisionId`, `accountId`, `action`, `resourceType`, `resourceId` and `purpose`. It did not compare the **subject**, the **session**, or the **ABAC context**. | A caller with a valid session of its own could present a captured key and change the context — the thing an ABAC condition is evaluated against. A grant conditioned on `region = north`, satisfied once, was replayable from anywhere. Nothing recorded what context had satisfied it, so nothing could have caught this. |
+
+Neither was reachable by a caller in this repository, because nothing calls K-04. That is luck, not
+mitigation, and it is exactly the window in which a defect of this shape should be fixed.
+
+**What changed.**
+
+1. **The session is resolved before anything is read from storage.** `authorize` now validates the
+   presented secret through K-02's port, re-checks the assertion itself, resolves the account
+   through K-03 and refuses cross-account access — *then* looks up the idempotency key. A retry
+   with a bad session is `invalid-session`; one aimed at another party's account is
+   `cross-account-access`; neither reaches storage.
+2. **Every decision stores a fingerprint of its own inputs.** `kernel/permissions/fingerprint.ts`
+   canonicalises decision id, subject, session, account, action, resource type and id, purpose and
+   the allowlisted ABAC context, and SHA-256s it. The canonical form quotes every field so a value
+   containing a separator cannot impersonate a field boundary, and sorts context keys so key order
+   is not part of the question. Migration 0009 gains `request_fingerprint text NOT NULL` with a
+   `CHECK` that it is a SHA-256; the validator refuses any decision record without one.
+3. **A stored decision is returned only on an exact fingerprint match**, on the pre-insert retry
+   path *and* on the post-conflict convergence path — a convergence that checked less than a retry
+   checks would be the same hole reached by another route. A mismatch is `idempotency-key-reuse`
+   naming the input that moved: the authenticated subject, the session, or the ABAC context.
+4. **Author origin joined the equality checks** for policy versions, grants and revocations
+   (`publishedBy`, `grantedBy`, `revokedBy`). A retry under one key that changes who authorised the
+   change is a different authority statement. The service-generated instants (`publishedAt`,
+   `grantedAt`, `revokedAt`) stay excluded — including them would make every retry a mismatch and
+   idempotency impossible.
+
+**A consequence worth stating:** idempotency keys are now **scoped to the session that earned the
+answer**. The same person on a rotated session is asking a new question and gets a new decision.
+That is a deliberate tightening, recorded in CONTRACT.md §8 rather than left for somebody to
+discover.
+
+**Migration 0009 was edited rather than superseded.** It has never been applied to any database —
+no PostgreSQL runtime exists in this repository — and it belongs to the same undelivered slice, so
+there is no ledger row whose checksum could drift and no environment holding the old shape. The
+immutability rule protects *applied* migrations; adding a 0010 to correct a migration nobody has
+ever run would leave a permanent record of an intra-branch iteration and nothing else.
+
+```text
+ITEM ID:            K-04 (FND-004d, correction)
+MODULE / PHASE:     K-04 Permissions / Phase 0, build step B-2
+STATUS:             CORRECTED — implementation stays IN PROGRESS
+
+COMMANDS:           npm run verify                                  exit 0   tests 901, pass 901
+                    node --test tests/permissions.test.ts           exit 0   tests 18, pass 18
+                    node --test tests/permissions-decisions.test.ts exit 0   tests 21, pass 21
+                    node --test tests/permissions-concurrency.test.ts
+                                                                    exit 0   tests 12, pass 12
+                    node --test tests/permissions-repository.test.ts
+                                                                    exit 0   tests 18, pass 18
+                    node --test tests/permissions-idempotency.test.ts
+                                                                    exit 0   tests 13, pass 13
+                    npm run check:migrations                        exit 0   18 files, 0 violations
+                    npm run test:integration                        exit 0   tests 47, skipped 47
+
+PLANTED REGRESSION: The old ordering was restored — the idempotency lookup moved back above the
+                    session validation — and tests/permissions-idempotency.test.ts observed to
+                    fail 5 of its 13 cases: the stolen key with no session, the stolen key from
+                    another session, the stolen key aimed at the owner's account, the retry from a
+                    rotated session, and the retry with a changed ABAC context. The ordering was
+                    then restored and all 13 pass.
+
+STILL NOT VERIFIED: The fingerprint is proved against the reference repository and against the
+                    adapter's decode path, not against a server: `request_fingerprint` and its
+                    CHECK have never been created, and the live probe that would exercise them
+                    skips with its reason stated. Everything in §11.26's "still not verified" is
+                    unchanged — nothing calls K-04, K-02 ships no verifier, and no audit record or
+                    event follows a decision.
 ```
 
 ---

@@ -53,7 +53,10 @@ test('with no policy published, nothing can be authorised', async () => {
   const harness = build();
   await assert.rejects(harness.service.authorize(authorizeRequest()), (error: unknown) => {
     assert.equal(codeOf(error), 'no-such-policy');
-    assert.match((error as PermissionError).message, /the correct answer, not a configuration error/);
+    assert.match(
+      (error as PermissionError).message,
+      /the correct answer, not a configuration error/,
+    );
     return true;
   });
 });
@@ -62,7 +65,9 @@ test('an explicit allow permits exactly what it names, and nothing adjacent', as
   const harness = await withPolicy();
   await harness.service.grant(grantRequest({ action: 'read', resourceType: 'order' }));
 
-  const allowed = await harness.service.authorize(authorizeRequest({ action: 'read', resourceType: 'order' }));
+  const allowed = await harness.service.authorize(
+    authorizeRequest({ action: 'read', resourceType: 'order' }),
+  );
   assert.equal(allowed.decision.effect, 'allow');
   assert.equal(allowed.decision.reason, 'explicit-allow');
   assert.ok(allowed.decision.decidingGrantId !== null, 'an allow always names its grant');
@@ -113,7 +118,11 @@ test('a deny beats an allow, however specific the allow is', async () => {
 
   // The most specific possible allow, and the broadest possible deny.
   await harness.service.grant(
-    grantRequest({ grantId: 'grant_01HQZXALLOW01', effect: 'allow', resourceId: 'order_01HQZXONE0001' }),
+    grantRequest({
+      grantId: 'grant_01HQZXALLOW01',
+      effect: 'allow',
+      resourceId: 'order_01HQZXONE0001',
+    }),
   );
   await harness.service.grant(
     grantRequest({ grantId: 'grant_01HQZXDENY001', effect: 'deny', resourceId: null }),
@@ -135,7 +144,11 @@ test('deny precedence does not depend on the order grants were written', async (
     grantRequest({ grantId: 'grant_01HQZXDENY001', effect: 'deny', resourceId: null }),
   );
   await harness.service.grant(
-    grantRequest({ grantId: 'grant_01HQZXALLOW01', effect: 'allow', resourceId: 'order_01HQZXONE0001' }),
+    grantRequest({
+      grantId: 'grant_01HQZXALLOW01',
+      effect: 'allow',
+      resourceId: 'order_01HQZXONE0001',
+    }),
   );
 
   const decision = await harness.service.authorize(
@@ -150,7 +163,9 @@ test('a deny may be recorded for more than the policy permits, and an allow may 
 
   // The fixture policy does not permit CUSTOMER to export an order.
   await assert.rejects(
-    harness.service.grant(grantRequest({ effect: 'allow', action: 'export', resourceType: 'order' })),
+    harness.service.grant(
+      grantRequest({ effect: 'allow', action: 'export', resourceType: 'order' }),
+    ),
     (error: unknown) => {
       assert.equal(codeOf(error), 'unsupported-action');
       assert.match((error as PermissionError).message, /would exceed the policy it is made under/);
@@ -368,7 +383,11 @@ test('all, any and assurance predicates compose', async () => {
           {
             kind: 'any',
             of: [
-              { kind: 'attribute-in', attribute: 'channel', values: ['channel_web01', 'channel_ios1'] },
+              {
+                kind: 'attribute-in',
+                attribute: 'channel',
+                values: ['channel_web01', 'channel_ios1'],
+              },
               { kind: 'attribute-equals', attribute: 'risk-tier', value: 'tier_low0001' },
             ],
           },
@@ -516,10 +535,17 @@ test('evaluate is pure and deterministic for the same inputs', () => {
 
   const first = evaluate(input);
   const second = evaluate(input);
-  assert.deepEqual(first, second, 'the same inputs must produce the same explanation, word for word');
+  assert.deepEqual(
+    first,
+    second,
+    'the same inputs must produce the same explanation, word for word',
+  );
   assert.equal(first.effect, 'allow');
 
   // And reversing the grant order changes nothing: ties break by grant id.
-  const reversed = evaluate({ ...input, grants: [grant, { ...grant, grantId: 'grant_01HQZXPURE02' }] });
+  const reversed = evaluate({
+    ...input,
+    grants: [grant, { ...grant, grantId: 'grant_01HQZXPURE02' }],
+  });
   assert.equal(reversed.decidingGrantId, 'grant_01HQZXPURE01');
 });

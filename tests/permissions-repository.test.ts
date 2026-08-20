@@ -253,9 +253,17 @@ test('well-formed rows decode, sealed', () => {
 
 test('a malformed persisted row is refused rather than decided upon', () => {
   const malformed: ReadonlyArray<readonly [string, () => unknown, RegExp]> = [
-    ['an unknown effect', () => toGrant(grantRow({ effect: 'maybe' })), /expected one of allow, deny/],
+    [
+      'an unknown effect',
+      () => toGrant(grantRow({ effect: 'maybe' })),
+      /expected one of allow, deny/,
+    ],
     ['an unknown role', () => toGrant(grantRow({ role: 'OVERLORD' })), /is not a role/],
-    ['an unknown action', () => toGrant(grantRow({ action: 'obliterate' })), /not a registered action/],
+    [
+      'an unknown action',
+      () => toGrant(grantRow({ action: 'obliterate' })),
+      /not a registered action/,
+    ],
     [
       'a staff role with no purpose',
       () => toGrant(grantRow({ role: 'SUPPORT' })),
@@ -266,7 +274,11 @@ test('a malformed persisted row is refused rather than decided upon', () => {
       () => toGrant(grantRow({ role: 'AI_AGENT', action: 'read', resource_type: 'conversation' })),
       /only explicitly granted tool capabilities/,
     ],
-    ['a Date instead of text', () => toGrant(grantRow({ granted_at: new Date() })), /rather than text/],
+    [
+      'a Date instead of text',
+      () => toGrant(grantRow({ granted_at: new Date() })),
+      /rather than text/,
+    ],
     [
       'a millisecond timestamp',
       () => toGrant(grantRow({ granted_at: '2026-04-01T12:00:00.000Z' })),
@@ -296,9 +308,15 @@ test('a malformed persisted row is refused rather than decided upon', () => {
       decode,
       (error: unknown) => {
         assert.ok(
-          ['malformed-record', 'malformed-instant', 'unsupported-role', 'unsupported-action', 'natural-identifier', 'missing-purpose', 'ai-not-permitted'].includes(
-            String(codeOf(error)),
-          ),
+          [
+            'malformed-record',
+            'malformed-instant',
+            'unsupported-role',
+            'unsupported-action',
+            'natural-identifier',
+            'missing-purpose',
+            'ai-not-permitted',
+          ].includes(String(codeOf(error))),
           `${why} got ${String(codeOf(error))}`,
         );
         assert.match((error as PermissionError).message, message, why);
@@ -335,7 +353,10 @@ test('no statement K-04 issues names another unit’s schema, and there is no fo
     assert.ok(!code.includes(schema), `the adapter names ${schema}`);
   }
   const sql = stripNoise(MIGRATION_UP);
-  assert.ok(!/REFERENCES/i.test(sql), 'a cross-schema foreign key would make two components one object');
+  assert.ok(
+    !/REFERENCES/i.test(sql),
+    'a cross-schema foreign key would make two components one object',
+  );
   for (const schema of knownSchemas()) {
     if (schema === PERMISSIONS_SCHEMA) continue;
     assert.ok(!sql.includes(schema), `migration 0009 names ${schema}`);
@@ -374,7 +395,10 @@ test('the migration enforces the contract in the database, not only in the servi
     ['an allow names its grant', /permission_decision_allow_is_traceable/],
     ['a decision is explained', /permission_decision_explained/],
     ['one revocation per grant', /permission_revocation_grant_unique UNIQUE \(grant_id\)/],
-    ['one row per policy version number', /permission_policy_version_number_unique UNIQUE \(version\)/],
+    [
+      'one row per policy version number',
+      /permission_policy_version_number_unique UNIQUE \(version\)/,
+    ],
     ['AI may not author policy', /permission_policy_version_origin_known/],
   ] as const) {
     assert.match(MIGRATION_UP, pattern, `the schema does not enforce that ${why}`);
@@ -441,7 +465,10 @@ test('CONTRACT.md records the trust model and the deferred work', () => {
     ['no events', /K-08/],
     ['no policy studio', /policy studio/i],
     ['no real verifier behind K-02', /no verifier/i],
-    ['nothing applied to a live server', /(never been applied|nothing has run against a live|unproven)/i],
+    [
+      'nothing applied to a live server',
+      /(never been applied|nothing has run against a live|unproven)/i,
+    ],
   ];
   for (const [claim, pattern] of claims) {
     assert.match(CONTRACT, pattern, `CONTRACT.md does not record ${claim}`);
@@ -458,15 +485,24 @@ test('every file CONTRACT.md links to exists, and every suite it names exists', 
     .filter((target) => target !== '' && !/^[a-z][a-z0-9+.-]*:/i.test(target));
   assert.ok(targets.length > 0, 'expected the contract to link to the schema it declares');
   for (const target of targets) {
-    assert.ok(existsSync(path.resolve(MODULE_DIR, target)), `CONTRACT.md links ${target}, which does not exist`);
+    assert.ok(
+      existsSync(path.resolve(MODULE_DIR, target)),
+      `CONTRACT.md links ${target}, which does not exist`,
+    );
   }
 
   const suites = [...CONTRACT.matchAll(/node --test (tests\/[\w.-]+\.ts)/g)].map(
     (match) => match[1] as string,
   );
-  assert.ok(suites.length >= 3, `expected the verification section to name the suites, found ${suites.length}`);
+  assert.ok(
+    suites.length >= 3,
+    `expected the verification section to name the suites, found ${suites.length}`,
+  );
   for (const suite of suites) {
-    assert.ok(existsSync(path.join(HERE, '..', suite)), `CONTRACT.md names ${suite}, which does not exist`);
+    assert.ok(
+      existsSync(path.join(HERE, '..', suite)),
+      `CONTRACT.md names ${suite}, which does not exist`,
+    );
   }
 });
 

@@ -65,7 +65,13 @@ export {
 } from './registry.ts';
 
 export { NO_ACCOUNTS, NO_SESSIONS } from './ports.ts';
-export type { AccountAssertion, AccountLookup, Clock, SessionAssertion, SessionValidator } from './ports.ts';
+export type {
+  AccountAssertion,
+  AccountLookup,
+  Clock,
+  SessionAssertion,
+  SessionValidator,
+} from './ports.ts';
 
 export {
   isSealed,
@@ -78,6 +84,13 @@ export {
   sealRevocation,
   sealRevocations,
 } from './immutable.ts';
+
+export {
+  REQUEST_FINGERPRINT,
+  canonicalDecisionRequest,
+  fingerprintDecisionRequest,
+} from './fingerprint.ts';
+export type { DecisionRequestFacts } from './fingerprint.ts';
 
 export { evaluate, evaluatePredicate } from './decide.ts';
 export type { Evaluation, EvaluationInput } from './decide.ts';

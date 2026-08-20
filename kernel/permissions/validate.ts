@@ -15,6 +15,7 @@
 
 import { InvalidInstantError, compareInstants, parseInstant } from '../../platform/time/instant.ts';
 
+import { REQUEST_FINGERPRINT } from './fingerprint.ts';
 import {
   assertAction,
   assertAiMayHold,
@@ -62,7 +63,14 @@ export function inStoredRow<T>(body: () => T): T {
   return inSource('stored row', body);
 }
 
-const POLICY_FIELDS = ['policyVersionId', 'version', 'roles', 'publishedAt', 'publishedBy', 'idempotencyKey'];
+const POLICY_FIELDS = [
+  'policyVersionId',
+  'version',
+  'roles',
+  'publishedAt',
+  'publishedBy',
+  'idempotencyKey',
+];
 const GRANT_FIELDS = [
   'grantId',
   'subjectId',
@@ -81,7 +89,14 @@ const GRANT_FIELDS = [
   'grantedBy',
   'idempotencyKey',
 ];
-const REVOCATION_FIELDS = ['revocationId', 'grantId', 'revokedAt', 'reason', 'revokedBy', 'idempotencyKey'];
+const REVOCATION_FIELDS = [
+  'revocationId',
+  'grantId',
+  'revokedAt',
+  'reason',
+  'revokedBy',
+  'idempotencyKey',
+];
 const DECISION_FIELDS = [
   'decisionId',
   'subjectId',
@@ -98,6 +113,7 @@ const DECISION_FIELDS = [
   'purpose',
   'decidedAt',
   'idempotencyKey',
+  'requestFingerprint',
 ];
 
 /** Exactly these fields, no more and no fewer. An unexpected key is a record from elsewhere. */
@@ -215,7 +231,10 @@ function roleDefinition(value: unknown, path: string): RoleDefinition {
     seen.add(key);
     return parsed;
   });
-  return Object.freeze({ role: assertRole(candidate.role), capabilities: Object.freeze(capabilities) });
+  return Object.freeze({
+    role: assertRole(candidate.role),
+    capabilities: Object.freeze(capabilities),
+  });
 }
 
 export function validatePolicyVersion(candidate: unknown, source: RecordSource): PolicyVersion {
@@ -265,7 +284,10 @@ export function validateGrant(candidate: unknown, source: RecordSource): Grant {
     const fields = shapeOf(candidate, GRANT_FIELDS, 'a grant');
 
     const role = assertRole(fields.role);
-    const purpose = fields.purpose === null || fields.purpose === undefined ? null : assertPurpose(fields.purpose);
+    const purpose =
+      fields.purpose === null || fields.purpose === undefined
+        ? null
+        : assertPurpose(fields.purpose);
 
     // A staff role reaches another party's data, so a grant to one without a purpose would be
     // exactly the unpurposed staff access v3 §5.3 forbids. A non-staff grant with a purpose is
@@ -311,7 +333,10 @@ export function validateGrant(candidate: unknown, source: RecordSource): Grant {
           ? null
           : assertPermissionIdentifier(fields.resourceId, 'resourceId'),
       purpose,
-      condition: fields.condition === null || fields.condition === undefined ? null : assertPredicate(fields.condition),
+      condition:
+        fields.condition === null || fields.condition === undefined
+          ? null
+          : assertPredicate(fields.condition),
       policyVersionId: assertPermissionIdentifier(fields.policyVersionId, 'policyVersionId'),
       grantedAt: instant(fields.grantedAt, 'grantedAt'),
       notBefore,
@@ -343,6 +368,23 @@ export function validateRevocation(candidate: unknown, source: RecordSource): Re
       idempotencyKey: assertPermissionIdentifier(fields.idempotencyKey, 'idempotencyKey'),
     };
   });
+}
+
+/**
+ * The fingerprint over the decision’s own inputs.
+ *
+ * Shape-checked rather than recomputed here, because the validator does not hold the context that
+ * went into it. What recomputes and compares is `authorize`, on every retry.
+ */
+function requestFingerprint(value: unknown): string {
+  if (typeof value !== 'string' || !REQUEST_FINGERPRINT.test(value)) {
+    throw new PermissionError(
+      'malformed-record',
+      `requestFingerprint is "${String(value)}"; expected a SHA-256 in lower-case hex. A decision ` +
+        'whose inputs cannot be identified can never be safely returned to a retry',
+    );
+  }
+  return value;
 }
 
 export function validateDecision(candidate: unknown, source: RecordSource): Decision {
@@ -383,9 +425,13 @@ export function validateDecision(candidate: unknown, source: RecordSource): Deci
           ? null
           : assertPermissionIdentifier(fields.decidingGrantId, 'decidingGrantId'),
       policyVersionId: assertPermissionIdentifier(fields.policyVersionId, 'policyVersionId'),
-      purpose: fields.purpose === null || fields.purpose === undefined ? null : assertPurpose(fields.purpose),
+      purpose:
+        fields.purpose === null || fields.purpose === undefined
+          ? null
+          : assertPurpose(fields.purpose),
       decidedAt: instant(fields.decidedAt, 'decidedAt'),
       idempotencyKey: assertPermissionIdentifier(fields.idempotencyKey, 'idempotencyKey'),
+      requestFingerprint: requestFingerprint(fields.requestFingerprint),
     };
   });
 }

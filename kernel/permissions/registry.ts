@@ -181,7 +181,8 @@ export const ASSERTED_AUTHORIZATION_FIELDS: Readonly<Record<string, string>> = O
   authorised: 'whether the request is authorised is exactly what this component is being asked',
   effect: 'allow or deny is the decision, and the decision is what this component computes',
   decision: 'the decision is computed here from grants, never supplied',
-  subjectId: 'the subject comes from a validated session, never from the caller — a caller that ' +
+  subjectId:
+    'the subject comes from a validated session, never from the caller — a caller that ' +
     'could name the subject could authorise itself as anybody',
   subject: 'the subject comes from a validated session, never from the caller',
   role: 'a role is held through a grant recorded here, not claimed in a request',
@@ -194,7 +195,8 @@ export const ASSERTED_AUTHORIZATION_FIELDS: Readonly<Record<string, string>> = O
   superAdmin: 'SUPER_ADMIN confers nothing implicitly; there is no bypass to ask for',
   override: 'there is no override path around an explicit policy',
   aiAuthority: 'AI is never authoritative for a financial or permission decision (v3 §38)',
-  policyVersionId: 'the active policy version is resolved here, so a caller cannot pick an ' +
+  policyVersionId:
+    'the active policy version is resolved here, so a caller cannot pick an ' +
     'older one under which it had more authority',
 });
 

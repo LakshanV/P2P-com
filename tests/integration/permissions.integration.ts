@@ -153,7 +153,11 @@ test(
     const before = await developmentSnapshot();
 
     await withTestDatabase(async ({ database, directory, name }) => {
-      assert.notEqual(name, developmentDatabaseName(), 'the target is never the development database');
+      assert.notEqual(
+        name,
+        developmentDatabaseName(),
+        'the target is never the development database',
+      );
       await migrateUp(database, { directory });
 
       const repository = new PostgresPermissionRepository(database);
@@ -164,7 +168,9 @@ test(
 
       // Read back through the adapter's own decoder: microseconds survived the timestamptz column,
       // and the jsonb round-tripped as the structure it was written as.
-      const stored = await repository.withTransaction((tx) => tx.findGrantById('grant_01HQZXLIV01'));
+      const stored = await repository.withTransaction((tx) =>
+        tx.findGrantById('grant_01HQZXLIV01'),
+      );
       assert.equal(stored?.grantedAt, '2026-04-01T12:00:00.123456Z');
       assert.equal(stored?.effect, 'allow');
 
@@ -197,53 +203,61 @@ test(
   },
 );
 
-test('the database refuses every change that would rewrite authority', liveTestOptions, async () => {
-  await withTestDatabase(async ({ database, directory }) => {
-    await migrateUp(database, { directory });
-    const repository = new PostgresPermissionRepository(database);
-    await repository.withTransaction(async (tx) => {
-      await tx.insertPolicyVersion(policyFor(1, '01'));
-      await tx.insertGrant(grantFor('01'));
-      await tx.insertRevocation({
-        revocationId: 'rev_01HQZXLIVE001',
-        grantId: 'grant_01HQZXLIV01',
-        revokedAt: '2026-04-01T12:05:00.123456Z',
-        reason: 'access-no-longer-needed',
-        revokedBy: { kind: 'human', id: 'ops-alice-console' },
-        idempotencyKey: 'idem_01HQZXLIVR01',
+test(
+  'the database refuses every change that would rewrite authority',
+  liveTestOptions,
+  async () => {
+    await withTestDatabase(async ({ database, directory }) => {
+      await migrateUp(database, { directory });
+      const repository = new PostgresPermissionRepository(database);
+      await repository.withTransaction(async (tx) => {
+        await tx.insertPolicyVersion(policyFor(1, '01'));
+        await tx.insertGrant(grantFor('01'));
+        await tx.insertRevocation({
+          revocationId: 'rev_01HQZXLIVE001',
+          grantId: 'grant_01HQZXLIV01',
+          revokedAt: '2026-04-01T12:05:00.123456Z',
+          reason: 'access-no-longer-needed',
+          revokedBy: { kind: 'human', id: 'ops-alice-console' },
+          idempotencyKey: 'idem_01HQZXLIVR01',
+        });
       });
+
+      // Statements no code in this component can issue, which is exactly the case the triggers exist
+      // for. Widening a grant, erasing a revocation, rewriting a policy, editing a decision.
+      for (const [why, sql] of [
+        [
+          'widening a grant',
+          `UPDATE ${GRANT_TABLE} SET action = 'delete' WHERE grant_id = 'grant_01HQZXLIV01';`,
+        ],
+        ['deleting a grant', `DELETE FROM ${GRANT_TABLE} WHERE grant_id = 'grant_01HQZXLIV01';`],
+        [
+          'erasing a revocation',
+          `DELETE FROM ${REVOCATION_TABLE} WHERE grant_id = 'grant_01HQZXLIV01';`,
+        ],
+        [
+          'moving a revocation later',
+          `UPDATE ${REVOCATION_TABLE} SET revoked_at = '2027-01-01T00:00:00Z' WHERE grant_id = 'grant_01HQZXLIV01';`,
+        ],
+        [
+          'rewriting a policy version',
+          `UPDATE ${POLICY_TABLE} SET version = 99 WHERE policy_version_id = 'pol_01HQZXLIVE01';`,
+        ],
+      ] as const) {
+        const refusal = await refuses(database, sql);
+        assert.ok(refusal !== null, `${why} must be refused by the trigger`);
+        assert.match(refusal, /append-only/i, why);
+      }
+
+      assert.equal(
+        await countRows(database, GRANT_TABLE),
+        1,
+        'everything is still there, unchanged',
+      );
+      assert.equal(await countRows(database, REVOCATION_TABLE), 1);
     });
-
-    // Statements no code in this component can issue, which is exactly the case the triggers exist
-    // for. Widening a grant, erasing a revocation, rewriting a policy, editing a decision.
-    for (const [why, sql] of [
-      [
-        'widening a grant',
-        `UPDATE ${GRANT_TABLE} SET action = 'delete' WHERE grant_id = 'grant_01HQZXLIV01';`,
-      ],
-      ['deleting a grant', `DELETE FROM ${GRANT_TABLE} WHERE grant_id = 'grant_01HQZXLIV01';`],
-      [
-        'erasing a revocation',
-        `DELETE FROM ${REVOCATION_TABLE} WHERE grant_id = 'grant_01HQZXLIV01';`,
-      ],
-      [
-        'moving a revocation later',
-        `UPDATE ${REVOCATION_TABLE} SET revoked_at = '2027-01-01T00:00:00Z' WHERE grant_id = 'grant_01HQZXLIV01';`,
-      ],
-      [
-        'rewriting a policy version',
-        `UPDATE ${POLICY_TABLE} SET version = 99 WHERE policy_version_id = 'pol_01HQZXLIVE01';`,
-      ],
-    ] as const) {
-      const refusal = await refuses(database, sql);
-      assert.ok(refusal !== null, `${why} must be refused by the trigger`);
-      assert.match(refusal, /append-only/i, why);
-    }
-
-    assert.equal(await countRows(database, GRANT_TABLE), 1, 'everything is still there, unchanged');
-    assert.equal(await countRows(database, REVOCATION_TABLE), 1);
-  });
-});
+  },
+);
 
 test('the constraints refuse what the service refuses', liveTestOptions, async () => {
   await withTestDatabase(async ({ database, directory }) => {
@@ -273,59 +287,77 @@ test('the constraints refuse what the service refuses', liveTestOptions, async (
     const decisionColumns =
       'decision_id, subject_id, account_id, session_id, action, resource_type, resource_id, ' +
       'effect, reason, explanation, deciding_grant_id, policy_version_id, purpose, decided_at, ' +
-      'idempotency_key';
+      'idempotency_key, request_fingerprint';
     const untraceable =
       `INSERT INTO ${DECISION_TABLE} (${decisionColumns}) VALUES ` +
       `('dec_01HQZXPROBE01', 'sub_01HQZXPROBE001', 'acct_01HQZXPROBE01', 'sess_01HQZXPROBE1', ` +
       `'read', 'order', NULL, 'allow', 'explicit-allow', 'allowed by nothing at all', NULL, ` +
-      `'pol_01HQZXPROBE01', NULL, '2026-04-01T12:00:00Z', 'idem_01HQZXPROBE02');`;
+      `'pol_01HQZXPROBE01', NULL, '2026-04-01T12:00:00Z', 'idem_01HQZXPROBE02', ` +
+      `'${'a'.repeat(64)}');`;
     const refusal = await refuses(database, untraceable);
     assert.ok(refusal !== null, 'an allow that names no grant must be refused');
     assert.match(refusal, /allow_is_traceable|check constraint/i);
+
+    // And the request fingerprint must be a fingerprint. A decision whose inputs cannot be
+    // identified could never be safely returned to a retry.
+    const unfingerprinted = untraceable
+      .replace("'allow'", "'deny'")
+      .replace("'explicit-allow'", "'no-matching-grant')".slice(0, -1))
+      .replace(`'${'a'.repeat(64)}'`, "'not-a-fingerprint'");
+    const shapeRefusal = await refuses(database, unfingerprinted);
+    assert.ok(
+      shapeRefusal !== null,
+      'a decision fingerprint that is not a SHA-256 must be refused',
+    );
+    assert.match(shapeRefusal, /fingerprint_shape|check constraint/i);
   });
 });
 
-test('one revocation per grant, and one row per policy version number', liveTestOptions, async () => {
-  await withTestDatabase(async ({ database, directory }) => {
-    await migrateUp(database, { directory });
-    const repository = new PostgresPermissionRepository(database);
-    await repository.withTransaction(async (tx) => {
-      await tx.insertPolicyVersion(policyFor(1, '01'));
-      await tx.insertGrant(grantFor('01'));
-      await tx.insertRevocation({
-        revocationId: 'rev_01HQZXLIVE001',
-        grantId: 'grant_01HQZXLIV01',
-        revokedAt: '2026-04-01T12:05:00.123456Z',
-        reason: 'granted-in-error',
-        revokedBy: { kind: 'human', id: 'ops-alice-console' },
-        idempotencyKey: 'idem_01HQZXLIVR01',
-      });
-    });
-
-    await assert.rejects(
-      repository.withTransaction((tx) =>
-        tx.insertRevocation({
-          revocationId: 'rev_01HQZXLIVE002',
+test(
+  'one revocation per grant, and one row per policy version number',
+  liveTestOptions,
+  async () => {
+    await withTestDatabase(async ({ database, directory }) => {
+      await migrateUp(database, { directory });
+      const repository = new PostgresPermissionRepository(database);
+      await repository.withTransaction(async (tx) => {
+        await tx.insertPolicyVersion(policyFor(1, '01'));
+        await tx.insertGrant(grantFor('01'));
+        await tx.insertRevocation({
+          revocationId: 'rev_01HQZXLIVE001',
           grantId: 'grant_01HQZXLIV01',
-          revokedAt: '2026-04-01T13:00:00.123456Z',
-          reason: 'security-event',
-          revokedBy: { kind: 'human', id: 'ops-bob-console' },
-          idempotencyKey: 'idem_01HQZXLIVR02',
-        }),
-      ),
-      (error: unknown) => (error as { code?: string }).code === 'stale-revocation',
-      'a second revocation would rewrite when authority actually ended',
-    );
+          revokedAt: '2026-04-01T12:05:00.123456Z',
+          reason: 'granted-in-error',
+          revokedBy: { kind: 'human', id: 'ops-alice-console' },
+          idempotencyKey: 'idem_01HQZXLIVR01',
+        });
+      });
 
-    await assert.rejects(
-      repository.withTransaction((tx) => tx.insertPolicyVersion(policyFor(1, '02'))),
-      (error: unknown) => (error as { code?: string }).code === 'duplicate-policy-version',
-    );
+      await assert.rejects(
+        repository.withTransaction((tx) =>
+          tx.insertRevocation({
+            revocationId: 'rev_01HQZXLIVE002',
+            grantId: 'grant_01HQZXLIV01',
+            revokedAt: '2026-04-01T13:00:00.123456Z',
+            reason: 'security-event',
+            revokedBy: { kind: 'human', id: 'ops-bob-console' },
+            idempotencyKey: 'idem_01HQZXLIVR02',
+          }),
+        ),
+        (error: unknown) => (error as { code?: string }).code === 'stale-revocation',
+        'a second revocation would rewrite when authority actually ended',
+      );
 
-    assert.equal(await countRows(database, REVOCATION_TABLE), 1);
-    assert.equal(await countRows(database, POLICY_TABLE), 1);
-  });
-});
+      await assert.rejects(
+        repository.withTransaction((tx) => tx.insertPolicyVersion(policyFor(1, '02'))),
+        (error: unknown) => (error as { code?: string }).code === 'duplicate-policy-version',
+      );
+
+      assert.equal(await countRows(database, REVOCATION_TABLE), 1);
+      assert.equal(await countRows(database, POLICY_TABLE), 1);
+    });
+  },
+);
 
 test('an enlisted write commits and rolls back with the caller', liveTestOptions, async () => {
   await withTestDatabase(async ({ database, directory }) => {
@@ -350,7 +382,9 @@ test('an enlisted write commits and rolls back with the caller', liveTestOptions
     try {
       await rolling.query('BEGIN;');
       await PostgresPermissionRepository.enlist(rolling).withTransaction((tx) =>
-        tx.insertGrant(grantFor('02', { grantId: 'grant_01HQZXLIV02', idempotencyKey: 'idem_01HQZXLIVG02' })),
+        tx.insertGrant(
+          grantFor('02', { grantId: 'grant_01HQZXLIV02', idempotencyKey: 'idem_01HQZXLIVG02' }),
+        ),
       );
       await rolling.query('ROLLBACK;');
     } finally {
