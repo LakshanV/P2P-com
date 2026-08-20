@@ -87,11 +87,11 @@ const CONSTRAINT_MEANINGS: Readonly<
     code: 'duplicate-lifecycle-event',
     explanation: 'a lifecycle event with this id already exists',
   },
-  feature_flag_lifecycle_kind_unique: {
+  feature_flag_lifecycle_flag_unique: {
     code: 'duplicate-lifecycle-event',
     explanation:
-      'this flag has already been killed or retired in this way, and the first record is when ' +
-      'the feature actually stopped',
+      'this flag has already been killed or retired, and the first record is when the feature ' +
+      'actually stopped. Terminal means terminal: there is no second one',
   },
   feature_flag_lifecycle_idempotency_unique: {
     code: 'idempotency-key-reuse',

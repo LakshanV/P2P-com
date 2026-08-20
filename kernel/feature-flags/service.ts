@@ -184,41 +184,55 @@ export class FeatureFlagService {
     const flagKey = assertFlagKey(request.flagKey);
     const idempotencyKey = assertFlagIdentifier(request.idempotencyKey, 'idempotencyKey');
 
-    return this.#repository.withTransaction(async (tx) => {
-      await this.#refuseTerminated(tx, flagKey, 'publish a version of');
+    let candidateForConvergence: FlagVersion | null = null;
+    try {
+      return await this.#repository.withTransaction(async (tx) => {
+        const nextVersion = (await tx.highestVersion(flagKey)) + 1;
+        const candidate = validateFlagVersion(
+          {
+            flagVersionId: request.flagVersionId,
+            flagKey,
+            version: nextVersion,
+            state: request.state,
+            supportedScopes: request.supportedScopes,
+            rules: request.rules ?? [],
+            percentage: request.percentage ?? 0,
+            rolloutSalt: request.rolloutSalt,
+            notBefore: request.notBefore ?? null,
+            notAfter: request.notAfter ?? null,
+            publishedAt: this.#clock.now(),
+            publishedBy: author,
+            idempotencyKey,
+            requestFingerprint: fingerprintVersionRequest(
+              versionFacts(request, flagKey, author.id, nextVersion),
+            ),
+          },
+          'request',
+        );
 
-      const nextVersion = (await tx.highestVersion(flagKey)) + 1;
-      const candidate = validateFlagVersion(
-        {
-          flagVersionId: request.flagVersionId,
-          flagKey,
-          version: nextVersion,
-          state: request.state,
-          supportedScopes: request.supportedScopes,
-          rules: request.rules ?? [],
-          percentage: request.percentage ?? 0,
-          rolloutSalt: request.rolloutSalt,
-          notBefore: request.notBefore ?? null,
-          notAfter: request.notAfter ?? null,
-          publishedAt: this.#clock.now(),
-          publishedBy: author,
-          idempotencyKey,
-          requestFingerprint: fingerprintVersionRequest(
-            versionFacts(request, flagKey, author.id, nextVersion),
-          ),
-        },
-        'request',
+        candidateForConvergence = candidate;
+        const existing = await tx.findVersionByIdempotencyKey(idempotencyKey);
+        if (existing !== null) {
+          assertSameVersionRequest(existing, candidate);
+          return { version: sealFlagVersion(existing), deduplicated: true };
+        }
+
+        await this.#refuseTerminated(tx, flagKey, 'publish a version of');
+        await tx.insertVersion(candidate);
+        return { version: sealFlagVersion(candidate), deduplicated: false };
+      });
+    } catch (error) {
+      // Another copy of this same call published first. The pre-insert lookup cannot see it — both
+      // transactions were open at once and each read a store without the other's row — so the
+      // convergence happens here instead, and it compares exactly what a retry compares. A
+      // convergence that checked less than a retry would be the same hole reached by another route.
+      const converged = await this.#converge(error, () =>
+        this.#repository.withTransaction((tx) => tx.findVersionByIdempotencyKey(idempotencyKey)),
       );
-
-      const existing = await tx.findVersionByIdempotencyKey(idempotencyKey);
-      if (existing !== null) {
-        assertSameVersionRequest(existing, candidate);
-        return { version: sealFlagVersion(existing), deduplicated: true };
-      }
-
-      await tx.insertVersion(candidate);
-      return { version: sealFlagVersion(candidate), deduplicated: false };
-    });
+      if (converged === null || candidateForConvergence === null) throw error;
+      assertSameVersionRequest(converged, candidateForConvergence);
+      return { version: sealFlagVersion(converged), deduplicated: true };
+    }
   }
 
   /**
@@ -239,50 +253,61 @@ export class FeatureFlagService {
         ? null
         : assertFlagIdentifier(request.supersedesVersionId, 'supersedesVersionId');
 
-    return this.#repository.withTransaction(async (tx) => {
-      const target = await tx.findVersionById(flagVersionId);
-      if (target === null) {
-        throw new FeatureFlagError(
-          'no-such-flag-version',
-          `flag version ${flagVersionId} does not exist. Publish it before activating it`,
-        );
-      }
-      await this.#refuseTerminated(tx, target.flagKey, 'activate a version of');
+    let fingerprintForConvergence: string | null = null;
+    try {
+      return await this.#repository.withTransaction(async (tx) => {
+        const target = await tx.findVersionById(flagVersionId);
+        if (target === null) {
+          throw new FeatureFlagError(
+            'no-such-flag-version',
+            `flag version ${flagVersionId} does not exist. Publish it before activating it`,
+          );
+        }
+        await this.#refuseTerminated(tx, target.flagKey, 'activate a version of');
 
-      const candidate = validateActivation(
-        {
-          activationId: request.activationId,
-          flagKey: target.flagKey,
-          flagVersionId,
-          supersedesVersionId: supersedes,
-          activatedAt: this.#clock.now(),
-          activatedBy: author,
-          idempotencyKey,
-          requestFingerprint: fingerprintTransitionRequest({
-            operation: 'activate',
-            recordId: request.activationId,
+        const candidate = validateActivation(
+          {
+            activationId: request.activationId,
             flagKey: target.flagKey,
-            detail: flagVersionId,
+            flagVersionId,
             supersedesVersionId: supersedes,
-            authorityId: author.id,
-          }),
-        },
-        'request',
-      );
-
-      const existing = await tx.findActivationByIdempotencyKey(idempotencyKey);
-      if (existing !== null) {
-        assertSameTransition(
-          existing.requestFingerprint,
-          candidate.requestFingerprint,
-          'activation',
+            activatedAt: this.#clock.now(),
+            activatedBy: author,
+            idempotencyKey,
+            requestFingerprint: fingerprintTransitionRequest({
+              operation: 'activate',
+              recordId: request.activationId,
+              flagKey: target.flagKey,
+              detail: flagVersionId,
+              supersedesVersionId: supersedes,
+              authorityId: author.id,
+            }),
+          },
+          'request',
         );
-        return { activation: sealActivation(existing), deduplicated: true };
-      }
 
-      await tx.insertActivation(candidate);
-      return { activation: sealActivation(candidate), deduplicated: false };
-    });
+        fingerprintForConvergence = candidate.requestFingerprint;
+        const existing = await tx.findActivationByIdempotencyKey(idempotencyKey);
+        if (existing !== null) {
+          assertSameTransition(
+            existing.requestFingerprint,
+            candidate.requestFingerprint,
+            'activation',
+          );
+          return { activation: sealActivation(existing), deduplicated: true };
+        }
+
+        await tx.insertActivation(candidate);
+        return { activation: sealActivation(candidate), deduplicated: false };
+      });
+    } catch (error) {
+      const converged = await this.#converge(error, () =>
+        this.#repository.withTransaction((tx) => tx.findActivationByIdempotencyKey(idempotencyKey)),
+      );
+      if (converged === null || fingerprintForConvergence === null) throw error;
+      assertSameTransition(converged.requestFingerprint, fingerprintForConvergence, 'activation');
+      return { activation: sealActivation(converged), deduplicated: true };
+    }
   }
 
   /**
@@ -384,7 +409,8 @@ export class FeatureFlagService {
       throw new FeatureFlagError(
         'flag-terminated',
         `${flagKey} was ${terminalWord(terminal.kind)} at ${terminal.recordedAt}, so nothing may ` +
-          `${attempt} it. Reversing that through a new definition would make the stop advisory`,
+          `${attempt} it now. Terminal means terminal: reversing it through a new definition, or ` +
+          'through a second lifecycle event, would make the stop advisory',
       );
     }
   }
@@ -395,37 +421,74 @@ export class FeatureFlagService {
     const flagKey = assertFlagKey(request.flagKey);
     const idempotencyKey = assertFlagIdentifier(request.idempotencyKey, 'idempotencyKey');
 
-    return this.#repository.withTransaction(async (tx) => {
-      const candidate = validateLifecycleEvent(
-        {
-          eventId: request.eventId,
-          flagKey,
-          kind,
-          reason: request.reason,
-          recordedAt: this.#clock.now(),
-          recordedBy: author,
-          idempotencyKey,
-          requestFingerprint: fingerprintTransitionRequest({
-            operation: kind,
-            recordId: request.eventId,
+    let fingerprintForConvergence: string | null = null;
+    try {
+      return await this.#repository.withTransaction(async (tx) => {
+        const candidate = validateLifecycleEvent(
+          {
+            eventId: request.eventId,
             flagKey,
-            detail: typeof request.reason === 'string' ? request.reason : '',
-            supersedesVersionId: null,
-            authorityId: author.id,
-          }),
-        },
-        'request',
+            kind,
+            reason: request.reason,
+            recordedAt: this.#clock.now(),
+            recordedBy: author,
+            idempotencyKey,
+            requestFingerprint: fingerprintTransitionRequest({
+              operation: kind,
+              recordId: request.eventId,
+              flagKey,
+              detail: typeof request.reason === 'string' ? request.reason : '',
+              supersedesVersionId: null,
+              authorityId: author.id,
+            }),
+          },
+          'request',
+        );
+
+        fingerprintForConvergence = candidate.requestFingerprint;
+        const existing = await tx.findLifecycleEventByIdempotencyKey(idempotencyKey);
+        if (existing !== null) {
+          assertSameTransition(existing.requestFingerprint, candidate.requestFingerprint, kind);
+          return { event: sealLifecycleEvent(existing), deduplicated: true };
+        }
+
+        await this.#refuseTerminated(tx, flagKey, kind === 'kill' ? 'kill' : 'retire');
+        await tx.insertLifecycleEvent(candidate);
+        return { event: sealLifecycleEvent(candidate), deduplicated: false };
+      });
+    } catch (error) {
+      const converged = await this.#converge(error, () =>
+        this.#repository.withTransaction((tx) =>
+          tx.findLifecycleEventByIdempotencyKey(idempotencyKey),
+        ),
       );
+      if (converged === null || fingerprintForConvergence === null) throw error;
+      assertSameTransition(converged.requestFingerprint, fingerprintForConvergence, kind);
+      return { event: sealLifecycleEvent(converged), deduplicated: true };
+    }
+  }
 
-      const existing = await tx.findLifecycleEventByIdempotencyKey(idempotencyKey);
-      if (existing !== null) {
-        assertSameTransition(existing.requestFingerprint, candidate.requestFingerprint, kind);
-        return { event: sealLifecycleEvent(existing), deduplicated: true };
-      }
-
-      await tx.insertLifecycleEvent(candidate);
-      return { event: sealLifecycleEvent(candidate), deduplicated: false };
-    });
+  /**
+   * Recover the record another copy of this same call wrote, or nothing.
+   *
+   * Only for the conflicts that mean "somebody else got there first". Anything else — a malformed
+   * definition, a refused authority, a stale activation — is a real refusal and is rethrown
+   * unchanged, because converging on those would turn a rejection into a success.
+   */
+  async #converge<T>(error: unknown, reread: () => Promise<T | null>): Promise<T | null> {
+    const recoverable: ReadonlyArray<string> = [
+      'duplicate-flag-version',
+      'duplicate-activation',
+      'duplicate-lifecycle-event',
+      'idempotency-key-reuse',
+    ];
+    if (!(error instanceof FeatureFlagError) || !recoverable.includes(error.code)) return null;
+    try {
+      return await reread();
+    } catch {
+      // The re-read failing tells us nothing new, and the original refusal is the honest one.
+      return null;
+    }
   }
 
   /** K-05, through its public contract and nothing else. An unresolvable stage is `null`. */

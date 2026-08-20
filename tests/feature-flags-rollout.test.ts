@@ -49,7 +49,11 @@ test('a 100% rollout includes everybody, including the last bucket', () => {
 test('a whole percent is exactly one hundred buckets, with no bucket on both sides', () => {
   for (const percentage of [1, 7, 50, 99]) {
     const ceiling = percentage * 100;
-    assert.equal(inRollout(ceiling - 1, percentage), true, `${percentage}% includes ${ceiling - 1}`);
+    assert.equal(
+      inRollout(ceiling - 1, percentage),
+      true,
+      `${percentage}% includes ${ceiling - 1}`,
+    );
     assert.equal(inRollout(ceiling, percentage), false, `${percentage}% excludes ${ceiling}`);
   }
 

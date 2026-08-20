@@ -32,7 +32,6 @@ import {
   AUTHORITY,
   FLAG,
   FixedClock,
-  RELEASE_CONSOLE,
   build,
   nextId,
   publishRequest,
@@ -82,7 +81,7 @@ test('a request that states the answer is refused by name', async () => {
 
   for (const field of ['enabled', 'bucket', 'variant', 'allowed', 'role', 'price']) {
     await assert.rejects(
-      harness.service.evaluate({ flagKey: FLAG, [field]: 'anything' } as never),
+      harness.service.evaluate({ flagKey: FLAG, [field]: 'anything' }),
       (error: unknown) => {
         assert.equal(codeOf(error), 'caller-asserted-outcome', field);
         return true;
@@ -313,7 +312,10 @@ test('an unsupported scope, predicate or attribute is refused at publication', a
 
   await assert.rejects(
     harness.service.publish(
-      publishRequest({ state: 'targeted', rules: [{ kind: 'attribute-not-in', attribute: 'country' }] }),
+      publishRequest({
+        state: 'targeted',
+        rules: [{ kind: 'attribute-not-in', attribute: 'country' }],
+      }),
     ),
     (error: unknown) => codeOf(error) === 'unsupported-predicate',
   );

@@ -245,9 +245,7 @@ export function evaluate(input: EvaluationInput): Evaluation {
             'context that is not there',
         );
       }
-      const matched = version.rules.some(
-        (rule) => matches(rule, input.attributes) === true,
-      );
+      const matched = version.rules.some((rule) => matches(rule, input.attributes) === true);
       return answer(
         input,
         matched,

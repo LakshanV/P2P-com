@@ -279,7 +279,9 @@ test('a targeted flag is on for a matching request and off for one that does not
   await withActiveFlag(harness, {
     state: 'targeted',
     supportedScopes: ['global', 'country'],
-    rules: [{ kind: 'attribute-in', attribute: 'country', values: ['country_gb001', 'country_lk01'] }],
+    rules: [
+      { kind: 'attribute-in', attribute: 'country', values: ['country_gb001', 'country_lk01'] },
+    ],
   });
 
   const matched = await harness.service.evaluate({
@@ -326,10 +328,7 @@ test('an all-rule with a definite mismatch does not need the missing attribute',
   };
   assert.equal(matches(rule, { country: 'country_fr01' }), false, 'settled by the mismatch');
   assert.equal(matches(rule, { country: 'country_gb001' }), null, 'undecidable without channel');
-  assert.equal(
-    matches(rule, { country: 'country_gb001', channel: 'channel_web01' }),
-    true,
-  );
+  assert.equal(matches(rule, { country: 'country_gb001', channel: 'channel_web01' }), true);
 });
 
 test('an any-rule is settled by any definite match', () => {

@@ -13,7 +13,7 @@
  *
  * Uniqueness is what makes idempotency and the guarded activation real, so it is enforced here
  * rather than by a read-then-write in the service: every record id, every idempotency key, the
- * version number within a flag key, and one lifecycle event per kind per flag key. Two identical
+ * version number within a flag key, and one lifecycle event per flag key. Two identical
  * concurrent publications can both pass a read; they cannot both pass a constraint.
  *
  * Owned by: K-07 Feature Flags.
@@ -48,7 +48,7 @@ export interface FeatureFlagTransaction {
   findActivationByIdempotencyKey(idempotencyKey: string): Promise<Activation | null>;
   insertActivation(activation: Activation): Promise<void>;
 
-  /** Kill and retire events for this flag key. At most one of each. */
+  /** The kill or retire event for this flag key, if it has one. At most one, for good. */
   listLifecycleEvents(flagKey: string): Promise<readonly LifecycleEvent[]>;
   findLifecycleEventByIdempotencyKey(idempotencyKey: string): Promise<LifecycleEvent | null>;
   insertLifecycleEvent(event: LifecycleEvent): Promise<void>;
@@ -63,7 +63,7 @@ export interface FeatureFlagRepository {
  *
  * The reference implementation of the port's contract, not a convenience double: it enforces the
  * same uniqueness the database does — every id, every idempotency key, the version number within a
- * flag key, one kill and one retirement per flag — and it checks them **at commit against the
+ * flag key, one lifecycle event per flag — and it checks them **at commit against the
  * store as it stands**, so two callers that overlap behave here as they would against a server.
  * K-08 shipped without that parity and every concurrency guarantee proved against it was worth
  * less than it appeared (CURRENT_IMPLEMENTATION_STATUS §11.15).
@@ -181,12 +181,11 @@ export class InMemoryFeatureFlagRepository implements FeatureFlagRepository {
           `idempotency key "${event.idempotencyKey}" recorded another lifecycle event`,
         );
       }
-      if (
-        this.#lifecycle.some((held) => held.flagKey === event.flagKey && held.kind === event.kind)
-      ) {
+      const terminal = this.#lifecycle.find((held) => held.flagKey === event.flagKey);
+      if (terminal !== undefined) {
         throw conflict(
-          'duplicate-lifecycle-event',
-          `${event.flagKey} has already been ${event.kind === 'kill' ? 'killed' : 'retired'}`,
+          'flag-terminated',
+          `${event.flagKey} has already been ${terminalWord(terminal.kind)}`,
         );
       }
     }
@@ -320,10 +319,7 @@ class InMemoryFeatureFlagTransaction implements FeatureFlagTransaction {
 
   insertActivation(activation: Activation): Promise<void> {
     if (this.#state.activations.some((held) => held.activationId === activation.activationId)) {
-      return reject(
-        'duplicate-activation',
-        `activation ${activation.activationId} already exists`,
-      );
+      return reject('duplicate-activation', `activation ${activation.activationId} already exists`);
     }
     if (this.#state.activations.some((held) => held.idempotencyKey === activation.idempotencyKey)) {
       return reject(
@@ -373,11 +369,13 @@ class InMemoryFeatureFlagTransaction implements FeatureFlagTransaction {
         `idempotency key "${event.idempotencyKey}" has already been used`,
       );
     }
-    if (this.#state.lifecycle.some((held) => held.flagKey === event.flagKey && held.kind === event.kind)) {
+    const terminal = this.#state.lifecycle.find((held) => held.flagKey === event.flagKey);
+    if (terminal !== undefined) {
       return reject(
-        'duplicate-lifecycle-event',
-        `${event.flagKey} has already been ${terminalWord(event.kind)}. A second one would ` +
-          'rewrite when the feature actually stopped, which is the question an incident review asks',
+        'flag-terminated',
+        `${event.flagKey} has already been ${terminalWord(terminal.kind)}. A second lifecycle ` +
+          'event would rewrite when the feature actually stopped, which is the question an ' +
+          'incident review asks first. Terminal means terminal',
       );
     }
     const sealed = sealLifecycleEvent(event);

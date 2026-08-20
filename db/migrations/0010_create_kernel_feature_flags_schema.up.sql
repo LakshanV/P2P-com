@@ -265,9 +265,11 @@ CREATE TABLE IF NOT EXISTS kernel_feature_flags.feature_flag_lifecycle (
 
   CONSTRAINT feature_flag_lifecycle_pkey PRIMARY KEY (event_id),
 
-  -- One kill and one retirement per flag, for good. A second would rewrite when the feature
-  -- actually stopped, which is the question an incident review asks first.
-  CONSTRAINT feature_flag_lifecycle_kind_unique UNIQUE (flag_key, kind),
+  -- One lifecycle event per flag, for good — not one per kind. A second would rewrite when the
+  -- feature actually stopped, which is the question an incident review asks first, and a flag
+  -- carrying both a kill and a retirement is a history with two answers to it. The service refuses
+  -- the second sequentially; this is what refuses it when two operators overlap.
+  CONSTRAINT feature_flag_lifecycle_flag_unique UNIQUE (flag_key),
   CONSTRAINT feature_flag_lifecycle_idempotency_unique UNIQUE (idempotency_key),
 
   CONSTRAINT feature_flag_lifecycle_key_shape

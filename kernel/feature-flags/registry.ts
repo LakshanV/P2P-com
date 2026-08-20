@@ -245,7 +245,7 @@ export function assertScope(value: unknown, field = 'scope'): { level: ScopeLeve
     if (candidate.id !== undefined && candidate.id !== '') {
       throw new FeatureFlagError(
         'unsupported-scope',
-        `${field}.id must be empty for the global scope; "${String(candidate.id)}" was supplied`,
+        `${field}.id must be empty for the global scope; ${JSON.stringify(candidate.id)} was supplied`,
       );
     }
     return { level, id: '' };
@@ -413,7 +413,10 @@ export function assertContext(
  * internally, but absent from the type. An agent that could publish a flag version could enable
  * or disable any code path in the platform, and v3 §38 puts that decision behind a human.
  */
-export function assertOrigin(value: unknown, field: string): { kind: 'human' | 'system'; id: string } {
+export function assertOrigin(
+  value: unknown,
+  field: string,
+): { kind: 'human' | 'system'; id: string } {
   if (value === null || typeof value !== 'object') {
     throw new FeatureFlagError(
       'malformed-record',

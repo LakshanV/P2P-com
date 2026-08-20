@@ -40,7 +40,10 @@ export function sealFlagVersion(version: FlagVersion): FlagVersion {
 }
 
 export function sealActivation(activation: Activation): Activation {
-  return Object.freeze({ ...activation, activatedBy: Object.freeze({ ...activation.activatedBy }) });
+  return Object.freeze({
+    ...activation,
+    activatedBy: Object.freeze({ ...activation.activatedBy }),
+  });
 }
 
 export function sealLifecycleEvent(event: LifecycleEvent): LifecycleEvent {
@@ -55,8 +58,6 @@ export function sealActivations(activations: readonly Activation[]): readonly Ac
   return Object.freeze(activations.map(sealActivation));
 }
 
-export function sealLifecycleEvents(
-  events: readonly LifecycleEvent[],
-): readonly LifecycleEvent[] {
+export function sealLifecycleEvents(events: readonly LifecycleEvent[]): readonly LifecycleEvent[] {
   return Object.freeze(events.map(sealLifecycleEvent));
 }

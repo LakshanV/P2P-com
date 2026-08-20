@@ -23,6 +23,7 @@ import test from 'node:test';
 
 import {
   FeatureFlagError,
+  FeatureFlagService,
   InMemoryFeatureFlagRepository,
   type FeatureFlagRepository,
   type FeatureFlagTransaction,
@@ -30,6 +31,8 @@ import {
 
 import {
   FLAG,
+  FixedClock,
+  RELEASE_CONSOLE,
   build,
   nextId,
   publishRequest,
@@ -81,6 +84,15 @@ class GatedRepository implements FeatureFlagRepository {
       return result;
     });
   }
+}
+
+/** A real service over any repository, so a gated one can be driven through the real paths. */
+function serviceOn(repository: FeatureFlagRepository): FeatureFlagService {
+  return new FeatureFlagService({
+    repository,
+    clock: new FixedClock(),
+    authority: RELEASE_CONSOLE,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -293,18 +305,235 @@ test('an activation that loses the race at commit writes nothing at all', async 
   assert.equal((await harness.service.evaluate({ flagKey: FLAG })).enabled, true);
 });
 
-test('two identical concurrent publications produce one version', async () => {
-  const harness = build();
-  const request = publishRequest({ state: 'on' });
+test('two overlapping identical publications converge on one version', async () => {
+  // Deterministic, not raced for. `Promise.allSettled` over two publishes *usually* overlaps, but
+  // whether it does depends on which microtask the scheduler picks — and a concurrency test that
+  // passes for scheduling reasons is one that stops testing concurrency the day the code changes.
+  // Here the losing transaction is held open at a chosen point: after its body has run and read a
+  // store with no such version in it, and before it commits.
+  const gated = new GatedRepository();
+  const losing = serviceOn(gated);
+  const winning = serviceOn(gated.store);
+  const request = publishRequest({ state: 'percentage', percentage: 10 });
 
-  const [first, second] = await Promise.allSettled([
-    harness.service.publish(request),
-    harness.service.publish(request),
-  ]);
+  const held = new Latch();
+  const ready = new Latch();
+  gated.holdNextAt(held.promise, () => ready.release());
 
-  const landed = [first, second].filter((outcome) => outcome.status === 'fulfilled');
-  assert.equal(landed.length, 2, 'an identical retry converges rather than failing');
-  assert.equal(harness.repository.versions().length, 1);
+  const late = losing.publish(request);
+  await ready.promise;
+
+  // The other copy of the same call commits while this one is held.
+  const first = await winning.publish(request);
+  assert.equal(first.deduplicated, false);
+
+  held.release();
+  const second = await late;
+
+  assert.equal(second.deduplicated, true, 'the loser converges rather than failing');
+  assert.deepEqual(second.version, first.version, 'and converges on the row that actually landed');
+  assert.equal(gated.store.versions().length, 1, 'one publication, one immutable version');
+  assert.equal(gated.store.versions()[0]?.version, 1);
+});
+
+test('an overlapping publication reusing the key for a different definition is refused', async () => {
+  // The other half of convergence, and the half that makes it safe. Recovering *any* row stored
+  // under the key would hand the loser somebody else's definition and tell it the publication
+  // succeeded. The comparison is the same one a sequential retry runs, so the two paths cannot
+  // drift apart into a hole reachable only by racing.
+  const gated = new GatedRepository();
+  const losing = serviceOn(gated);
+  const winning = serviceOn(gated.store);
+  const key = nextId('idem');
+
+  const held = new Latch();
+  const ready = new Latch();
+  gated.holdNextAt(held.promise, () => ready.release());
+
+  const late = losing.publish(
+    publishRequest({ state: 'percentage', percentage: 50, idempotencyKey: key }),
+  );
+  await ready.promise;
+
+  await winning.publish(
+    publishRequest({ state: 'percentage', percentage: 10, idempotencyKey: key }),
+  );
+
+  held.release();
+  await assert.rejects(
+    late,
+    (error: unknown) => {
+      assert.equal(codeOf(error), 'idempotency-key-reuse');
+      assert.match((error as Error).message, /percentage/, 'the refusal names what moved');
+      return true;
+    },
+    'a key reused for a different definition must not converge, however the race falls',
+  );
+
+  const stored = gated.store.versions();
+  assert.equal(stored.length, 1, 'the loser wrote nothing');
+  assert.equal(stored[0]?.percentage, 10, 'and the winner is intact');
+});
+
+test('two overlapping publications competing for one version number: one wins, one writes nothing', async () => {
+  // Different idempotency keys, so there is nothing to converge on: both bodies read
+  // `highestVersion` as 0 and both compute version 1. Exactly one may land, or "the definition of
+  // the day" has two answers for every evaluation replayed against it.
+  const gated = new GatedRepository();
+  const losing = serviceOn(gated);
+  const winning = serviceOn(gated.store);
+
+  const held = new Latch();
+  const ready = new Latch();
+  gated.holdNextAt(held.promise, () => ready.release());
+
+  const late = losing.publish(publishRequest({ state: 'off' }));
+  await ready.promise;
+
+  const first = await winning.publish(publishRequest({ state: 'on' }));
+  assert.equal(first.version.version, 1);
+
+  held.release();
+  await assert.rejects(late, (error: unknown) => {
+    assert.equal(codeOf(error), 'duplicate-flag-version');
+    assert.match((error as Error).message, /while this one was open/);
+    return true;
+  });
+
+  const stored = gated.store.versions();
+  assert.equal(stored.length, 1, 'the losing publication left nothing behind');
+  assert.equal(stored[0]?.state, 'on');
+});
+
+test('two overlapping kills: one records the stop, the other is told the flag is already terminal', async () => {
+  // Two operators reaching for the same emergency stop. One row records when the feature actually
+  // stopped; a second would rewrite that, and it is the first question an incident review asks.
+  const gated = new GatedRepository();
+  const { harness } = await withActiveFlag(build({ repository: gated.store }));
+  const losing = serviceOn(gated);
+
+  const held = new Latch();
+  const ready = new Latch();
+  gated.holdNextAt(held.promise, () => ready.release());
+
+  const late = losing.kill({
+    eventId: nextId('evt'),
+    flagKey: FLAG,
+    reason: 'the second operator saw the same alert',
+    idempotencyKey: nextId('idem'),
+  });
+  await ready.promise;
+
+  await harness.service.kill({
+    eventId: nextId('evt'),
+    flagKey: FLAG,
+    reason: 'incident 4471: supplier feed quoting in the wrong currency',
+    idempotencyKey: nextId('idem'),
+  });
+
+  held.release();
+  await assert.rejects(
+    late,
+    (error: unknown) => {
+      assert.equal(codeOf(error), 'flag-terminated');
+      return true;
+    },
+    'a losing kill must not append a second stop',
+  );
+
+  const events = gated.store.lifecycleEvents();
+  assert.equal(events.length, 1, 'one stop, one record of when the feature stopped');
+  assert.match(events[0]?.reason ?? '', /incident 4471/);
+});
+
+test('a retirement racing a kill is refused: terminal means terminal, not terminal per kind', async () => {
+  // The case a `UNIQUE (flag_key, kind)` constraint would have let through. Sequentially the
+  // service refuses it; under a race only the commit-time check can, and a flag carrying both a
+  // kill and a retirement is a history with two answers to "when did this stop".
+  const gated = new GatedRepository();
+  const { harness } = await withActiveFlag(build({ repository: gated.store }));
+  const losing = serviceOn(gated);
+
+  const held = new Latch();
+  const ready = new Latch();
+  gated.holdNextAt(held.promise, () => ready.release());
+
+  const late = losing.retire({
+    eventId: nextId('evt'),
+    flagKey: FLAG,
+    reason: 'tidying up a flag that shipped last quarter',
+    idempotencyKey: nextId('idem'),
+  });
+  await ready.promise;
+
+  await harness.service.kill({
+    eventId: nextId('evt'),
+    flagKey: FLAG,
+    reason: 'incident 4471: supplier feed quoting in the wrong currency',
+    idempotencyKey: nextId('idem'),
+  });
+
+  held.release();
+  await assert.rejects(late, (error: unknown) => codeOf(error) === 'flag-terminated');
+
+  const events = gated.store.lifecycleEvents();
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.kind, 'kill');
+});
+
+test('every losing guarded mutation leaves the store exactly as the winner left it', async () => {
+  // One assertion over all three write paths: whatever a losing transaction had queued — a
+  // version, an activation, a lifecycle event — none of it is visible afterwards, and the flag
+  // still evaluates from what the winner wrote. Partial history is worse than no history: it
+  // reads as a complete record of something that never happened.
+  const gated = new GatedRepository();
+  const { harness, version } = await withActiveFlag(build({ repository: gated.store }), {
+    state: 'on',
+  });
+  const losing = serviceOn(gated);
+
+  const before = {
+    versions: gated.store.versions().length,
+    activations: gated.store.activations().length,
+    lifecycle: gated.store.lifecycleEvents().length,
+  };
+
+  // A losing activation: it reads `version` as current, then somebody else moves the flag on.
+  const replacement = await harness.service.publish(publishRequest({ state: 'off' }));
+  const held = new Latch();
+  const ready = new Latch();
+  gated.holdNextAt(held.promise, () => ready.release());
+
+  const late = losing.activate({
+    activationId: nextId('act'),
+    flagVersionId: replacement.version.flagVersionId,
+    supersedesVersionId: version.flagVersionId,
+    idempotencyKey: nextId('idem'),
+  });
+  await ready.promise;
+
+  const third = await harness.service.publish(publishRequest({ state: 'on' }));
+  await harness.service.activate({
+    activationId: nextId('act'),
+    flagVersionId: third.version.flagVersionId,
+    supersedesVersionId: version.flagVersionId,
+    idempotencyKey: nextId('idem'),
+  });
+
+  held.release();
+  await assert.rejects(late, (error: unknown) => codeOf(error) === 'stale-activation');
+
+  assert.equal(gated.store.versions().length, before.versions + 2, 'both publications landed');
+  assert.equal(
+    gated.store.activations().length,
+    before.activations + 1,
+    'but only one further activation did',
+  );
+  assert.equal(gated.store.lifecycleEvents().length, before.lifecycle);
+
+  const evaluation = await harness.service.evaluate({ flagKey: FLAG });
+  assert.equal(evaluation.flagVersionId, third.version.flagVersionId, 'the winner is what runs');
+  assert.equal(evaluation.enabled, true);
 });
 
 test('two different concurrent publications both land, with different version numbers', async () => {

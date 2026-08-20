@@ -93,7 +93,11 @@ export type PredicateKind = (typeof PREDICATE_KINDS)[number];
 
 export type Predicate =
   | { readonly kind: 'attribute-equals'; readonly attribute: string; readonly value: string }
-  | { readonly kind: 'attribute-in'; readonly attribute: string; readonly values: readonly string[] }
+  | {
+      readonly kind: 'attribute-in';
+      readonly attribute: string;
+      readonly values: readonly string[];
+    }
   | { readonly kind: 'all'; readonly of: readonly Predicate[] }
   | { readonly kind: 'any'; readonly of: readonly Predicate[] };
 

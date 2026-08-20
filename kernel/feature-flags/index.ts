@@ -62,12 +62,7 @@ export {
   attributesOf,
 } from './registry.ts';
 
-export {
-  sealActivation,
-  sealFlagVersion,
-  sealLifecycleEvent,
-  sealPredicate,
-} from './immutable.ts';
+export { sealActivation, sealFlagVersion, sealLifecycleEvent, sealPredicate } from './immutable.ts';
 
 export {
   inStoredRow,

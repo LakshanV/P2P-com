@@ -29,9 +29,10 @@ import {
   FeatureFlagError,
   LIFECYCLE_KINDS,
   type Activation,
+  type FlagState,
   type FlagVersion,
   type LifecycleEvent,
-  type Origin,
+  type LifecycleKind,
 } from './types.ts';
 
 /** Where a record came from, which decides what a refusal should tell the reader. */
@@ -94,6 +95,12 @@ const LIFECYCLE_FIELDS = [
   'idempotencyKey',
   'requestFingerprint',
 ];
+
+const isFlagState = (value: unknown): value is FlagState =>
+  typeof value === 'string' && (FLAG_STATES as readonly string[]).includes(value);
+
+const isLifecycleKind = (value: unknown): value is LifecycleKind =>
+  typeof value === 'string' && (LIFECYCLE_KINDS as readonly string[]).includes(value);
 
 function instant(value: unknown, field: string): string {
   if (typeof value !== 'string') {
@@ -163,7 +170,7 @@ export function validateFlagVersion(candidate: unknown, source: RecordSource): F
     const value = candidate as Record<string, unknown>;
 
     const state = value.state;
-    if (typeof state !== 'string' || !(FLAG_STATES as readonly string[]).includes(state)) {
+    if (!isFlagState(state)) {
       throw new FeatureFlagError(
         'malformed-record',
         `state is "${String(state)}"; expected one of ${FLAG_STATES.join(', ')}`,
@@ -241,7 +248,7 @@ export function validateFlagVersion(candidate: unknown, source: RecordSource): F
       notBefore,
       notAfter,
       publishedAt: instant(value.publishedAt, 'publishedAt'),
-      publishedBy: assertOrigin(value.publishedBy, 'publishedBy') as Origin,
+      publishedBy: assertOrigin(value.publishedBy, 'publishedBy'),
       idempotencyKey: assertFlagIdentifier(value.idempotencyKey, 'idempotencyKey'),
       requestFingerprint: fingerprint(value.requestFingerprint, 'requestFingerprint'),
     };
@@ -274,7 +281,7 @@ export function validateActivation(candidate: unknown, source: RecordSource): Ac
       flagVersionId,
       supersedesVersionId: supersedes,
       activatedAt: instant(value.activatedAt, 'activatedAt'),
-      activatedBy: assertOrigin(value.activatedBy, 'activatedBy') as Origin,
+      activatedBy: assertOrigin(value.activatedBy, 'activatedBy'),
       idempotencyKey: assertFlagIdentifier(value.idempotencyKey, 'idempotencyKey'),
       requestFingerprint: fingerprint(value.requestFingerprint, 'requestFingerprint'),
     };
@@ -290,7 +297,7 @@ export function validateLifecycleEvent(candidate: unknown, source: RecordSource)
     const value = candidate as Record<string, unknown>;
 
     const kind = value.kind;
-    if (typeof kind !== 'string' || !(LIFECYCLE_KINDS as readonly string[]).includes(kind)) {
+    if (!isLifecycleKind(kind)) {
       throw new FeatureFlagError(
         'malformed-record',
         `kind is "${String(kind)}"; expected one of ${LIFECYCLE_KINDS.join(', ')}`,
@@ -300,10 +307,10 @@ export function validateLifecycleEvent(candidate: unknown, source: RecordSource)
     return {
       eventId: assertFlagIdentifier(value.eventId, 'eventId'),
       flagKey: assertFlagKey(value.flagKey),
-      kind: kind as LifecycleEvent['kind'],
+      kind,
       reason: reasonText(value.reason, 'reason'),
       recordedAt: instant(value.recordedAt, 'recordedAt'),
-      recordedBy: assertOrigin(value.recordedBy, 'recordedBy') as Origin,
+      recordedBy: assertOrigin(value.recordedBy, 'recordedBy'),
       idempotencyKey: assertFlagIdentifier(value.idempotencyKey, 'idempotencyKey'),
       requestFingerprint: fingerprint(value.requestFingerprint, 'requestFingerprint'),
     };
