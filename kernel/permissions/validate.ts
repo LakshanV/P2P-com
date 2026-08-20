@@ -69,7 +69,9 @@ const POLICY_FIELDS = [
   'roles',
   'publishedAt',
   'publishedBy',
+  'bootstrap',
   'idempotencyKey',
+  'requestFingerprint',
 ];
 const GRANT_FIELDS = [
   'grantId',
@@ -88,6 +90,7 @@ const GRANT_FIELDS = [
   'expiresAt',
   'grantedBy',
   'idempotencyKey',
+  'requestFingerprint',
 ];
 const REVOCATION_FIELDS = [
   'revocationId',
@@ -96,6 +99,7 @@ const REVOCATION_FIELDS = [
   'reason',
   'revokedBy',
   'idempotencyKey',
+  'requestFingerprint',
 ];
 const DECISION_FIELDS = [
   'decisionId',
@@ -237,6 +241,34 @@ function roleDefinition(value: unknown, path: string): RoleDefinition {
   });
 }
 
+/**
+ * The bootstrap flag, and the one thing it must agree with.
+ *
+ * A bootstrap publication has no authenticated administrator, so its author is the `system`
+ * authority. A row claiming `bootstrap: true` under a `human` author would be claiming both that
+ * nobody was authenticated and that somebody was.
+ */
+function bootstrapFlag(value: unknown, publishedBy: unknown): boolean {
+  if (typeof value !== 'boolean') {
+    throw new PermissionError(
+      'malformed-record',
+      `bootstrap is ${value === null ? 'null' : typeof value}; expected a boolean. Whether the ` +
+        'first policy was installed by an operator or published by an administrator is not a ' +
+        'question a record may leave open',
+    );
+  }
+  const kind = (publishedBy as { kind?: unknown } | null)?.kind;
+  if (value && kind !== 'system') {
+    throw new PermissionError(
+      'malformed-record',
+      `a bootstrap policy version is authored by the bootstrap authority, so publishedBy.kind must ` +
+        `be "system" and is "${String(kind)}". Nobody was authenticated, and a human author would ` +
+        'claim somebody was',
+    );
+  }
+  return value;
+}
+
 export function validatePolicyVersion(candidate: unknown, source: RecordSource): PolicyVersion {
   return inSource(source, () => {
     const fields = shapeOf(candidate, POLICY_FIELDS, 'a policy version');
@@ -274,7 +306,9 @@ export function validatePolicyVersion(candidate: unknown, source: RecordSource):
       roles: Object.freeze(roles),
       publishedAt: instant(fields.publishedAt, 'publishedAt'),
       publishedBy: origin(fields.publishedBy, 'publishedBy'),
+      bootstrap: bootstrapFlag(fields.bootstrap, fields.publishedBy),
       idempotencyKey: assertPermissionIdentifier(fields.idempotencyKey, 'idempotencyKey'),
+      requestFingerprint: requestFingerprint(fields.requestFingerprint),
     };
   });
 }
@@ -343,6 +377,7 @@ export function validateGrant(candidate: unknown, source: RecordSource): Grant {
       expiresAt,
       grantedBy: origin(fields.grantedBy, 'grantedBy'),
       idempotencyKey: assertPermissionIdentifier(fields.idempotencyKey, 'idempotencyKey'),
+      requestFingerprint: requestFingerprint(fields.requestFingerprint),
     };
   });
 }
@@ -366,6 +401,7 @@ export function validateRevocation(candidate: unknown, source: RecordSource): Re
       reason: fields.reason as Revocation['reason'],
       revokedBy: origin(fields.revokedBy, 'revokedBy'),
       idempotencyKey: assertPermissionIdentifier(fields.idempotencyKey, 'idempotencyKey'),
+      requestFingerprint: requestFingerprint(fields.requestFingerprint),
     };
   });
 }

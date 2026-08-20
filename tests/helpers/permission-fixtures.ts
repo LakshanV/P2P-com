@@ -11,6 +11,10 @@
 import {
   InMemoryPermissionRepository,
   PermissionService,
+  fingerprintAdministrationRequest,
+  type BootstrapAuthority,
+  type Grant,
+  type PermissionRepository,
   type AccountAssertion,
   type AccountLookup,
   type Clock,
@@ -21,6 +25,11 @@ import {
 } from '../../kernel/permissions/index.ts';
 
 export const SUBJECT = 'sub_01HQZXPERM0001';
+/** The administrator: a different party from the subject most tests are about. */
+export const ADMIN_SUBJECT = 'sub_01HQZXADMIN001';
+export const ADMIN_ACCOUNT = 'acct_01HQZXADMIN01';
+export const ADMIN_SESSION = 'sess_01HQZXADMIN01';
+export const ADMIN_TOKEN = `adm${'A'.repeat(39)}0001`;
 export const ACCOUNT = 'acct_01HQZXPERM0001';
 export const SESSION = 'sess_01HQZXPERM0001';
 export const TOKEN = `tok${'A'.repeat(39)}0001`;
@@ -57,6 +66,13 @@ export interface StubSessionOptions {
   readonly revokedAt?: string | null;
   /** When set, `validate` rejects with this instead of asserting. */
   readonly refuseWith?: Error;
+  /** The administrator’s session, for the suites that make administration misbehave. */
+  readonly adminSubjectId?: string;
+  readonly adminSessionId?: string;
+  readonly adminAbsoluteExpiresAt?: string;
+  readonly adminIdleExpiresAt?: string;
+  readonly adminRevokedAt?: string | null;
+  readonly adminRefuseWith?: Error;
 }
 
 /**
@@ -89,6 +105,24 @@ export class StubSessionValidator implements SessionValidator {
     this.presented.push(presentedToken);
     if (this.#options.refuseWith !== undefined) return Promise.reject(this.#options.refuseWith);
 
+    // The administrator’s token resolves to the administrator, so a suite can drive both parties
+    // through one validator without the ordinary subject’s session being able to administer.
+    if (presentedToken === ADMIN_TOKEN && this.#options.adminRefuseWith !== undefined) {
+      return Promise.reject(this.#options.adminRefuseWith);
+    }
+    if (presentedToken === ADMIN_TOKEN) {
+      return Promise.resolve({
+        sessionId: this.#options.adminSessionId ?? ADMIN_SESSION,
+        subjectId: this.#options.adminSubjectId ?? ADMIN_SUBJECT,
+        assurance: 'single-factor',
+        factors: ['possession'],
+        issuedAt: NOW,
+        absoluteExpiresAt: this.#options.adminAbsoluteExpiresAt ?? '2026-04-02T00:00:00Z',
+        idleExpiresAt: this.#options.adminIdleExpiresAt ?? '2026-04-01T12:30:00Z',
+        revokedAt: this.#options.adminRevokedAt ?? null,
+      });
+    }
+
     return Promise.resolve({
       sessionId: this.#options.sessionId ?? SESSION,
       subjectId: this.#options.subjectId ?? SUBJECT,
@@ -108,7 +142,10 @@ export class StubAccountLookup implements AccountLookup {
   #accounts: Map<string, AccountAssertion>;
 
   constructor(
-    accounts: readonly AccountAssertion[] = [{ accountId: ACCOUNT, subjectId: SUBJECT }],
+    accounts: readonly AccountAssertion[] = [
+      { accountId: ACCOUNT, subjectId: SUBJECT },
+      { accountId: ADMIN_ACCOUNT, subjectId: ADMIN_SUBJECT },
+    ],
   ) {
     this.#accounts = new Map(accounts.map((account) => [account.subjectId, account]));
   }
@@ -131,12 +168,25 @@ export interface Harness {
   readonly clock: FixedClock;
 }
 
+/** The operator authority the suites bootstrap with. Real deployments inject their own. */
+export const BOOTSTRAP: BootstrapAuthority = Object.freeze({
+  authorityId: 'k04-test-bootstrap',
+  permitsBootstrap: () => true,
+});
+
+/** A bootstrap authority that refuses, which is what an unwired deployment has. */
+export const REFUSING_BOOTSTRAP: BootstrapAuthority = Object.freeze({
+  authorityId: 'k04-test-bootstrap',
+  permitsBootstrap: () => false,
+});
+
 export function build(
   options: {
     readonly sessions?: StubSessionValidator;
     readonly accounts?: StubAccountLookup;
     readonly clock?: FixedClock;
     readonly repository?: InMemoryPermissionRepository;
+    readonly bootstrap?: BootstrapAuthority;
   } = {},
 ): Harness {
   const repository = options.repository ?? new InMemoryPermissionRepository();
@@ -144,7 +194,13 @@ export function build(
   const accounts = options.accounts ?? new StubAccountLookup();
   const clock = options.clock ?? new FixedClock();
 
-  const service = new PermissionService({ repository, sessions, accounts, clock });
+  const service = new PermissionService({
+    repository,
+    sessions,
+    accounts,
+    clock,
+    bootstrap: options.bootstrap ?? BOOTSTRAP,
+  });
   return { service, repository, sessions, accounts, clock };
 }
 
@@ -201,10 +257,35 @@ export function policyRequest(overrides: Partial<PublishPolicyRequest> = {}): Pu
         capabilities: [{ action: 'invoke-tool', resourceType: 'tool' }],
       },
     ],
-    publishedBy: HUMAN,
+    presentedToken: ADMIN_TOKEN,
+    purpose: 'system-maintenance',
     idempotencyKey: nextId('idem'),
     ...overrides,
   };
+}
+
+/**
+ * The same request with one field removed.
+ *
+ * The absence *is* the case under test — a publication with no administrator, a grant with no
+ * session — so it is spelled once here rather than as a rest-destructure at every call site.
+ */
+export function without<T extends object>(request: T, field: string): T {
+  const copy = { ...request } as Record<string, unknown>;
+  delete copy[field];
+  return copy as T;
+}
+
+/**
+ * A publication with no administrator behind it: the bootstrap shape.
+ *
+ * A separate builder rather than an override, because "no token" is the whole difference between
+ * the two paths and spelling it as `presentedToken: undefined` reads like an accident.
+ */
+export function bootstrapPolicyRequest(
+  overrides: Partial<PublishPolicyRequest> = {},
+): PublishPolicyRequest {
+  return without(policyRequest(overrides), 'presentedToken');
 }
 
 export function grantRequest(
@@ -218,7 +299,8 @@ export function grantRequest(
     effect: 'allow',
     action: 'read',
     resourceType: 'order',
-    grantedBy: HUMAN,
+    presentedToken: ADMIN_TOKEN,
+    administrationPurpose: 'system-maintenance',
     idempotencyKey: nextId('idem'),
     ...overrides,
   };
@@ -246,15 +328,66 @@ export function revokeRequest(
     revocationId: nextId('rev'),
     grantId,
     reason: 'access-no-longer-needed',
-    revokedBy: HUMAN,
+    presentedToken: ADMIN_TOKEN,
+    administrationPurpose: 'system-maintenance',
     idempotencyKey: nextId('idem'),
     ...overrides,
   };
 }
 
-/** Publish the fixture policy and return the harness, for the many tests that need both. */
+/**
+ * The one grant K-04 cannot mint for itself: the first administrator's.
+ *
+ * Bootstrap installs the rules and hands nobody authority under them, so the first administration
+ * grant is written **out of band** through the repository port — which is exactly what an operator
+ * would do, and exactly why it is visible here rather than hidden behind a service method that
+ * could be called by anybody.
+ */
+export async function installFirstAdministrator(
+  repository: PermissionRepository,
+  policyVersionId: string,
+  overrides: Partial<Grant> = {},
+): Promise<Grant> {
+  const grant: Grant = {
+    grantId: 'grant_01HQZXADMIN01',
+    subjectId: ADMIN_SUBJECT,
+    accountId: ADMIN_ACCOUNT,
+    role: 'ADMIN',
+    effect: 'allow',
+    action: 'grant-permission',
+    resourceType: 'permission',
+    resourceId: null,
+    purpose: 'system-maintenance',
+    condition: null,
+    policyVersionId,
+    grantedAt: NOW,
+    notBefore: null,
+    expiresAt: null,
+    grantedBy: { kind: 'system', id: BOOTSTRAP.authorityId },
+    idempotencyKey: 'idem_01HQZXADMIN01',
+    requestFingerprint: fingerprintAdministrationRequest({
+      operation: 'grant',
+      recordId: 'grant_01HQZXADMIN01',
+      actorSubjectId: BOOTSTRAP.authorityId,
+      actorSessionId: BOOTSTRAP.authorityId,
+      actorAccountId: BOOTSTRAP.authorityId,
+      bootstrap: false,
+      purpose: 'system-maintenance',
+      content: 'first-administrator',
+    }),
+    ...overrides,
+  };
+  await repository.withTransaction((tx) => tx.insertGrant(grant));
+  return grant;
+}
+
+/**
+ * Bootstrap the fixture policy and install the first administrator, for the many tests that need
+ * an authority structure before they can do anything at all.
+ */
 export async function withPolicy(harness: Harness = build()): Promise<Harness> {
-  await harness.service.publishPolicy(policyRequest());
+  const published = await harness.service.publishPolicy(bootstrapPolicyRequest());
+  await installFirstAdministrator(harness.repository, published.policy.policyVersionId);
   return harness;
 }
 
@@ -267,7 +400,9 @@ export function policyRow(overrides: Record<string, unknown> = {}): Record<strin
     published_at: '2026-04-01T12:00:00.000000Z',
     published_by_kind: 'human',
     published_by_id: 'ops-alice-console',
+    bootstrap: false,
     idempotency_key: 'idem_01HQZXTESTROW',
+    request_fingerprint: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     ...overrides,
   };
 }
@@ -291,6 +426,7 @@ export function grantRow(overrides: Record<string, unknown> = {}): Record<string
     granted_by_kind: 'human',
     granted_by_id: 'ops-alice-console',
     idempotency_key: 'idem_01HQZXTESTROW',
+    request_fingerprint: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     ...overrides,
   };
 }
@@ -304,6 +440,7 @@ export function revocationRow(overrides: Record<string, unknown> = {}): Record<s
     revoked_by_kind: 'human',
     revoked_by_id: 'ops-alice-console',
     idempotency_key: 'idem_01HQZXTESTROW',
+    request_fingerprint: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     ...overrides,
   };
 }

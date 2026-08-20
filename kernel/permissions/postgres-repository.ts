@@ -128,7 +128,9 @@ const POLICY_COLUMNS = [
   'published_at',
   'published_by_kind',
   'published_by_id',
+  'bootstrap',
   'idempotency_key',
+  'request_fingerprint',
 ] as const;
 
 const GRANT_COLUMNS = [
@@ -149,6 +151,7 @@ const GRANT_COLUMNS = [
   'granted_by_kind',
   'granted_by_id',
   'idempotency_key',
+  'request_fingerprint',
 ] as const;
 
 const REVOCATION_COLUMNS = [
@@ -159,6 +162,7 @@ const REVOCATION_COLUMNS = [
   'revoked_by_kind',
   'revoked_by_id',
   'idempotency_key',
+  'request_fingerprint',
 ] as const;
 
 const DECISION_COLUMNS = [
@@ -280,7 +284,9 @@ export function toPolicyVersion(row: Record<string, unknown>): PolicyVersion {
             kind: row.published_by_kind,
             id: row.published_by_id,
           },
+          bootstrap: row.bootstrap,
           idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
+          requestFingerprint: text(row.request_fingerprint, 'request_fingerprint'),
         },
         'stored row',
       ),
@@ -312,6 +318,7 @@ export function toGrant(row: Record<string, unknown>): Grant {
           expiresAt: optionalInstant(row.expires_at, 'expires_at'),
           grantedBy: { kind: row.granted_by_kind, id: row.granted_by_id },
           idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
+          requestFingerprint: text(row.request_fingerprint, 'request_fingerprint'),
         },
         'stored row',
       ),
@@ -330,6 +337,7 @@ export function toRevocation(row: Record<string, unknown>): Revocation {
           reason: row.reason,
           revokedBy: { kind: row.revoked_by_kind, id: row.revoked_by_id },
           idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
+          requestFingerprint: text(row.request_fingerprint, 'request_fingerprint'),
         },
         'stored row',
       ),
@@ -497,7 +505,7 @@ class PostgresPermissionTransaction implements PermissionTransaction {
     try {
       await this.#client.query(
         `INSERT INTO ${POLICY_TABLE} (${POLICY_COLUMNS.join(', ')})
-         VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7);`,
+         VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9);`,
         [
           policy.policyVersionId,
           policy.version,
@@ -505,7 +513,9 @@ class PostgresPermissionTransaction implements PermissionTransaction {
           policy.publishedAt,
           policy.publishedBy.kind,
           policy.publishedBy.id,
+          policy.bootstrap,
           policy.idempotencyKey,
+          policy.requestFingerprint,
         ],
       );
     } catch (error) {
@@ -544,7 +554,7 @@ class PostgresPermissionTransaction implements PermissionTransaction {
     try {
       await this.#client.query(
         `INSERT INTO ${GRANT_TABLE} (${GRANT_COLUMNS.join(', ')})
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17);`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, $18);`,
         [
           grant.grantId,
           grant.subjectId,
@@ -563,6 +573,7 @@ class PostgresPermissionTransaction implements PermissionTransaction {
           grant.grantedBy.kind,
           grant.grantedBy.id,
           grant.idempotencyKey,
+          grant.requestFingerprint,
         ],
       );
     } catch (error) {
@@ -600,7 +611,7 @@ class PostgresPermissionTransaction implements PermissionTransaction {
     try {
       await this.#client.query(
         `INSERT INTO ${REVOCATION_TABLE} (${REVOCATION_COLUMNS.join(', ')})
-         VALUES ($1, $2, $3, $4, $5, $6, $7);`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8);`,
         [
           revocation.revocationId,
           revocation.grantId,
@@ -609,6 +620,7 @@ class PostgresPermissionTransaction implements PermissionTransaction {
           revocation.revokedBy.kind,
           revocation.revokedBy.id,
           revocation.idempotencyKey,
+          revocation.requestFingerprint,
         ],
       );
     } catch (error) {

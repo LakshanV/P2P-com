@@ -36,9 +36,20 @@
 import { compareInstants } from '../../platform/time/instant.ts';
 
 import { evaluate, type EvaluationInput } from './decide.ts';
-import { fingerprintDecisionRequest, type DecisionRequestFacts } from './fingerprint.ts';
+import {
+  fingerprintAdministrationRequest,
+  fingerprintDecisionRequest,
+  type DecisionRequestFacts,
+} from './fingerprint.ts';
 import { sealDecision, sealGrant, sealPolicyVersion, sealRevocation } from './immutable.ts';
-import type { AccountLookup, Clock, SessionAssertion, SessionValidator } from './ports.ts';
+import {
+  NO_BOOTSTRAP,
+  type AccountLookup,
+  type BootstrapAuthority,
+  type Clock,
+  type SessionAssertion,
+  type SessionValidator,
+} from './ports.ts';
 import {
   ASSERTED_AUTHORIZATION_FIELDS,
   FOREIGN_FIELDS,
@@ -77,7 +88,16 @@ export interface PublishPolicyRequest {
     readonly role: string;
     readonly capabilities: readonly { readonly action: string; readonly resourceType: string }[];
   }[];
-  readonly publishedBy: Origin;
+  /**
+   * The administrator's session secret. Handed to K-02's port unread.
+   *
+   * Omitted only for the bootstrap publication, which has no administrator by definition and is
+   * permitted solely by the injected authority (`ports.ts`).
+   */
+  readonly presentedToken?: string;
+  /** Required when the administering role is a staff role, as it will normally be. */
+  readonly purpose?: string | null;
+  readonly context?: Record<string, string>;
   readonly idempotencyKey: string;
 }
 
@@ -94,7 +114,11 @@ export interface GrantRequest {
   readonly condition?: unknown;
   readonly notBefore?: string | null;
   readonly expiresAt?: string | null;
-  readonly grantedBy: Origin;
+  /** The administrator’s session secret. There is no bootstrap path for a grant. */
+  readonly presentedToken: string;
+  /** The purpose the *administration* is authorised under, not the purpose being granted. */
+  readonly administrationPurpose?: string | null;
+  readonly administrationContext?: Record<string, string>;
   readonly idempotencyKey: string;
 }
 
@@ -102,7 +126,10 @@ export interface RevokeRequest {
   readonly revocationId: string;
   readonly grantId: string;
   readonly reason: string;
-  readonly revokedBy: Origin;
+  /** The administrator’s session secret. There is no bootstrap path for a revocation. */
+  readonly presentedToken: string;
+  readonly administrationPurpose?: string | null;
+  readonly administrationContext?: Record<string, string>;
   readonly idempotencyKey: string;
 }
 
@@ -133,7 +160,9 @@ const PUBLISH_KEYS: readonly string[] = [
   'policyVersionId',
   'version',
   'roles',
-  'publishedBy',
+  'presentedToken',
+  'purpose',
+  'context',
   'idempotencyKey',
 ];
 
@@ -150,7 +179,9 @@ const GRANT_KEYS: readonly string[] = [
   'condition',
   'notBefore',
   'expiresAt',
-  'grantedBy',
+  'presentedToken',
+  'administrationPurpose',
+  'administrationContext',
   'idempotencyKey',
 ];
 
@@ -158,9 +189,21 @@ const REVOKE_KEYS: readonly string[] = [
   'revocationId',
   'grantId',
   'reason',
-  'revokedBy',
+  'presentedToken',
+  'administrationPurpose',
+  'administrationContext',
   'idempotencyKey',
 ];
+
+/**
+ * The capability an administrator must hold to change who may do what.
+ *
+ * Named once, and deliberately the same pair a caller could be granted for anything else: there is
+ * no private back door verb that only administration uses, so a reviewer reading the policy sees
+ * exactly what confers it.
+ */
+const ADMINISTRATION_ACTION = 'grant-permission';
+const ADMINISTRATION_RESOURCE = 'permission';
 
 const AUTHORIZE_KEYS: readonly string[] = [
   'decisionId',
@@ -179,6 +222,7 @@ export class PermissionService {
   readonly #sessions: SessionValidator;
   readonly #accounts: AccountLookup;
   readonly #clock: Clock;
+  readonly #bootstrap: BootstrapAuthority;
 
   constructor(options: {
     readonly repository: PermissionRepository;
@@ -187,11 +231,14 @@ export class PermissionService {
     /** K-03's account lookup, injected. */
     readonly accounts: AccountLookup;
     readonly clock: Clock;
+    /** How the first policy may be installed. Defaults to `NO_BOOTSTRAP`, which refuses. */
+    readonly bootstrap?: BootstrapAuthority;
   }) {
     this.#repository = options.repository;
     this.#sessions = options.sessions;
     this.#accounts = options.accounts;
     this.#clock = options.clock;
+    this.#bootstrap = options.bootstrap ?? NO_BOOTSTRAP;
   }
 
   /**
@@ -205,6 +252,22 @@ export class PermissionService {
   ): Promise<{ policy: PolicyVersion; deduplicated: boolean }> {
     assertPermittedKeys(request, PUBLISH_KEYS, 'a publish-policy request');
 
+    const purpose: Purpose | null =
+      request.purpose === undefined || request.purpose === null
+        ? null
+        : assertPurpose(request.purpose);
+    const context = assertContext(request.context);
+
+    // Either an authenticated, authorised administrator, or the one narrow bootstrap path — which
+    // exists only because the first policy cannot be authorised by a policy that does not yet
+    // exist. Everything about that path is decided here rather than by anything in the request.
+    const actor = await this.#administratorOrBootstrap(
+      request.presentedToken,
+      purpose,
+      context,
+      assertPermissionIdentifier(request.idempotencyKey, 'idempotencyKey'),
+    );
+
     const policy = sealPolicyVersion(
       validatePolicyVersion(
         {
@@ -212,8 +275,19 @@ export class PermissionService {
           version: request.version,
           roles: request.roles,
           publishedAt: this.#now(),
-          publishedBy: request.publishedBy,
+          publishedBy: actor.origin,
+          bootstrap: actor.bootstrap,
           idempotencyKey: request.idempotencyKey,
+          requestFingerprint: fingerprintAdministrationRequest({
+            operation: 'publish-policy',
+            recordId: assertPermissionIdentifier(request.policyVersionId, 'policyVersionId'),
+            actorSubjectId: actor.subjectId,
+            actorSessionId: actor.sessionId,
+            actorAccountId: actor.accountId,
+            bootstrap: actor.bootstrap,
+            purpose,
+            content: JSON.stringify({ version: request.version, roles: request.roles }),
+          }),
         },
         'request',
       ),
@@ -254,6 +328,16 @@ export class PermissionService {
   async grant(request: GrantRequest): Promise<{ grant: Grant; deduplicated: boolean }> {
     assertPermittedKeys(request, GRANT_KEYS, 'a grant request');
 
+    const administrationPurpose: Purpose | null =
+      request.administrationPurpose === undefined || request.administrationPurpose === null
+        ? null
+        : assertPurpose(request.administrationPurpose);
+    const actor = await this.#administrator(
+      request.presentedToken,
+      administrationPurpose,
+      assertContext(request.administrationContext),
+    );
+
     const policy = await this.#requireActivePolicy();
     const grant = sealGrant(
       validateGrant(
@@ -272,8 +356,30 @@ export class PermissionService {
           grantedAt: this.#now(),
           notBefore: request.notBefore ?? null,
           expiresAt: request.expiresAt ?? null,
-          grantedBy: request.grantedBy,
+          grantedBy: actor.origin,
           idempotencyKey: request.idempotencyKey,
+          requestFingerprint: fingerprintAdministrationRequest({
+            operation: 'grant',
+            recordId: assertPermissionIdentifier(request.grantId, 'grantId'),
+            actorSubjectId: actor.subjectId,
+            actorSessionId: actor.sessionId,
+            actorAccountId: actor.accountId,
+            bootstrap: false,
+            purpose: administrationPurpose,
+            content: JSON.stringify({
+              subjectId: request.subjectId,
+              accountId: request.accountId,
+              role: request.role,
+              effect: request.effect,
+              action: request.action,
+              resourceType: request.resourceType,
+              resourceId: request.resourceId ?? null,
+              purpose: request.purpose ?? null,
+              condition: request.condition ?? null,
+              notBefore: request.notBefore ?? null,
+              expiresAt: request.expiresAt ?? null,
+            }),
+          }),
         },
         'request',
       ),
@@ -316,6 +422,16 @@ export class PermissionService {
   async revoke(request: RevokeRequest): Promise<Revocation> {
     assertPermittedKeys(request, REVOKE_KEYS, 'a revoke request');
 
+    const administrationPurpose: Purpose | null =
+      request.administrationPurpose === undefined || request.administrationPurpose === null
+        ? null
+        : assertPurpose(request.administrationPurpose);
+    const actor = await this.#administrator(
+      request.presentedToken,
+      administrationPurpose,
+      assertContext(request.administrationContext),
+    );
+
     const revocation = sealRevocation(
       validateRevocation(
         {
@@ -323,8 +439,18 @@ export class PermissionService {
           grantId: request.grantId,
           revokedAt: this.#now(),
           reason: request.reason,
-          revokedBy: request.revokedBy,
+          revokedBy: actor.origin,
           idempotencyKey: request.idempotencyKey,
+          requestFingerprint: fingerprintAdministrationRequest({
+            operation: 'revoke',
+            recordId: assertPermissionIdentifier(request.revocationId, 'revocationId'),
+            actorSubjectId: actor.subjectId,
+            actorSessionId: actor.sessionId,
+            actorAccountId: actor.accountId,
+            bootstrap: false,
+            purpose: administrationPurpose,
+            content: JSON.stringify({ grantId: request.grantId, reason: request.reason }),
+          }),
         },
         'request',
       ),
@@ -550,6 +676,185 @@ export class PermissionService {
 
   // -------------------------------------------------------------------------
 
+  /**
+   * An authorised administrator, or the bootstrap authority — and nothing else.
+   *
+   * The circularity is real: administering permissions requires permission, and until a policy
+   * exists no role permits anything, so the *first* policy can never be authorised. Something must
+   * break that circle, and every way of breaking it is a bypass. This is the narrowest one:
+   *
+   *   - it applies to `publishPolicy` and to nothing else, so it can never mint a grant;
+   *   - it applies only when **no policy version exists at all**, so it cannot be used later to
+   *     install a wider policy over the top of a real one;
+   *   - it is refused unless a `BootstrapAuthority` was injected at construction, which no request
+   *     can ask for;
+   *   - and it leaves `bootstrap: true` with a `system` author in an append-only row, so the fact
+   *     that the first policy had no administrator behind it is permanent evidence.
+   *
+   * A caller that presents a token gets the ordinary authenticated path even when the store is
+   * empty — presenting a session says "I am an administrator", and that claim is checked rather
+   * than waved through into bootstrap.
+   */
+  async #administratorOrBootstrap(
+    presentedToken: string | undefined,
+    purpose: Purpose | null,
+    context: Readonly<Record<string, string>>,
+    idempotencyKey: string,
+  ): Promise<{
+    subjectId: string;
+    sessionId: string;
+    accountId: string;
+    bootstrap: boolean;
+    origin: Origin;
+  }> {
+    if (presentedToken !== undefined) {
+      const actor = await this.#administrator(presentedToken, purpose, context);
+      return { ...actor, bootstrap: false };
+    }
+
+    const existing = await this.#repository.withTransaction((tx) => tx.findActivePolicy());
+    if (existing !== null) {
+      // One exception, and it writes nothing: a *retry* of the bootstrap that installed the policy
+      // already there. An operator's install script must be re-runnable, and converging on the
+      // bootstrap that already happened changes no authority — the fingerprint comparison
+      // downstream still has to agree that it is the same request. Anything else, including a
+      // second bootstrap under a fresh key, is a second first policy and is refused.
+      const under = await this.#repository.withTransaction((tx) =>
+        tx.findPolicyByIdempotencyKey(idempotencyKey),
+      );
+      if (under === null || !under.bootstrap) {
+        throw new PermissionError(
+          'administration-denied',
+          `policy version ${existing.version} already exists, so there is nothing to bootstrap. ` +
+            'Publishing a further version is an administered operation and requires an ' +
+            'authenticated administrator holding an explicit grant',
+        );
+      }
+    }
+
+    if (!this.#bootstrap.permitsBootstrap()) {
+      throw new PermissionError(
+        'administration-denied',
+        'no policy version exists and this deployment has no bootstrap authority wired, so there ' +
+          'is no way to publish a first one. That is the default: bootstrap is an explicit ' +
+          'deployment decision, not something a caller may ask for',
+      );
+    }
+
+    const authorityId = assertPermissionIdentifier(
+      this.#bootstrap.authorityId,
+      'bootstrap.authorityId',
+    );
+    return {
+      // No subject was authenticated, and the fingerprint says so rather than borrowing an
+      // identity that does not exist.
+      subjectId: authorityId,
+      sessionId: authorityId,
+      accountId: authorityId,
+      bootstrap: true,
+      origin: Object.freeze({ kind: 'system', id: authorityId }),
+    };
+  }
+
+  /**
+   * Authenticate the administrator behind an administration call, and authorise them to make it.
+   *
+   * Every one of the three writing operations goes through here. The first revision of this
+   * component let a caller *name* the author of a change to authority — `grantedBy: { kind:
+   * 'human', id: 'ops-alice-console' }` — with no session, no account and no check that the caller
+   * was allowed to grant anything. That is not an audit trail; it is a signature field anybody
+   * could fill in, on a component whose entire job is deciding who may do what.
+   *
+   * So: the session is validated through K-02's port and re-checked here, the account is resolved
+   * through K-03's, the author is **derived** from that binding, and an explicit allow for
+   * `grant-permission` on `permission` is required — evaluated by the same deny-by-default
+   * evaluation an ordinary request goes through, with no special case for `SUPER_ADMIN` and no
+   * path an `AI_AGENT` grant could satisfy.
+   */
+  async #administrator(
+    presentedToken: unknown,
+    purpose: Purpose | null,
+    context: Readonly<Record<string, string>>,
+  ): Promise<{
+    subjectId: string;
+    sessionId: string;
+    accountId: string;
+    assurance: AssuranceLevel;
+    origin: Origin;
+  }> {
+    const session = await this.#validateSession(presentedToken);
+
+    const account = await this.#accounts.findAccountForSubject(session.subjectId);
+    if (account === null) {
+      throw new PermissionError(
+        'unknown-account',
+        `subject ${session.subjectId} holds no universal account, so there is nothing to scope ` +
+          'its authority to and nothing it can administer',
+      );
+    }
+    if (account.subjectId !== session.subjectId) {
+      throw new PermissionError(
+        'unknown-account',
+        'the account lookup returned an account belonging to another subject',
+      );
+    }
+
+    const policy = await this.#repository.withTransaction((tx) => tx.findActivePolicy());
+    if (policy === null) {
+      throw new PermissionError(
+        'no-such-policy',
+        'no policy version has been published, so nothing permits anybody to administer ' +
+          'permissions. The first policy comes from the injected bootstrap authority or from ' +
+          'nowhere',
+      );
+    }
+
+    const { grants, revokedGrantIds } = await this.#repository.withTransaction(async (tx) => {
+      const held = await tx.listGrantsForSubject(session.subjectId, account.accountId);
+      const revocations = await tx.listRevocationsForGrants(held.map((grant) => grant.grantId));
+      return {
+        grants: held,
+        revokedGrantIds: new Set(revocations.map((revocation) => revocation.grantId)),
+      };
+    });
+
+    // The same evaluation an ordinary request gets. Not a role check, not a lookup for
+    // `SUPER_ADMIN`: an explicit, in-force, policy-permitted grant, or nothing.
+    const evaluation = evaluate({
+      subjectId: session.subjectId,
+      accountId: account.accountId,
+      action: ADMINISTRATION_ACTION,
+      resourceType: ADMINISTRATION_RESOURCE,
+      resourceId: null,
+      purpose,
+      context,
+      assurance: session.assurance,
+      now: this.#now(),
+      policy,
+      grants,
+      revokedGrantIds,
+    });
+
+    if (evaluation.effect !== 'allow') {
+      throw new PermissionError(
+        'administration-denied',
+        `subject ${session.subjectId} may not administer permissions in account ` +
+          `${account.accountId}: ${evaluation.explanation}. Changing who may do what requires an ` +
+          'explicit grant of it, like everything else here',
+      );
+    }
+
+    return {
+      subjectId: session.subjectId,
+      sessionId: session.sessionId,
+      accountId: account.accountId,
+      assurance: session.assurance,
+      // Derived, never supplied. An authenticated administrator is a `human`; `system` belongs to
+      // the bootstrap authority and to nothing else.
+      origin: Object.freeze({ kind: 'human', id: session.subjectId }),
+    };
+  }
+
   async #requireActivePolicy(): Promise<PolicyVersion> {
     const policy = await this.#repository.withTransaction((tx) => tx.findActivePolicy());
     if (policy === null) {
@@ -734,6 +1039,12 @@ export function requiresPurpose(role: Role): boolean {
 
 function differencesBetweenPolicies(existing: PolicyVersion, incoming: PolicyVersion): string[] {
   const differences: string[] = [];
+  // The fingerprint covers the administrator, their session and their account — none of which is a
+  // column here. A retry by a different administrator is a different authority statement.
+  if (existing.requestFingerprint !== incoming.requestFingerprint) {
+    differences.push('the administrator, session, account or bootstrap status');
+  }
+  if (existing.bootstrap !== incoming.bootstrap) differences.push('bootstrap');
   if (existing.policyVersionId !== incoming.policyVersionId) differences.push('policyVersionId');
   if (existing.version !== incoming.version) differences.push('version');
   if (JSON.stringify(existing.roles) !== JSON.stringify(incoming.roles)) differences.push('roles');
@@ -758,6 +1069,9 @@ function assertSamePolicy(existing: PolicyVersion, incoming: PolicyVersion): voi
 
 function differencesBetweenGrants(existing: Grant, incoming: Grant): string[] {
   const differences: string[] = [];
+  if (existing.requestFingerprint !== incoming.requestFingerprint) {
+    differences.push('the administrator, session or account');
+  }
   for (const field of [
     'grantId',
     'subjectId',
@@ -797,6 +1111,9 @@ function assertSameGrant(existing: Grant, incoming: Grant): void {
 
 function differencesBetweenRevocations(existing: Revocation, incoming: Revocation): string[] {
   const differences: string[] = [];
+  if (existing.requestFingerprint !== incoming.requestFingerprint) {
+    differences.push('the administrator, session or account');
+  }
   for (const field of ['revocationId', 'grantId', 'reason'] as const) {
     if (existing[field] !== incoming[field]) differences.push(field);
   }

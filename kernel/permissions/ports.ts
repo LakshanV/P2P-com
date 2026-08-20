@@ -96,3 +96,51 @@ export const NO_ACCOUNTS: AccountLookup = {
     return Promise.resolve(null);
   },
 };
+
+/**
+ * The one way a policy version may be published with no authenticated administrator behind it.
+ *
+ * Authority administration requires authority, which is circular for the very first policy: until
+ * one exists, no role permits anything, so nobody can be authorised to publish one. Something has
+ * to break the circle, and every way of breaking it is a bypass — so this is the *narrowest* one
+ * that works, and it is written down rather than left implicit:
+ *
+ *   - **Injected, never caller-asserted.** A caller cannot ask for bootstrap; an operator wires it
+ *     at construction. A request has no field that could request it.
+ *   - **Refused by default.** `NO_BOOTSTRAP` is the default, and it refuses. A deployment that has
+ *     not deliberately enabled bootstrap cannot bootstrap.
+ *   - **Only when the store is empty.** The moment any policy version exists, bootstrap is refused
+ *     — so it cannot be used to publish a *second*, wider policy later.
+ *   - **Policy only.** It cannot create a grant or a revocation. It installs the rules; it hands
+ *     nobody any authority under them.
+ *   - **Evidence, not silence.** The published version records `bootstrap: true` and a `system`
+ *     origin naming this authority, in an append-only row.
+ *
+ * The operator's remaining job is the one this cannot do for them: publish a bootstrap policy that
+ * permits some role to administer permissions, then grant that role to a real administrator
+ * through a real session — after which bootstrap is dead for ever.
+ */
+export interface BootstrapAuthority {
+  /**
+   * The opaque id recorded as the author of a bootstrap publication.
+   *
+   * Names the authority, not a person: nobody was authenticated, and recording a human id would
+   * claim somebody was.
+   */
+  readonly authorityId: string;
+  /** Whether this deployment may publish a first policy with no administrator. Defaults to no. */
+  permitsBootstrap(): boolean;
+}
+
+/**
+ * The default: no bootstrap, ever.
+ *
+ * A deployment that wants one says so explicitly, which means a reviewer can find every place that
+ * does by searching for the injection rather than by reasoning about a flag.
+ */
+export const NO_BOOTSTRAP: BootstrapAuthority = {
+  authorityId: 'k04-bootstrap-disabled',
+  permitsBootstrap(): boolean {
+    return false;
+  },
+};

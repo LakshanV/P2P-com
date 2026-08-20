@@ -31,7 +31,10 @@ import {
 
 import {
   ACCOUNT,
+  ADMIN_ACCOUNT,
+  ADMIN_SUBJECT,
   SUBJECT,
+  installFirstAdministrator,
   authorizeRequest,
   grantRequest,
   policyRequest,
@@ -268,71 +271,107 @@ test('the recorded decision carries the fingerprint of what was asked', async ()
 });
 
 // ---------------------------------------------------------------------------
-// Who authored an authority statement is part of it
+// Who administered an authority statement is part of it
 // ---------------------------------------------------------------------------
 
-test('a grant retry that changes its author is refused', async () => {
+test('a grant retry from a different administrator is refused', async () => {
+  // Authorship is no longer a field, so this is the attack that replaced forging one: capture an
+  // administrator's idempotency key and replay it as a *different* administrator. Converging would
+  // record the first administrator as the author of the second one's change.
   const harness = await withPolicy();
-  const grant = grantRequest({ idempotencyKey: 'idem_01HQZXAUTHOR1' });
+  const grant = grantRequest({ grantId: 'grant_01HQZXAUTHOR1', idempotencyKey: 'idem_01HQZXAUTH01' });
   await harness.service.grant(grant);
 
+  // A second administrator, holding the same administration authority.
+  await installFirstAdministrator(
+    harness.repository,
+    (await harness.service.activePolicy()).policyVersionId,
+    {
+      grantId: 'grant_01HQZXADMIN02',
+      subjectId: 'sub_01HQZXADMIN002',
+      accountId: 'acct_01HQZXADMIN02',
+      idempotencyKey: 'idem_01HQZXADMIN02',
+    },
+  );
+  harness.accounts.answerWith([
+    { accountId: ACCOUNT, subjectId: SUBJECT },
+    { accountId: ADMIN_ACCOUNT, subjectId: ADMIN_SUBJECT },
+    { accountId: 'acct_01HQZXADMIN02', subjectId: 'sub_01HQZXADMIN002' },
+  ]);
+  harness.sessions.answerWith({
+    adminSubjectId: 'sub_01HQZXADMIN002',
+    adminSessionId: 'sess_01HQZXADMIN02',
+  });
+
   await assert.rejects(
-    harness.service.grant({ ...grant, grantedBy: { kind: 'human', id: 'ops-bob-console' } }),
+    harness.service.grant({ ...grant }),
     (error: unknown) => {
       assert.equal(codeOf(error), 'idempotency-key-reuse');
-      assert.match((error as PermissionError).message, /grantedBy\.id/);
+      assert.match((error as PermissionError).message, /the administrator, session or account/);
       return true;
     },
     'who decided somebody could do this is part of the record, not metadata about it',
   );
-
-  await assert.rejects(
-    harness.service.grant({
-      ...grant,
-      grantedBy: { kind: 'system', id: 'K-04-permission-service' },
-    }),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'idempotency-key-reuse');
-      assert.match((error as PermissionError).message, /grantedBy\.(kind|id)/);
-      return true;
-    },
-    'a human decision recorded as a system one is a different claim',
+  assert.equal(
+    harness.repository.grants().length,
+    3,
+    'the two administration grants and the one real grant, and no more',
   );
-
-  assert.equal(harness.repository.grants().length, 1);
 });
 
-test('a policy or revocation retry that changes its author is refused', async () => {
+test('a grant retry from the same administrator on a new session is refused', async () => {
   const harness = await withPolicy();
+  const grant = grantRequest({ idempotencyKey: 'idem_01HQZXAUTH04' });
+  await harness.service.grant(grant);
 
-  const policy = policyRequest({ version: 7, idempotencyKey: 'idem_01HQZXAUTHOR2' });
-  await harness.service.publishPolicy(policy);
+  harness.sessions.answerWith({ adminSessionId: 'sess_01HQZXADMINRO' });
   await assert.rejects(
-    harness.service.publishPolicy({
-      ...policy,
-      publishedBy: { kind: 'human', id: 'ops-bob-console' },
-    }),
+    harness.service.grant({ ...grant }),
     (error: unknown) => {
       assert.equal(codeOf(error), 'idempotency-key-reuse');
-      assert.match((error as PermissionError).message, /publishedBy\.id/);
+      assert.match((error as PermissionError).message, /the administrator, session or account/);
       return true;
     },
+    'an administration key is scoped to the session that made the change',
   );
+});
+
+test('a policy or revocation retry from a different administrator is refused', async () => {
+  const harness = await withPolicy();
+
+  const policy = policyRequest({ version: 7, idempotencyKey: 'idem_01HQZXAUTH02' });
+  await harness.service.publishPolicy(policy);
 
   const granted = await harness.service.grant(grantRequest());
   const revocation = revokeRequest(granted.grant.grantId, { idempotencyKey: 'idem_01HQZXAUTH03' });
   await harness.service.revoke(revocation);
+
+  // The same administrator, a new session — the narrowest possible change of actor.
+  harness.sessions.answerWith({ adminSessionId: 'sess_01HQZXADMINR2' });
+
   await assert.rejects(
-    harness.service.revoke({ ...revocation, revokedBy: { kind: 'human', id: 'ops-bob-console' } }),
+    harness.service.publishPolicy({ ...policy }),
     (error: unknown) => {
       assert.equal(codeOf(error), 'idempotency-key-reuse');
-      assert.match((error as PermissionError).message, /revokedBy\.id/);
+      assert.match(
+        (error as PermissionError).message,
+        /the administrator, session, account or bootstrap status/,
+      );
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    harness.service.revoke({ ...revocation }),
+    (error: unknown) => {
+      assert.equal(codeOf(error), 'idempotency-key-reuse');
+      assert.match((error as PermissionError).message, /the administrator, session or account/);
       return true;
     },
   );
 });
 
-test('an identical retry still converges once the author is compared', async () => {
+test('an identical retry from the same administrator still converges', async () => {
   // The other direction: tightening the comparison must not break the idempotency it exists for.
   const harness = await withPolicy();
   const grant = grantRequest({ idempotencyKey: 'idem_01HQZXSAMEAUT' });
@@ -341,7 +380,7 @@ test('an identical retry still converges once the author is compared', async () 
 
   assert.equal(retry.deduplicated, true);
   assert.deepEqual(retry.grant, first.grant);
-  assert.equal(harness.repository.grants().length, 1);
+  assert.equal(harness.repository.grants().length, 2, 'the administration grant, and this one');
 
   const policy = policyRequest({ version: 9, idempotencyKey: 'idem_01HQZXSAMEPOL' });
   const published = await harness.service.publishPolicy(policy);

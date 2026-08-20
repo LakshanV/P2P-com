@@ -180,9 +180,25 @@ export interface PolicyVersion {
   readonly version: number;
   readonly roles: readonly RoleDefinition[];
   readonly publishedAt: string;
-  /** Who published it. `ai` is refused — see §6 of the contract. */
+  /**
+   * Who published it, **derived from a validated session** rather than supplied by the caller.
+   * `human` is an authenticated administrator; `system` is the bootstrap authority and nothing
+   * else. `ai` is refused — see §6 of the contract.
+   */
   readonly publishedBy: Origin;
+  /**
+   * True when this version was published through the bootstrap authority rather than by an
+   * authorised administrator.
+   *
+   * Immutable evidence of its own origin: the row is append-only, so "the first policy was
+   * installed by the operator who started this deployment, not by anybody who asked" stays
+   * answerable for ever. At most one version can carry it, because bootstrap is refused the
+   * moment any policy exists.
+   */
+  readonly bootstrap: boolean;
   readonly idempotencyKey: string;
+  /** SHA-256 over the administrator, session, account and content of the request (fingerprint.ts). */
+  readonly requestFingerprint: string;
 }
 
 /**
@@ -211,8 +227,11 @@ export interface Grant {
   readonly notBefore: string | null;
   /** Not usable at or after this instant, if set. Temporal validity is part of least privilege. */
   readonly expiresAt: string | null;
+  /** Who granted it, derived from a validated session. Never supplied by the caller. */
   readonly grantedBy: Origin;
   readonly idempotencyKey: string;
+  /** SHA-256 over the administrator, session, account and content of the request (fingerprint.ts). */
+  readonly requestFingerprint: string;
 }
 
 /** A grant withdrawn. Append-only: the grant row itself is never touched. */
@@ -221,8 +240,11 @@ export interface Revocation {
   readonly grantId: string;
   readonly revokedAt: string;
   readonly reason: RevocationReason;
+  /** Who revoked it, derived from a validated session. Never supplied by the caller. */
   readonly revokedBy: Origin;
   readonly idempotencyKey: string;
+  /** SHA-256 over the administrator, session, account and content of the request (fingerprint.ts). */
+  readonly requestFingerprint: string;
 }
 
 /**
@@ -336,6 +358,13 @@ export type PermissionErrorCode =
   | 'duplicate-grant'
   /** A policy version number has already been used. */
   | 'duplicate-policy-version'
+  /**
+   * The authenticated actor holds no explicit authority to administer permissions.
+   *
+   * Separate from `cross-account-access` and from a plain `deny` decision because it names the
+   * thing that was refused: not access to a resource, but the right to change who has access.
+   */
+  | 'administration-denied'
   /** An enlisted path tried to control a transaction it does not own. */
   | 'nested-transaction'
   /** A write tried to rewrite authority history. */

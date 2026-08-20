@@ -114,6 +114,7 @@ Every code in `PermissionErrorCode`, and why it exists.
 | `no-such-policy` | No policy version has been published, so nothing permits anything |
 | `duplicate-grant` | A grant with this id already exists, and a grant is never rewritten |
 | `duplicate-policy-version` | That version number is taken. Numbers order authority history |
+| `administration-denied` | The authenticated actor holds no explicit grant of `grant-permission` on `permission`, or tried to bootstrap when a policy already exists or when no bootstrap authority is wired |
 | `nested-transaction` | An enlisted write tried to issue `BEGIN`, `COMMIT`, `ROLLBACK` or `SAVEPOINT` |
 | `immutable-history` | Reserved for a write that would rewrite authority history. **Not currently raised**: there is no such path in the service, the port or the adapter, and the database refuses one by trigger — the code exists so the refusal has a name if a path is ever added |
 | `malformed-record` | A stored row, or a candidate record, is not what this component writes |

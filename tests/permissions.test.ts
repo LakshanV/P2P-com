@@ -41,13 +41,16 @@ import { AccountService, InMemoryAccountRepository } from '../kernel/accounts/in
 import { IdentityService, InMemoryIdentityRepository } from '../kernel/identity/index.ts';
 
 import {
+  BOOTSTRAP,
   FixedClock,
   SUBJECT,
+  bootstrapPolicyRequest,
   TOKEN,
   authorizeRequest,
   build,
   grantRequest,
   policyRequest,
+  revokeRequest,
   withPolicy,
 } from './helpers/permission-fixtures.ts';
 
@@ -107,7 +110,7 @@ test('every asserted-authorization field explains who decides instead', () => {
     assert.ok(why.length > 25, `${field} needs a real explanation, not a label`);
     assert.match(
       why,
-      /this component|computes?|resolved here|stored|storage|validated session|grant|never|no such thing|no bypass|confers nothing|there is no/i,
+      /this component|computes?|resolved here|evaluated here|derived|stored|storage|validated session|grant|never|no such thing|no bypass|confers nothing|there is no|injected/i,
       `${field} does not say who decides instead, or why there is nothing to ask for: "${why}"`,
     );
   }
@@ -228,8 +231,10 @@ test('the fail-closed defaults authorise nobody', async () => {
     sessions: NO_SESSIONS,
     accounts: NO_ACCOUNTS,
     clock: new FixedClock(),
+    bootstrap: BOOTSTRAP,
   });
-  await service.publishPolicy(policyRequest());
+  // Bootstrap installs the rules without an administrator, which is the only thing it can do.
+  await service.publishPolicy(bootstrapPolicyRequest());
 
   await assert.rejects(
     service.authorize(authorizeRequest()),
@@ -307,8 +312,9 @@ test('the real K-02 and K-03 services satisfy the ports structurally', async () 
     sessions: authentication,
     accounts,
     clock: new FixedClock(),
+    bootstrap: BOOTSTRAP,
   });
-  await service.publishPolicy(policyRequest());
+  await service.publishPolicy(bootstrapPolicyRequest());
 
   const denied = await service.authorize(
     authorizeRequest({ presentedToken: secret, accountId: 'acct_01HQZXREALWIRE' }),
@@ -510,10 +516,11 @@ test('AI_AGENT may hold only explicitly granted tool capabilities', async () => 
 test('AI can never grant a permission, and a policy cannot widen it', async () => {
   const harness = build();
 
-  // A policy version that tries to give AI_AGENT authority over authority.
+  // A policy version that tries to give AI_AGENT authority over authority. Published through
+  // bootstrap, so nothing but the AI rule can be what refuses it.
   await assert.rejects(
     harness.service.publishPolicy(
-      policyRequest({
+      bootstrapPolicyRequest({
         roles: [
           {
             role: 'AI_AGENT',
@@ -526,21 +533,61 @@ test('AI can never grant a permission, and a policy cannot widen it', async () =
     'a published policy must not be able to widen AI beyond tool capabilities',
   );
 
-  // And AI cannot author policy or a grant at all.
-  await harness.service.publishPolicy(policyRequest());
-  for (const write of [
-    () =>
-      harness.service.publishPolicy(
-        policyRequest({ version: 2, publishedBy: { kind: 'ai', id: 'agent-1' } }),
-      ),
-    () => harness.service.grant(grantRequest({ grantedBy: { kind: 'ai', id: 'agent-1' } })),
-  ]) {
+  // And AI cannot author policy or a grant at all — which is now true for a stronger reason than
+  // a refused `ai` origin. **No caller may name the author**, whatever kind it claims: authorship
+  // is derived from the validated session that made the change.
+  const authorised = await withPolicy();
+  for (const [why, write] of [
+    [
+      'a policy published in somebody else’s name',
+      () =>
+        authorised.service.publishPolicy({
+          ...policyRequest({ version: 2 }),
+          publishedBy: { kind: 'ai', id: 'agent-1' },
+        } as never),
+    ],
+    [
+      'a grant signed by an agent',
+      () =>
+        authorised.service.grant({
+          ...grantRequest(),
+          grantedBy: { kind: 'ai', id: 'agent-1' },
+        } as never),
+    ],
+    [
+      'a revocation signed by an agent',
+      () =>
+        authorised.service.revoke({
+          ...revokeRequest('grant_01HQZXADMIN01'),
+          revokedBy: { kind: 'ai', id: 'agent-1' },
+        } as never),
+    ],
+  ] as const) {
     await assert.rejects(
       write(),
-      (error: unknown) => codeOf(error) === 'ai-not-permitted',
-      'AI may not author authority',
+      (error: unknown) => {
+        assert.equal(codeOf(error), 'caller-asserted-authorization', why);
+        assert.match((error as PermissionError).message, /derived from the validated session/);
+        return true;
+      },
+      `${why} must be refused: authorship is not a field a caller fills in`,
     );
   }
+
+  // An agent holding a real session fares no better: it has no administration grant, and the
+  // policy could not have given `AI_AGENT` one.
+  authorised.sessions.answerWith({
+    adminSubjectId: 'sub_01HQZXAGENT001',
+    adminSessionId: 'sess_01HQZXAGENT01',
+  });
+  authorised.accounts.answerWith([
+    { accountId: 'acct_01HQZXAGENT01', subjectId: 'sub_01HQZXAGENT001' },
+  ]);
+  await assert.rejects(
+    authorised.service.grant(grantRequest()),
+    (error: unknown) => codeOf(error) === 'administration-denied',
+    'an agent with a session still holds no authority over authority',
+  );
 });
 
 // ---------------------------------------------------------------------------

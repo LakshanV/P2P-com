@@ -86,3 +86,57 @@ export function fingerprintDecisionRequest(facts: DecisionRequestFacts): string 
 
 /** Exactly what `fingerprintDecisionRequest` emits, and nothing else. */
 export const REQUEST_FINGERPRINT = /^[0-9a-f]{64}$/;
+
+/**
+ * Everything an administration request depends on: who asked, from which session and account, and
+ * what they asked for.
+ *
+ * The three administration operations — publish a policy, grant, revoke — each write a statement
+ * about authority, so "the same request" has to include **who made it**. Without the actor in here,
+ * an idempotency key captured from an administrator could be replayed by anybody else holding it,
+ * and the record would converge on the original as though the second caller had never existed.
+ *
+ * `operation` is in the fingerprint so one key cannot be shared across two different kinds of
+ * authority statement, and `bootstrap` is in it so a bootstrap publication and an administered one
+ * can never be mistaken for each other however identical their content.
+ */
+export interface AdministrationRequestFacts {
+  readonly operation: 'publish-policy' | 'grant' | 'revoke';
+  /** The record's own id: policy version id, grant id or revocation id. */
+  readonly recordId: string;
+  /** The authenticated administrator, from the validated session. Never caller-supplied. */
+  readonly actorSubjectId: string;
+  readonly actorSessionId: string;
+  readonly actorAccountId: string;
+  /** True only for the bootstrap publication, which has no authenticated administrator. */
+  readonly bootstrap: boolean;
+  /** The declared purpose the administration was authorised under, when one was required. */
+  readonly purpose: string | null;
+  /**
+   * The content of the statement, already canonical.
+   *
+   * Kept as one opaque string rather than a shape per operation, because what makes a grant "the
+   * same grant" is decided by `differencesBetweenGrants` and duplicating that here would be a
+   * second rule to keep in step.
+   */
+  readonly content: string;
+}
+
+/** The canonical text an administration fingerprint is taken over. */
+export function canonicalAdministrationRequest(facts: AdministrationRequestFacts): string {
+  return [
+    `"operation":${JSON.stringify(facts.operation)}`,
+    `"recordId":${JSON.stringify(facts.recordId)}`,
+    `"actorSubjectId":${JSON.stringify(facts.actorSubjectId)}`,
+    `"actorSessionId":${JSON.stringify(facts.actorSessionId)}`,
+    `"actorAccountId":${JSON.stringify(facts.actorAccountId)}`,
+    `"bootstrap":${JSON.stringify(facts.bootstrap)}`,
+    `"purpose":${JSON.stringify(facts.purpose)}`,
+    `"content":${JSON.stringify(facts.content)}`,
+  ].join(',');
+}
+
+/** SHA-256 of the canonical form, lower-case hex. */
+export function fingerprintAdministrationRequest(facts: AdministrationRequestFacts): string {
+  return createHash('sha256').update(canonicalAdministrationRequest(facts), 'utf8').digest('hex');
+}

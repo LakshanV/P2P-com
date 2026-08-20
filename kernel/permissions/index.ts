@@ -64,10 +64,11 @@ export {
   assertRole,
 } from './registry.ts';
 
-export { NO_ACCOUNTS, NO_SESSIONS } from './ports.ts';
+export { NO_ACCOUNTS, NO_BOOTSTRAP, NO_SESSIONS } from './ports.ts';
 export type {
   AccountAssertion,
   AccountLookup,
+  BootstrapAuthority,
   Clock,
   SessionAssertion,
   SessionValidator,
@@ -87,10 +88,12 @@ export {
 
 export {
   REQUEST_FINGERPRINT,
+  canonicalAdministrationRequest,
   canonicalDecisionRequest,
+  fingerprintAdministrationRequest,
   fingerprintDecisionRequest,
 } from './fingerprint.ts';
-export type { DecisionRequestFacts } from './fingerprint.ts';
+export type { AdministrationRequestFacts, DecisionRequestFacts } from './fingerprint.ts';
 
 export { evaluate, evaluatePredicate } from './decide.ts';
 export type { Evaluation, EvaluationInput } from './decide.ts';

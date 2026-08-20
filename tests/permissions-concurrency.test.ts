@@ -88,7 +88,11 @@ test('an identical grant retry converges on the original, and a different one fa
   assert.equal(first.deduplicated, false);
   assert.equal(retry.deduplicated, true);
   assert.deepEqual(retry.grant, first.grant);
-  assert.equal(harness.repository.grants().length, 1, 'one grant, not two');
+  assert.equal(
+    harness.repository.grants().length,
+    2,
+    'the administration grant and this one: the retry added nothing',
+  );
 
   // The same key for a *wider* grant is the escalation this check exists to stop.
   for (const [why, mutation] of [
@@ -109,7 +113,7 @@ test('an identical grant retry converges on the original, and a different one fa
       `${why} must not be returned as if it were the original`,
     );
   }
-  assert.equal(harness.repository.grants().length, 1);
+  assert.equal(harness.repository.grants().length, 2);
 });
 
 test('a decision retry returns the decision that was taken, not a fresh one', async () => {
@@ -176,12 +180,7 @@ test('a policy version number cannot be reused, whatever the key', async () => {
 
 test('two identical grants racing produce one grant', async () => {
   const repository = new GatedRepository();
-  const harness = build({ repository: repository.store });
-  await harness.service.publishPolicy(policyRequest());
-
-  // Both callers work against the same store through the same service.
-  const gated = build({ repository: repository.store });
-  await gated.service.publishPolicy(policyRequest({ version: 2 })).catch(() => undefined);
+  const harness = await withPolicy(build({ repository: repository.store }));
 
   const request = grantRequest({
     grantId: 'grant_01HQZXRACE001',
@@ -197,7 +196,11 @@ test('two identical grants racing produce one grant', async () => {
     2,
     'both callers get an answer: one wrote it, the other converged on it',
   );
-  assert.equal(repository.store.grants().length, 1, 'and there is exactly one grant');
+  assert.equal(
+    repository.store.grants().length,
+    2,
+    'the administration grant and one raced grant',
+  );
 });
 
 test('a grant and its revocation racing leave exactly one revocation', async () => {
@@ -219,8 +222,7 @@ test('a grant and its revocation racing leave exactly one revocation', async () 
 
 test('a losing transaction leaves no partial authority behind', async () => {
   const repository = new GatedRepository();
-  const harness = build({ repository: repository.store });
-  await harness.service.publishPolicy(policyRequest());
+  const harness = await withPolicy(build({ repository: repository.store }));
 
   const held = new Latch();
   const ready = new Latch();
@@ -245,6 +247,7 @@ test('a losing transaction leaves no partial authority behind', async () => {
       expiresAt: null,
       grantedBy: { kind: 'human', id: 'ops-alice-console' },
       idempotencyKey: 'idem_01HQZXCONTEST',
+      requestFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     });
     ready.open();
     await held.opened;
@@ -270,6 +273,7 @@ test('a losing transaction leaves no partial authority behind', async () => {
       expiresAt: null,
       grantedBy: { kind: 'human', id: 'ops-alice-console' },
       idempotencyKey: 'idem_01HQZXCONTEST',
+      requestFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     }),
   );
 
@@ -277,8 +281,15 @@ test('a losing transaction leaves no partial authority behind', async () => {
   await assert.rejects(losing, (error: unknown) => codeOf(error) === 'idempotency-key-reuse');
 
   const grants = repository.store.grants();
-  assert.equal(grants.length, 1, 'the refused transaction wrote nothing');
-  assert.equal(grants[0]?.grantId, 'grant_01HQZXWINNER1');
+  assert.equal(grants.length, 2, 'the refused transaction wrote nothing');
+  assert.ok(
+    grants.some((grant) => grant.grantId === 'grant_01HQZXWINNER1'),
+    'the winner landed',
+  );
+  assert.ok(
+    !grants.some((grant) => grant.grantId === 'grant_01HQZXLOSER01'),
+    'and the loser left nothing behind',
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -331,6 +342,7 @@ test('a malformed stored grant cannot authorise anything', async () => {
         expiresAt: null,
         grantedBy: { kind: 'human', id: 'ops-alice-console' },
         idempotencyKey: 'idem_01HQZXBROKEN1',
+        requestFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       },
     ],
   });
@@ -383,7 +395,9 @@ test('a failed transaction writes nothing', async () => {
         roles: [{ role: 'CUSTOMER', capabilities: [{ action: 'read', resourceType: 'order' }] }],
         publishedAt: '2026-04-01T12:00:00Z',
         publishedBy: { kind: 'human', id: 'ops-alice-console' },
+        bootstrap: false,
         idempotencyKey: 'idem_01HQZXROLLBK1',
+        requestFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       });
       throw new Error('something went wrong after the policy was written');
     }),

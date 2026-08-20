@@ -198,6 +198,23 @@ export const ASSERTED_AUTHORIZATION_FIELDS: Readonly<Record<string, string>> = O
   policyVersionId:
     'the active policy version is resolved here, so a caller cannot pick an ' +
     'older one under which it had more authority',
+  publishedBy:
+    'who published a policy is derived from the validated session that published it. A caller ' +
+    'that could name the author could sign somebody else’s name to a change of authority',
+  grantedBy:
+    'who granted authority is derived from the validated session that granted it, never ' +
+    'supplied — an unauthenticated grantor is an authority nobody actually decided to give',
+  revokedBy:
+    'who revoked authority is derived from the validated session that revoked it, never supplied',
+  actor:
+    'the actor is the authenticated subject behind the presented session, never a name in a ' +
+    'request',
+  administrator:
+    'the administrator is the authenticated subject behind the presented session, and their ' +
+    'authority to administer is evaluated here rather than claimed',
+  bootstrap:
+    'bootstrap is an injected deployment decision (ports.ts), not something a request may ask ' +
+    'for. A caller that could request it could install its own first policy',
 });
 
 /**

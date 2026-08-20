@@ -61,7 +61,9 @@ function policyFor(version: number, suffix: string): PolicyVersion {
     ],
     publishedAt: '2026-04-01T12:00:00.123456Z',
     publishedBy: { kind: 'human', id: 'ops-alice-console' },
+    bootstrap: false,
     idempotencyKey: `idem_01HQZXLIVEP${suffix}`,
+    requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
   };
 }
 
@@ -83,6 +85,7 @@ function grantFor(suffix: string, overrides: Partial<Grant> = {}): Grant {
     expiresAt: null,
     grantedBy: { kind: 'human', id: 'ops-alice-console' },
     idempotencyKey: `idem_01HQZXLIVG${suffix}`,
+    requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
     ...overrides,
   };
 }
@@ -113,7 +116,7 @@ async function refuses(database: Database, sql: string): Promise<string | null> 
 const GRANT_COLUMNS =
   'grant_id, subject_id, account_id, role, effect, action, resource_type, resource_id, purpose, ' +
   'condition, policy_version_id, granted_at, not_before, expires_at, granted_by_kind, ' +
-  'granted_by_id, idempotency_key';
+  'granted_by_id, idempotency_key, request_fingerprint';
 
 function grantValues(overrides: Record<string, string> = {}): string {
   const base: Record<string, string> = {
@@ -134,6 +137,7 @@ function grantValues(overrides: Record<string, string> = {}): string {
     granted_by_kind: `'human'`,
     granted_by_id: `'ops-alice-console'`,
     idempotency_key: `'idem_01HQZXPROBE01'`,
+    request_fingerprint: `'${'c'.repeat(64)}'`,
     ...overrides,
   };
   return GRANT_COLUMNS.split(', ')
@@ -219,6 +223,7 @@ test(
           revokedAt: '2026-04-01T12:05:00.123456Z',
           reason: 'access-no-longer-needed',
           revokedBy: { kind: 'human', id: 'ops-alice-console' },
+        requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
           idempotencyKey: 'idem_01HQZXLIVR01',
         });
       });
@@ -329,6 +334,7 @@ test(
           revokedAt: '2026-04-01T12:05:00.123456Z',
           reason: 'granted-in-error',
           revokedBy: { kind: 'human', id: 'ops-alice-console' },
+        requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
           idempotencyKey: 'idem_01HQZXLIVR01',
         });
       });
@@ -341,6 +347,7 @@ test(
             revokedAt: '2026-04-01T13:00:00.123456Z',
             reason: 'security-event',
             revokedBy: { kind: 'human', id: 'ops-bob-console' },
+          requestFingerprint: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
             idempotencyKey: 'idem_01HQZXLIVR02',
           }),
         ),

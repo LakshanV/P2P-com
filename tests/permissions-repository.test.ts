@@ -107,7 +107,9 @@ test('a failed transaction writes nothing', async () => {
         roles: [{ role: 'CUSTOMER', capabilities: [{ action: 'read', resourceType: 'order' }] }],
         publishedAt: '2026-04-01T12:00:00Z',
         publishedBy: { kind: 'system', id: 'K-04-permission-service' },
+        bootstrap: false,
         idempotencyKey: 'idem_01HQZXPORT001',
+        requestFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       });
       throw new Error('something went wrong after the insert');
     }),
@@ -207,6 +209,7 @@ test('a unique violation becomes the refusal it actually is', async () => {
           expiresAt: null,
           grantedBy: { kind: 'human', id: 'ops-alice-console' },
           idempotencyKey: 'idem_01HQZXCONFL01',
+          requestFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         }),
       ),
       (error: unknown) => codeOf(error) === expected,

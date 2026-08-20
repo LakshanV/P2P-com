@@ -21,6 +21,7 @@ import { PermissionError, evaluate } from '../kernel/permissions/index.ts';
 
 import {
   ACCOUNT,
+  ADMIN_TOKEN,
   SUBJECT,
   authorizeRequest,
   build,
@@ -326,7 +327,8 @@ test('a revoked grant stops applying immediately, and the grant row is untouched
     revocationId: 'rev_01HQZXREVOKE1',
     grantId: granted.grant.grantId,
     reason: 'access-no-longer-needed',
-    revokedBy: { kind: 'human', id: 'ops-alice-console' },
+    presentedToken: ADMIN_TOKEN,
+    administrationPurpose: 'system-maintenance',
     idempotencyKey: 'idem_01HQZXREVOKE1',
   });
 
@@ -338,7 +340,11 @@ test('a revoked grant stops applying immediately, and the grant row is untouched
   // Append-only: the grant is still there, exactly as written.
   const stored = await harness.service.findGrant(granted.grant.grantId);
   assert.deepEqual(stored, granted.grant, 'revocation appends; it does not edit');
-  assert.equal(harness.repository.grants().length, 1);
+  assert.equal(
+    harness.repository.grants().length,
+    2,
+    'the administration grant and this one, both intact',
+  );
   assert.equal(harness.repository.revocations().length, 1);
 });
 
@@ -473,7 +479,11 @@ test('a grant cannot outlive the capability its policy version gave the role', a
   assert.equal(decision.decision.effect, 'deny');
   assert.equal(decision.decision.reason, 'not-permitted-by-policy');
   assert.match(decision.decision.explanation, /policy version 2 does not permit CUSTOMER/);
-  assert.equal(harness.repository.grants().length, 1, 'and the grant row is untouched');
+  assert.equal(
+    harness.repository.grants().length,
+    2,
+    'and the grant rows are untouched — a policy change never edits a grant',
+  );
 });
 
 test('the active policy version is the highest number, not the most recent write', async () => {
@@ -498,7 +508,9 @@ test('evaluate is pure and deterministic for the same inputs', () => {
     ],
     publishedAt: '2026-04-01T12:00:00Z',
     publishedBy: { kind: 'human' as const, id: 'ops-alice-console' },
+    bootstrap: false,
     idempotencyKey: 'idem_01HQZXPURE001',
+    requestFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   };
   const grant = {
     grantId: 'grant_01HQZXPURE01',
@@ -517,6 +529,7 @@ test('evaluate is pure and deterministic for the same inputs', () => {
     expiresAt: null,
     grantedBy: { kind: 'human' as const, id: 'ops-alice-console' },
     idempotencyKey: 'idem_01HQZXPURE002',
+    requestFingerprint: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   };
   const input = {
     subjectId: SUBJECT,
