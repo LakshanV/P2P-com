@@ -49,19 +49,19 @@
 
 | Dimension | State |
 |---|---|
-| Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement, the migration and fixture contracts, and seven kernel component foundations (K-01, K-02, K-03, K-04, K-05, K-08, K-09). No database server has ever been started here. |
+| Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement, the migration and fixture contracts, and **eight** kernel component foundations (K-01, K-02, K-03, K-04, K-05, K-07, K-08, K-09), which covers build steps B-1 and B-2. No database server has ever been started here. |
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures` and by every runner path (FND-002d, as corrected). **Never loaded into a live server.** No business-module, financial-policy or production data. |
-| Migrations | 9 forward + 9 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, the `kernel_identity` schema with K-01's write-once subject table, the `kernel_accounts` schema with K-03's universal-account table and its `UNIQUE (subject_id)` one-account-per-party constraint, the `kernel_authentication` schema with K-02's binding, evidence and session tables, and the `kernel_permissions` schema with K-04's policy-version, grant, revocation and decision tables. Nine triggers across six tables refuse to update or delete a row — all four of K-04's, because authority history is append-only; K-02's session trigger permits exactly two changes — rotate the secret, record a revocation — and refuses everything else. No business-module tables exist. |
-| Tests | 931 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, K-05 Configuration, K-08 Event Infrastructure and K-09 Audit Foundation suites. K-04 accounts for 104 of them across six suites (`permissions` 19, `permissions-decisions` 21, `permissions-administration` 20, `permissions-repository` 18, `permissions-idempotency` 14, `permissions-concurrency` 12). A further 47 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Migrations | 10 forward + 10 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, the `kernel_identity` schema with K-01's write-once subject table, the `kernel_accounts` schema with K-03's universal-account table and its `UNIQUE (subject_id)` one-account-per-party constraint, the `kernel_authentication` schema with K-02's binding, evidence and session tables, the `kernel_permissions` schema with K-04's policy-version, grant, revocation and decision tables, and the `kernel_feature_flags` schema with K-07's flag-version, activation and lifecycle tables. Twelve triggers across nine tables refuse to update or delete a row — all four of K-04's, because authority history is append-only; K-02's session trigger permits exactly two changes — rotate the secret, record a revocation — and refuses everything else. No business-module tables exist. |
+| Tests | 1029 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, K-05 Configuration, K-07 Feature Flags, K-08 Event Infrastructure and K-09 Audit Foundation suites. K-04 accounts for 104 of them across six suites (`permissions` 19, `permissions-decisions` 21, `permissions-administration` 20, `permissions-repository` 18, `permissions-idempotency` 14, `permissions-concurrency` 12), and K-07 for 88 across five (`feature-flags` 17, `feature-flags-evaluation` 20, `feature-flags-repository` 21, `feature-flags-concurrency` 18, `feature-flags-rollout` 12). A further 48 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
 | Monitoring | None |
-| Modules implemented | 7 of 62 partially — **K-01 Identity** (FND-004a), **K-02 Authentication** (FND-004c), **K-03 Accounts** (FND-004b), **K-04 Permissions** (FND-004d), **K-05 Configuration** (FND-003a), **K-08 Event Infrastructure** (FND-003b) and **K-09 Audit Foundation** (FND-003c), cores only; 0 business modules. All 62 registered in the architecture manifest |
+| Modules implemented | 8 of 62 partially — **K-01 Identity** (FND-004a), **K-02 Authentication** (FND-004c), **K-03 Accounts** (FND-004b), **K-04 Permissions** (FND-004d), **K-05 Configuration** (FND-003a), **K-07 Feature Flags** (FND-004e), **K-08 Event Infrastructure** (FND-003b) and **K-09 Audit Foundation** (FND-003c), cores only; 0 business modules. All 62 registered in the architecture manifest |
 | Boundary rules enforced | 4 of 8 (`layer-direction`, `kernel-purity`, `financial-zone-ai`, `provider-import`); the other 4 need a schema, policy values or module contracts to exist |
-| Module contracts written | 7 of 62 — [`kernel/identity/CONTRACT.md`](../kernel/identity/CONTRACT.md), [`kernel/authentication/CONTRACT.md`](../kernel/authentication/CONTRACT.md), [`kernel/accounts/CONTRACT.md`](../kernel/accounts/CONTRACT.md), [`kernel/permissions/CONTRACT.md`](../kernel/permissions/CONTRACT.md), [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md), [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md) and [`kernel/audit-foundation/CONTRACT.md`](../kernel/audit-foundation/CONTRACT.md) |
+| Module contracts written | 8 of 62 — [`kernel/identity/CONTRACT.md`](../kernel/identity/CONTRACT.md), [`kernel/authentication/CONTRACT.md`](../kernel/authentication/CONTRACT.md), [`kernel/accounts/CONTRACT.md`](../kernel/accounts/CONTRACT.md), [`kernel/permissions/CONTRACT.md`](../kernel/permissions/CONTRACT.md), [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md), [`kernel/feature-flags/CONTRACT.md`](../kernel/feature-flags/CONTRACT.md), [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md) and [`kernel/audit-foundation/CONTRACT.md`](../kernel/audit-foundation/CONTRACT.md) |
 | Tracked requirements | 474, each with an explicit status; **4 of 472 implementation items complete** (P0-03, P0-11, P0-12, P0-13). 28 are `IN PROGRESS`, 9 are `BLOCKED`. |
 | Release gates met | 0 of 26 |
 | Open P0 defects | 0 |
@@ -216,7 +216,7 @@ a live server** — a foundation is not a finished component.
 | Configuration | **Foundation only** — FND-003a, §11.10–§11.13 | K-05 |
 | Policy engine | Absent | K-06 |
 | Event infrastructure | **Foundation only** — FND-003b, §11.14–§11.15. No producer, no consumer | K-08 |
-| Feature flags | Absent | K-07 |
+| Feature flags | **Foundation only** — FND-004e, §11.30. Deployment control that is nothing else; nothing evaluates a flag | K-07 |
 | Ledger foundation | Absent | K-10 |
 | AI gateway / provider abstraction | Absent | K-13 |
 | Notifications | Absent | K-14 |
@@ -297,7 +297,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction); FND-004a added a fourth and 80 more (67 at delivery, 13 by its correction); FND-004b added a fifth and 85 more (74 at delivery, 11 by its correction); FND-004c added a sixth and 95 more across delivery and four corrections; and FND-004d added a seventh and 104 more (69 at delivery, 35 across its three corrections), for 931 today — 923 of them before the eight documentation assertions this reconciliation added. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable; three were found in FND-004a by review and corrected (§11.22) — a decoder that asked far less than creation, and a migration whose comments claimed to prohibit natural keys that its predicates admitted; one was found in FND-004b by review and corrected (§11.24) — retry convergence that depended on which unique index PostgreSQL happened to report, invisible because the in-memory repository always reported the same one; and **three were found in FND-004d by review and corrected (§11.27, §11.28, §11.29), all three of them security defects and each more serious than anything above it in this paragraph**.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction); FND-004a added a fourth and 80 more (67 at delivery, 13 by its correction); FND-004b added a fifth and 85 more (74 at delivery, 11 by its correction); FND-004c added a sixth and 95 more across delivery and four corrections; FND-004d added a seventh and 104 more (69 at delivery, 35 across its three corrections); and FND-004e added an eighth and 88 more, for 1029 today — the last ten being the documentation anti-regression assertions this acceptance pass added, which is why the figure moved after the component was finished. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable; three were found in FND-004a by review and corrected (§11.22) — a decoder that asked far less than creation, and a migration whose comments claimed to prohibit natural keys that its predicates admitted; one was found in FND-004b by review and corrected (§11.24) — retry convergence that depended on which unique index PostgreSQL happened to report, invisible because the in-memory repository always reported the same one; and **three were found in FND-004d by review and corrected (§11.27, §11.28, §11.29), all three of them security defects and each more serious than anything above it in this paragraph**.
 
 **The three K-04 defects, stated plainly, because they are the most serious this register has recorded.** Each was an authority control that could be walked around, and each was found by review of delivered code rather than by a test that already existed:
 
@@ -335,26 +335,26 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 **Every link of the kernel's internal chain `K-01 → K-02/K-03 → K-04` now exists in code, and none of them has a caller.** K-02 asks K-01 whether a subject exists; K-03 asks the same; K-04 asks K-02 who is asking and K-03 which account they hold, each through a one-method public contract and nothing else. Six transaction-enlisted paths now exist (K-01, K-02, K-03, K-04, K-08, K-09), each letting a caller couple a domain write to a kernel write in one transaction; all six are capabilities and **no unit uses any of them**. What every one of the seven components still lacks is the same list: no API, no UI, no caller, and nothing ever applied to a running PostgreSQL server.
 
-FND-002d (seed and fixture strategy, P0-17), named here previously as the next task, was delivered and twice corrected (§11.16–§11.18). FND-003c delivered K-09 (§11.19) and was corrected once (§11.20). FND-004a delivered K-01 (§11.21) and was corrected once (§11.22). FND-004b delivered K-03 (§11.23) and was corrected once (§11.24). FND-004c delivered K-02 (§11.25). FND-004d delivered K-04 (§11.26) and was corrected **three times** — §11.27, §11.28 and §11.29, all three security corrections (§7). Each of those was, when selected, the next genuinely unblocked task; this section records the current one below.
+FND-002d (seed and fixture strategy, P0-17), named here previously as the next task, was delivered and twice corrected (§11.16–§11.18). FND-003c delivered K-09 (§11.19) and was corrected once (§11.20). FND-004a delivered K-01 (§11.21) and was corrected once (§11.22). FND-004b delivered K-03 (§11.23) and was corrected once (§11.24). FND-004c delivered K-02 (§11.25). FND-004d delivered K-04 (§11.26) and was corrected **three times** — §11.27, §11.28 and §11.29, all three security corrections (§7). FND-004e has now delivered K-07 (§11.30), **which covers build step B-2**. Each of those was, when selected, the next genuinely unblocked task; this section records the current one below.
 
-**Next genuinely unblocked task: FND-004e — K-07 Feature Flags, the last unstarted component of build step B-2.**
+**Next genuinely unblocked task: FND-005b — K-06 Policy Engine, the first component of build step B-3.**
 
 It is selected on the build order rather than on judgement about what is most useful, which is the
 discipline this section is for. §B of the checklist assigns every kernel component a build step.
-B-1 is covered (K-05, K-08). B-2 holds six components — K-01, K-02, K-03, K-04, K-09 and K-07 — and
-**five of the six now have foundations**; K-07 is the only one that has never been started. Every
-other unbuilt kernel component (K-06, K-10, K-11, K-12, K-13, K-14, K-15) is **B-3**, and a B-3
-component selected while a B-2 component is unstarted is a build order nobody is following.
+**B-1 and B-2 are now both covered**: K-05 and K-08 in B-1; K-01, K-02, K-03, K-04, K-09 and — as of
+FND-004e — K-07 in B-2. Every remaining unbuilt kernel component is **B-3**, and MODULE_MAP §12
+lists K-06 Policy first within it.
 
-It is genuinely unblocked, in the strict sense: K-07 is specified by both authoritative guides —
-v1.0 §94 (controlled rollout for high-risk modules: autonomous purchasing, AI negotiation, referral
-payouts, new model providers, demand aggregation, supplier autopricing) and v3 §47 (the OFF →
-internal → selected → percentage → full progression with kill switches, which is the checklist's own
-row text) — and it needs **no external credential, no HTTP surface and no live database** to be
-written and tested. Its only plausible kernel dependency, K-05 Configuration, is delivered
-(§11.10–§11.13). No blocker in §6 touches it.
+It is genuinely unblocked, in the strict sense. Its single declared dependency, **K-05
+Configuration, is delivered** (§11.10–§11.13). It needs no external credential, no HTTP surface and
+no live database to be written and tested, so no blocker in §6 touches it. And it is the mitigation
+§5 names for **R-04**, the highest-severity open risk in this document: the ~45-day hold, the
+~24-hour accelerated payout and the 50% coverage target read naturally as constants, v3 §20 and §35
+require them to be versioned policy, and every financial module in B-10 onward is built on top of
+whichever answer lands first. MODULE_MAP §12 puts K-06 before the financial core for exactly that
+reason.
 
-**Why not the provider adapter behind K-02's `Verifier` port**, which this section named previously.
+**Why not the provider adapter behind K-02's `Verifier` port**, which this section named two tasks ago.
 It is real and it is still the change that would turn the kernel chain into something a person can
 use: K-02 ships no verifier, so no real person can authenticate, so no real session reaches K-04,
 so no authorisation decision here has ever been about anybody. But it is **completion work inside a
@@ -364,7 +364,8 @@ adapter needs an HTTP origin and a browser ceremony, and this repository has **n
 all**; an email or SMS one-time-code verifier needs BL-07 (no email/SMS provider credentials). A
 password verifier is the one shape that needs neither, and it is also the shape v3 is least
 interested in. That reasoning belongs in the evidence block of whoever picks it up; it is recorded
-here so the choice is visible rather than quietly dropped. It remains the task that follows K-07.
+here so the choice is visible rather than quietly dropped. It remains a real candidate, and it is
+the first thing that should follow B-3's opening if an HTTP surface arrives before then.
 
 The other alternatives, and why each waits:
 
@@ -377,8 +378,9 @@ The other alternatives, and why each waits:
   It waits because auditing decisions nobody makes about parties nobody authenticated records
   nothing worth reading, and because K-09's actor `CHECK` needs a bounded migration to accept a
   real authenticated actor — which should happen once there is one.
-- **K-06 Policy Engine** is unblocked (its declared dependency K-05 is delivered) but is **B-3**,
-  and B-3 does not begin while a B-2 component is unstarted.
+- **K-10 Ledger foundation**, **K-11 Commerce Unit Registry** and the rest of B-3 are unblocked and
+  sit behind K-06 within the step. K-10 in particular should not precede it: a ledger built before
+  the policy engine is a ledger whose rates are constants, which is R-04 arriving as code.
 - **The operational role matrix** (v3 §47 Level 4) is now derivable from K-04's vocabulary and
   policy structure, and nobody has derived or reviewed one. That is a documentation slice, not a
   foundation slice.
@@ -393,7 +395,7 @@ K-05 is satisfied.
 
 What none of them removes is the standing constraint: **no PostgreSQL runtime is available to this
 repository**, so every live-database gate stays incomplete however much kernel code accumulates.
-Eight migrations, five write-once triggers, K-02's session-rewrite guard, K-03's one-account-per-party `UNIQUE` and every `CHECK` in them are declared and unproven. FND-004c added an opt-in K-02 live suite (`tests/integration/authentication.integration.ts`) that would prove the secret-free columns, the `WHERE`-clause guards under a real rotation race and the triggers, and FND-004d added a K-04 one (`tests/integration/permissions.integration.ts`); like every other live suite both **skip** — 47 live cases exist and 47 are skipped — and a skipped run is not evidence. §11.29 records what that costs: migration 0009 was committed **syntactically invalid**, and every static gate passed over it, because no gate in this repository parses SQL.
+Ten migrations, five write-once triggers, seven append-only triggers, K-02's session-rewrite guard, K-03's one-account-per-party `UNIQUE`, K-07's two partial unique indexes on the activation chain and every `CHECK` in them are declared and unproven. FND-004c added an opt-in K-02 live suite (`tests/integration/authentication.integration.ts`) that would prove the secret-free columns, the `WHERE`-clause guards under a real rotation race and the triggers, and FND-004d added a K-04 one (`tests/integration/permissions.integration.ts`); like every other live suite both **skip** — 47 live cases exist and 47 are skipped — and a skipped run is not evidence. §11.29 records what that costs: migration 0009 was committed **syntactically invalid**, and every static gate passed over it, because no gate in this repository parses SQL.
 
 The superseded reasoning, kept because it still explains why the kernel proceeds while FND-002 waits: **kernel build step B-1 (K-05 Configuration, K-08 Events).** The data foundation now has everything a module needs from it that can be built without a running server: a validated migration set, a runner, a schema-namespace convention and a provisioned local database. What FND-002 still lacks — one verified live run — is blocked on a PostgreSQL runtime rather than on engineering, and a kernel component does not wait on it: K-05 and K-08 depend only on the substrate. FND-002d (seed and fixture strategy, P0-17) is the alternative, and is equally unblocked.
 
@@ -509,7 +511,7 @@ The first true vertical slice is scheduled as **build step B-5 / Phase 1**: *acc
 
 ## 11. Evidence register
 
-Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository: four documentation artefacts from DOC-001 and thirteen delivered engineering tasks, each backed by named commands with recorded exit codes. Seven of those tasks were subsequently corrected after review, and each correction has its own numbered block rather than being folded into the original — an over-claim that is quietly edited away teaches nobody anything. The full set of blocks is §11.1–§11.29. **FND-004d carries three corrections, all of them security corrections**, which is more than any other task in this register and is recorded in §7 as well as here.
+Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository: four documentation artefacts from DOC-001 and fourteen delivered engineering tasks, each backed by named commands with recorded exit codes. Seven of those tasks were subsequently corrected after review, and each correction has its own numbered block rather than being folded into the original — an over-claim that is quietly edited away teaches nobody anything. The full set of blocks is §11.1–§11.30. **FND-004d carries three corrections, all of them security corrections**, which is more than any other task in this register and is recorded in §7 as well as here.
 
 | Item | Status | Evidence type | Evidence |
 |---|---|---|---|
@@ -533,6 +535,7 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | FND-004d — K-04 Permissions foundation | DELIVERED | Commands + exit codes + planted regressions on every guard | See §11.26. **Nothing marked COMPLETE.** The checklist K-04 row moves to `IN PROGRESS`: **nothing calls it**, so no path in this repository is guarded; no API, no UI, no policy studio, no audit record (K-09), no event (K-08), no business-module actions, no operational role matrix, and the schema has never been applied to a live server. |
 | FND-004d — K-04 idempotency correction | DELIVERED | Commands + exit codes + a planted regression failing 5 of 13 adversarial cases | See §11.27. **Nothing marked COMPLETE.** An idempotency key was a bearer token for somebody else’s decision: the stored answer was returned before the presented session was validated, and the retry comparison omitted the subject, the session and the ABAC context. Both are closed, and every decision now stores a fingerprint of its own inputs. |
 | FND-004d — K-04 authority-administration correction | DELIVERED | Commands + exit codes + 20 adversarial cases | See §11.28. **Nothing marked COMPLETE.** `publishPolicy`, `grant` and `revoke` took no session and accepted their own author as a request field, so any caller could grant itself anything and sign it in somebody else's name. Administration now authenticates through K-02, resolves the K-03 account, derives authorship from that binding and requires an explicit administration grant, with one enumerated bootstrap authority that is injected, refuses by default, cannot mint a grant and leaves permanent evidence. |
+| FND-004e — K-07 Feature Flags foundation | DELIVERED | Commands + exit codes + two planted regressions found by test | See §11.30. **Nothing marked COMPLETE.** The checklist K-07 row moves to `IN PROGRESS`, and **build step B-2 is covered**. A flag says whether code is running and never whether something is permitted, owed, priced or assigned — enforced in the service and by a database `CHECK`. **Nothing evaluates a flag**; no API, no UI, no control plane, administration is not authenticated (K-02/K-04 deferred), no audit (K-09), no event (K-08) follows a kill, and nothing applied to a live server. |
 | FND-004d — K-04 read-surface removal and migration 0009 repair | DELIVERED | Commands + exit codes + a planted regression + a programmatic SQL balance check | See §11.29. **Nothing marked COMPLETE.** `findGrant`, `findDecision` and `activePolicy` returned authority data to anybody holding an id, and are **removed rather than guarded**: the surface is four operations and no reads. Migration 0009 was also found committed syntactically invalid — 2389 lines, sixteen `COMMIT;` statements — and is repaired to 374; the static migration gate passed over it because no gate here parses SQL. |
 
 **Evidence block for DOC-001:**
@@ -3903,6 +3906,147 @@ STILL NOT VERIFIED: Everything in §11.26's "still not verified" is unchanged �
                     inspection and by a balance check, and it has still never been executed. The
                     47 live cases across all components skip with their reason stated, and a
                     skipped run is not evidence.
+```
+
+---
+
+### 11.30 Evidence — FND-004e (K-07 Feature Flags foundation)
+
+**Task:** FND-004e — K-07 Feature Flags foundation.
+**Selected in:** §8, as the last unstarted component of build step B-2.
+**Status:** DELIVERED. **Nothing marked COMPLETE.** The checklist K-07 contract row moves to
+`COMPLETE`; the K-07 implementation row and P0-37 move to `IN PROGRESS`. **Build step B-2 is now
+covered** — the first build step boundary this repository has crossed since B-1.
+
+**What K-07 is, in one sentence:** the component that answers *is this deployment currently running
+this piece of code, for this subject, right now* — and answers **off** whenever it is not certain.
+
+**What it is not, which is most of the design.** A feature flag is one `if` statement away from
+being an authorisation system: the code is identical, the storage is identical, and the only thing
+separating "is this feature running" from "may this party do this" is whether somebody can publish a
+key called `permissions.admin.enabled`. So the five separations are enforced rather than documented:
+
+| A flag is not | Refused because it belongs to |
+|---|---|
+| a permission | **K-04**, from an explicit grant against a published policy version |
+| an entitlement | the **Capability & Verification** module |
+| an experiment | **Analytics** (v3 §48), where a variant is stable, recorded and analysable |
+| financial policy | **K-06 / K-10**, where amounts are versioned so a historic transaction keeps the policy applied to it (v3 §35) |
+| AI authority | **K-04** plus v3 §38 — never a deployment control |
+
+A flag key matching any of them is refused at publication with the owning component named — in the
+service *and* by a database `CHECK` (`is_flag_key`), because the statement that matters is the one
+written around the service.
+
+**Delivered:**
+
+| Area | What landed |
+|---|---|
+| Rollout stages | v3 §36's progression as one model: `off`, `internal-only`, `targeted`, `percentage`, `on`. `killed` is deliberately **not** a state — an emergency stop is an appended event, so stopping a feature is one insert rather than a publication plus an activation |
+| Kill switch | Checked **first**, before the active version is read, so it outranks every definition including `on`. Not reversible through this component: restoring a killed feature means a new flag key, because a kill switch somebody can quietly lift is not one. Republishing over it is `flag-terminated` |
+| Immutable versions | Numbered per flag key, never edited. Which version is *current* is a separate appended fact, so "what was this flag doing at 14:05" is answerable from rows that still exist |
+| Guarded activation | An activation names the version it supersedes. Two operators reacting to one incident cannot both win — the second is `stale-activation`. Enforced in the service, in the reference repository **at commit**, and by two partial unique indexes (the `NULL` case needs its own, because NULLs do not conflict) |
+| Temporal bounds | `notBefore` / `notAfter`, both inclusive, against the injected clock. A window containing no instant is refused at publication rather than published as a permanently-off flag that reads as scheduled |
+| Hierarchical scopes | `global` → `country` → `category` → `account`. A version declares the levels it may be evaluated at; any other level is off, because a flag written per account and evaluated globally is a full rollout nobody chose |
+| Percentage rollout | `sha256(flagKey : rolloutSalt : subjectKey)` over 10 000 buckets. No clock, no randomness, no process state. Monotonic (raising a percentage never removes anybody), exact at the boundaries (0% includes nobody — including bucket zero; 100% includes everybody), and separated per flag so one cohort does not carry every rollout |
+| Targeting | Four registered attributes (`country`, `category`, `channel`, `cohort`), four predicate kinds, **no negation** — a negated rollout rule is the shape most likely to be read backwards at three in the morning. A rule over an unregistered attribute is refused at publication, because it would otherwise never match and a flag that never matches looks exactly like a rollout that has not started |
+| Fail closed | Unknown flag, retired flag, unsupported scope, missing context, missing subject key, unresolvable deployment stage — all **off**. A flag exists to stop code running, so the uncertain answer must be the stopped one |
+| K-05, through its public contract only | One registered key, `platform.deployment.stage`, read **only** when the active version is `internal-only`, through a port shaped like `ConfigurationService.resolve`. No import of K-05 anywhere in the component. An absent, unrecognised, wrongly-typed or refused value is `null`, never "probably internal" |
+| Caller states nothing | `enabled`, `disabled`, `on`, `off`, `bucket`, `variant`, `allowed`, `role`, `price` and 20 more refused **by name**. No mutation request carries an author: the identity comes from an injected authority that **defaults to refusing**, so K-04's §11.28 defect is not repeated |
+| Explanations | Name the flag, the version and what decided it — and never an attribute **value**, a subject key, a scope id or a configuration value. An explanation is the thing most likely to be logged |
+| Idempotency and convergence | Every mutation stores a SHA-256 fingerprint of its inputs. An identical retry converges; a reused key naming a different request is refused, and the refusal names the field that moved. Two overlapping copies of one call converge on the row that landed, compared exactly as a retry is |
+| Persistence | Migration 0010 (`kernel_feature_flags`): three tables, opacity and flag-key `CHECK`s calling two SQL rule sets, **three append-only triggers** refusing every `UPDATE` and `DELETE`, and two partial unique indexes. In-memory reference repository checking uniqueness at commit, PostgreSQL adapter whose current-version query is an **anti-join** rather than `ORDER BY activated_at` (two activations can share an instant; a clock is not a history), and an enlisted repository refusing transaction control |
+| Contract | [`kernel/feature-flags/CONTRACT.md`](../kernel/feature-flags/CONTRACT.md) — nine sections including the five separations, the trust model stated as assumptions, the precedence order, and the full deferred list |
+
+**One deviation from MODULE_MAP, recorded rather than absorbed.** The map declared K-07 as depending
+on **K-03 and K-05**, on the assumption that "selected accounts" meant resolving an account record.
+As built it does not: a flag is evaluated at an **opaque scope handle it never resolves**, so K-07
+reads no account and imports nothing from K-03. That is strictly less coupling than planned, and
+MODULE_MAP §3 and §12 now say so.
+
+**No evaluation table, deliberately.** K-04 records a decision per authorisation because a permission
+decision is rare and consequential. A flag is evaluated on every request through every guarded path,
+and a row per evaluation would be a write-amplification defect wearing a compliance costume. What
+makes an evaluation accountable instead is that it is **pure**: `decide.ts` reads no clock, opens no
+connection and generates no randomness, so an incident is *replayed* from the active version, the
+lifecycle rows and the request rather than looked up.
+
+```text
+ITEM ID:            K-07 (FND-004e)
+MODULE / PHASE:     K-07 Feature Flags / Phase 0, build step B-2 — which this completes
+STATUS:             DELIVERED — implementation IN PROGRESS, contract COMPLETE
+IMPLEMENTED:        kernel/feature-flags/{types,registry,immutable,validate,rollout,fingerprint,
+                    decide,ports,repository,postgres-repository,service,index}.ts, CONTRACT.md,
+                    and db/migrations/0010_create_kernel_feature_flags_schema.{up,down}.sql
+
+COMMANDS:           npm run verify                                  exit 0   tests 1029, pass 1029
+                    node --test tests/feature-flags.test.ts         exit 0   tests 17, pass 17
+                    node --test tests/feature-flags-evaluation.test.ts
+                                                                    exit 0   tests 20, pass 20
+                    node --test tests/feature-flags-rollout.test.ts exit 0   tests 12, pass 12
+                    node --test tests/feature-flags-concurrency.test.ts
+                                                                    exit 0   tests 18, pass 18
+                    node --test tests/feature-flags-repository.test.ts
+                                                                    exit 0   tests 21, pass 21
+                    npm run check:migrations                        exit 0   20 files, 0 violations
+                    npm run check:boundaries                        exit 0   94 files, 329 imports
+                    npm run check:fixtures                          exit 0   2 files, 2 datasets
+                    npm run test:integration                        exit 0   tests 48, skipped 48
+                    node docs/tools/validate-doc-links.mjs          exit 0   0 broken
+                    npm audit --audit-level=high                    exit 0   0 vulnerabilities
+                    git diff --check                                exit 0
+
+ADVERSARIAL COVER:  Flag keys naming another component's decision (authority, money, entitlement,
+                    experiment, AI autonomy — seven cases, each refused with the owner named);
+                    requests asserting the outcome (enabled, bucket, variant, allowed, role,
+                    price); administration with no injected authority (all four write operations);
+                    malformed definitions that would otherwise "work" (a percentage on an off flag,
+                    rules on a fully-on one, a targeted flag with no rules, a window containing no
+                    instant, equal window bounds); natural, personal and credential-shaped values in
+                    the salt, a rule value, a subject key and a context value; unregistered
+                    attributes and scope levels; a kill switch racing a fully-on version and a
+                    republication; rollout boundaries at 0% and 100% including bucket zero;
+                    stale activations, two first activations, and an activation losing the race
+                    **at commit** while held open by a latch; reused idempotency keys across six
+                    changed fields; and twelve malformed persisted rows, each refused rather than
+                    evaluated.
+
+PLANTED REGRESSION: Two design defects were found by test rather than by review, and both were
+                    corrected before delivery. (1) Two *truly concurrent* identical publications —
+                    both transactions open at once, neither able to see the other's row — failed at
+                    commit instead of converging; a post-conflict recovery path was added to all
+                    four write operations, comparing exactly what a retry compares. (2) The terminal
+                    check ran before the idempotency lookup, so an honest retry of a kill was
+                    refused as "already killed" and the caller would conclude its first attempt had
+                    failed; a retry is now answered before a refusal is raised.
+
+UI/UX:              N/A — no user-facing surface exists in this repository.
+
+SECURITY:           No credential, session secret or personal identifier is stored, logged or
+                    echoed. The subject key is hashed rather than stored, and is refused before
+                    hashing if it looks natural or credential-shaped — "hashed" is not "anonymous"
+                    when the input space is small. Explanations name attributes and never values.
+
+STILL NOT VERIFIED: **Nothing evaluates a flag**, so no code path in this repository is actually
+                    gated, and every rollout so far is over subjects a test invented. There is no
+                    API, no UI, no flag console, no control plane, no propagation or caching (every
+                    evaluation reads the store, which is correct and will not be fast enough for a
+                    hot path), no per-scope overrides, no flag dependencies and no retention.
+                    **Administration is not authenticated**: the injected authority is injected
+                    rather than asserted and refuses by default, but it identifies a deployment
+                    capability rather than a person, so *who* killed a flag is not recorded — K-02
+                    and K-04 wiring is deferred and is a change to one method. **No audit record
+                    (K-09) and no event (K-08) follows a publication, an activation or a kill**,
+                    which for a control whose entire purpose is to be used during an incident is
+                    the most conspicuous absence in the component. **Nothing has been applied to a
+                    live PostgreSQL server:** migration 0010, every CHECK, all three append-only
+                    triggers, both partial unique indexes and every constraint are declared and
+                    unproven, and the opt-in suite that would prove them
+                    (tests/integration/feature-flags.integration.ts, 8 cases inside one guarded
+                    top-level test) skips with its reason stated. Across the whole repository
+                    `npm run test:integration` reports **48 tests, 0 passing, 48 skipped** — the
+                    honest shape of a live gate nothing has ever run. A skipped run is not
+                    evidence of anything, and none of the live claims above may be read as made.
 ```
 
 ---

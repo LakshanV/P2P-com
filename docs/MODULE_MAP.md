@@ -105,7 +105,7 @@ The kernel is small, stable, and shared. It contains capability that is genuinel
 | K-04 | **Permissions** | RBAC/ABAC evaluation, role and grant storage, purpose-based staff access | role, grant, permission_check_log | K-01, K-03 |
 | K-05 | **Configuration** | Environment and platform configuration resolution | config_entry | substrate |
 | K-06 | **Policy Engine** | Versioned business policy storage and evaluation; every policy read returns a version id | policy, policy_version | K-05 |
-| K-07 | **Feature Flags** | Flag definitions, targeting, rollout stages, kill switches | flag, flag_rule, flag_exposure | K-03, K-05 |
+| K-07 | **Feature Flags** | Flag definitions, targeting, rollout stages, kill switches | feature_flag_version, feature_flag_activation, feature_flag_lifecycle | K-05 |
 | K-08 | **Event Infrastructure** | Durable publish/subscribe, idempotency keys, retries, dead-letter, replay | event, event_delivery, dead_letter | substrate |
 | K-09 | **Audit Foundation** | Append-only audit trail of who did what, with what purpose | audit_event | K-01, K-04 |
 | K-10 | **Ledger Foundation** | Double-entry primitives, accounts, entries, immutability guarantees | ledger_account, ledger_entry, ledger_txn | substrate |
@@ -404,7 +404,13 @@ Build order follows the dependency graph, not feature appeal. Each numbered step
 **Build order must agree with declared dependencies.** A step may not contain a component whose declared dependencies (§3 for the kernel, §4 and §8 for modules) land in a later step. This is checkable against the tables in this document and is the first thing to verify when the build order is edited. Two specific consequences inside the kernel:
 
 - **K-09 Audit depends on K-01 and K-04**, so it cannot precede them. It is sequenced in B-2, after the identity chain, not in B-1.
-- **K-07 Feature Flags depends on K-03 and K-05**, so it likewise sits in B-2, after K-03.
+- **K-07 Feature Flags depends on K-05**, and sits in B-2. It was mapped as depending on K-03 as
+  well, on the assumption that "selected accounts" meant resolving an account record. As built
+  (FND-004e) it does not: a flag is evaluated at an **opaque scope handle** it never resolves, so it
+  reads no account and imports nothing from K-03. That is strictly less coupling than the map
+  planned, and the row above records what landed. K-05 is genuinely required, for one registered
+  key — `platform.deployment.stage`, which is what v3 §36's "internal only" stage is a statement
+  about.
 
 This means audit and flags are not available to B-1. That is acceptable: B-1 delivers only K-05 Configuration and K-08 Event Infrastructure, neither of which requires an actor identity or a flag. Every component from B-2 onward has both.
 

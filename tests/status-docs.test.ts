@@ -18,12 +18,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { KERNEL_COMPONENTS } from '../platform/architecture/manifest.ts';
+import { FeatureFlagService } from '../kernel/feature-flags/index.ts';
 import { PermissionService } from '../kernel/permissions/index.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -579,5 +580,257 @@ test('the next task is not one that has already been delivered', () => {
       /\[ \]|NOT STARTED/,
       `§8 selects ${named}, which the checklist already reports as started`,
     );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// K-07 in particular: delivered, honestly incomplete, and not still "next"
+// ---------------------------------------------------------------------------
+
+test('both documents describe K-07 as the five operations the service actually has', () => {
+  // Derived from the class. A sixth operation — or a read of stored flag state — stops both
+  // documents describing the component, and this fails before a reader is misled.
+  const surface = new Set<string>();
+  let proto: object | null = FeatureFlagService.prototype;
+  while (proto !== null && proto !== Object.prototype) {
+    for (const key of Object.getOwnPropertyNames(proto)) surface.add(key);
+    proto = Object.getPrototypeOf(proto) as object | null;
+  }
+  surface.delete('constructor');
+
+  assert.deepEqual(
+    [...surface].sort(),
+    ['activate', 'evaluate', 'kill', 'publish', 'retire'],
+    `K-07's surface is now ${[...surface].sort().join(', ')}; both documents describe the old one`,
+  );
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const operation of ['kill', 'activat', 'rollout']) {
+      assert.ok(
+        text.toLowerCase().includes(operation),
+        `${name} does not describe K-07's ${operation}…`,
+      );
+    }
+  }
+});
+
+test('neither document claims feature flags are absent, unbuilt or the next task', () => {
+  const denials: ReadonlyArray<{ readonly pattern: RegExp; readonly why: string }> = [
+    { pattern: /\|\s*Feature flags\s*\|\s*Absent\s*\|/i, why: 'lists Feature flags as absent' },
+    {
+      pattern: /\bK-07\b[^.|]{0,60}\b(does not exist|is absent|is not built|is unbuilt)\b/i,
+      why: 'states K-07 does not exist',
+    },
+    {
+      pattern: /next genuinely unblocked task:\s*\*{0,2}FND-004e/i,
+      why: 'still selects FND-004e as the next task, which has been delivered',
+    },
+    {
+      pattern: /\|\s*P0-37\s*\|[^|]*\|\s*`\[ \]`/,
+      why: 'still marks P0-37 Feature flags NOT STARTED',
+    },
+    {
+      pattern: /\bK-07\b[^.|]{0,40}\bis the only one that has never been started\b/i,
+      why: 'still calls K-07 the unstarted component of B-2',
+    },
+  ];
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const { pattern, why } of denials) {
+      assert.ok(
+        !pattern.test(text),
+        `${name} ${why} — K-07 Feature Flags is implemented in kernel/feature-flags`,
+      );
+    }
+  }
+});
+
+test('both documents record what K-07 still lacks, item by item', () => {
+  // The first of these is the one that matters: a reader who believes something is gated by a flag
+  // will not add the gate.
+  const gaps: ReadonlyArray<readonly [string, RegExp]> = [
+    ['no caller', /nothing evaluates a flag/i],
+    ['no API or UI', /no API/i],
+    ['no audit record', /\bK-09\b/],
+    ['no events', /\bK-08\b/],
+    [
+      'unauthenticated administration',
+      /administration is not authenticated|no K-02 authentication/i,
+    ],
+    ['no control plane', /no control plane/i],
+    ['nothing applied to a live server', /nothing applied to a live server/i],
+  ];
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const [gap, pattern] of gaps) {
+      assert.match(text, pattern, `${name} no longer records that K-07 has ${gap}`);
+    }
+  }
+});
+
+test('the K-07 suite sizes quoted in the status document are the sizes on disk', () => {
+  const suites = [
+    'feature-flags',
+    'feature-flags-evaluation',
+    'feature-flags-concurrency',
+    'feature-flags-rollout',
+  ] as const;
+
+  for (const suite of suites) {
+    const source = readFileSync(path.join(REPO_ROOT, 'tests', `${suite}.test.ts`), 'utf8');
+    const cases = source.split(/^test\(/m).length - 1;
+    assert.ok(cases > 0, `tests/${suite}.test.ts has no top-level cases; the convention moved`);
+    assert.match(
+      STATUS,
+      new RegExp(`\`${suite}\` ${cases}\\b`),
+      `§1 does not report tests/${suite}.test.ts as ${cases} cases, which is what it holds`,
+    );
+  }
+});
+
+test('migration 0010 is the file the status document and the contract describe', () => {
+  // Structural, for the same reason 0009's check exists: no gate in this repository parses SQL, so
+  // this is the only thing that would notice the file being mangled by an automated edit (§11.29).
+  const file = path.join(
+    REPO_ROOT,
+    'db',
+    'migrations',
+    '0010_create_kernel_feature_flags_schema.up.sql',
+  );
+  const sql = readFileSync(file, 'utf8');
+
+  assert.equal(
+    (sql.match(/^BEGIN;$/gm) ?? []).length,
+    1,
+    'migration 0010 must open exactly one transaction — the runner owns it',
+  );
+  assert.equal(
+    (sql.match(/^COMMIT;$/gm) ?? []).length,
+    1,
+    'migration 0010 has more than one COMMIT, which is the 0009 corruption signature (§11.29)',
+  );
+  assert.equal(
+    (sql.match(/CREATE TABLE IF NOT EXISTS/g) ?? []).length,
+    3,
+    'the status document and the contract both say K-07 owns three tables',
+  );
+  assert.equal(
+    (sql.match(/BEFORE UPDATE OR DELETE ON/g) ?? []).length,
+    3,
+    'one append-only trigger per table, or the append-only claim is not enforced',
+  );
+
+  assert.match(STATUS, /10 forward \+ 10 rollback/, '§1 does not report the migration count');
+});
+
+test('the migration count in §1 is the number of migrations on disk', () => {
+  const files = readdirSync(path.join(REPO_ROOT, 'db', 'migrations'));
+  const up = files.filter((file) => file.endsWith('.up.sql')).length;
+  const down = files.filter((file) => file.endsWith('.down.sql')).length;
+  assert.equal(up, down, 'every forward migration needs its rollback');
+  assert.match(
+    STATUS,
+    new RegExp(`\\| Migrations \\| ${up} forward \\+ ${down} rollback`),
+    `§1 must report ${up} forward and ${down} rollback migrations, which is what is on disk`,
+  );
+});
+
+test('build step B-2 is reported as covered, and B-3 is where the next task comes from', () => {
+  // Derived from the checklist's own build-step column: if any B-2 component is still unstarted,
+  // the claim in §8 is false and the next task was selected from the wrong step.
+  const unstartedInStep = (step: string): string[] =>
+    CHECKLIST.split(/\r?\n/)
+      .filter((line) => /^\| K-\d\d /.test(line))
+      .map(cellsOf)
+      .filter((cells) => cells.at(-1) === step && /\[ \]/.test(cells[3] ?? ''))
+      .map((cells) => cells[0] ?? '');
+
+  assert.deepEqual(
+    unstartedInStep('B-1'),
+    [],
+    'a B-1 component is unstarted, so B-1 is not covered',
+  );
+  assert.deepEqual(
+    unstartedInStep('B-2'),
+    [],
+    'a B-2 component is unstarted; §8 claims B-2 is covered and selects from B-3',
+  );
+  assert.ok(unstartedInStep('B-3').length > 0, 'B-3 is complete; §8 must select from a later step');
+});
+
+// ---------------------------------------------------------------------------
+// K-07 in particular: present, incomplete, and honestly counted
+// ---------------------------------------------------------------------------
+
+test('K-07 is reported as a foundation: neither complete nor merely a contract', () => {
+  // Both halves. The checklist cells are derived from the filesystem by the general test above;
+  // what this adds is that the *prose* agrees, in both documents, and does not over-claim.
+  const cells = kernelRow('K-07');
+  assert.ok((cells[2] ?? '').startsWith('`[x]`'), 'the K-07 contract row is not COMPLETE');
+  assert.ok(
+    (cells[3] ?? '').startsWith('`[~]`'),
+    'the K-07 implementation row is not IN PROGRESS; a delivered foundation is neither absent nor done',
+  );
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const overclaim of [
+      /\bK-07\b[^.|]{0,40}\bis complete\b/i,
+      /feature flags[^.|]{0,30}\bare complete\b/i,
+    ]) {
+      for (const hit of text.matchAll(new RegExp(`[^.]{0,60}${overclaim.source}`, 'gi'))) {
+        assert.match(
+          hit[0],
+          /\b(not|never|no|cannot|refus)\b/i,
+          `${name} calls K-07 complete: "${hit[0].trim().slice(0, 90)}"`,
+        );
+      }
+    }
+  }
+});
+
+test('K-07 has an evidence block, and the checklist rows point at it', () => {
+  assert.match(
+    STATUS,
+    /### 11\.30 Evidence — FND-004e/,
+    'the delivered task has no evidence block, so its rows cannot be substantiated (v3 §56)',
+  );
+
+  const anchor = '#1130-evidence--fnd-004e-k-07-feature-flags-foundation';
+  for (const id of ['K-07', 'P0-37']) {
+    const row = CHECKLIST.split(/\r?\n/).find(
+      (candidate) => /^\|/.test(candidate) && cellsOf(candidate)[0] === id,
+    );
+    assert.ok(row !== undefined, `no row for ${id}`);
+    assert.ok(row.includes(anchor), `${id}'s row does not link the FND-004e evidence block`);
+  }
+});
+
+test('the live-suite skip is reported as a skip, never as evidence', () => {
+  // The claim this protects is the one it would be easiest to launder: 48 opt-in cases exist, all
+  // 48 skip, and a document that quoted them as passing would be claiming a live PostgreSQL run
+  // this repository has never made.
+  const quoted = [...STATUS.matchAll(/tests (\d+), skipped (\d+)/g)];
+  for (const [, total, skipped] of quoted) {
+    assert.equal(
+      total,
+      skipped,
+      `an evidence block quotes ${String(total)} live tests with only ${String(skipped)} skipped; ` +
+        'a live suite that partly ran is a different claim and needs its own evidence',
+    );
+  }
+
+  for (const [name, text] of DOCUMENTS) {
+    assert.match(
+      text,
+      /a skipped run is not evidence/i,
+      `${name} no longer states that a skipped run proves nothing`,
+    );
+    for (const hit of text.matchAll(/[^.]{0,80}\bintegration (tests?|suites?) (pass|passed)\b/gi)) {
+      assert.match(
+        hit[0],
+        /\b(not|never|no|would|skip)\b/i,
+        `${name} claims the integration suite passed: "${hit[0].trim().slice(0, 90)}"`,
+      );
+    }
   }
 });
