@@ -325,7 +325,10 @@ test('rejects a ledger version that has no migration on disk', async () => {
     ledger: [
       LEDGER_0001,
       LEDGER_0002,
-      { version: '0009', slug: 'from_the_future', checksum: 'a'.repeat(64) },
+      // Far above every migration this revision has, so it stays "from the future" as the real
+      // set grows. It was 0009 until FND-004d added a migration with that number, at which point
+      // this stopped testing an absent version and started testing checksum drift.
+      { version: '0099', slug: 'from_the_future', checksum: 'a'.repeat(64) },
     ],
   });
 
