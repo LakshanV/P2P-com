@@ -169,7 +169,7 @@ Source: v3 §59 Phase 0 and v1 §64. **Phase 0 exit gate: all foundation tests p
 
 ## B. Commerce kernel components
 
-Each kernel component needs a contract document (v3 §10) and an implementation meeting the v3 §55 Definition of Done. Both are tracked. **No item here may reach `[x]` on the strength of a live-database suite that skipped: a skipped run is not evidence**, and every one of them skips today because no PostgreSQL runtime is available to this repository. Eight components — K-01, K-02, K-03, K-04, K-05, K-06, K-07, K-08 and K-09 — have a `COMPLETE` contract and an `IN PROGRESS` implementation; **none is complete**, and the remaining six are `NOT STARTED`. Build steps B-1 and B-2 are both covered, and K-06 opens B-3.
+Each kernel component needs a contract document (v3 §10) and an implementation meeting the v3 §55 Definition of Done. Both are tracked. **No item here may reach `[x]` on the strength of a live-database suite that skipped: a skipped run is not evidence**, and every one of them skips today because no PostgreSQL runtime is available to this repository. **Nine** components — K-01, K-02, K-03, K-04, K-05, K-06, K-07, K-08 and K-09 — have a `COMPLETE` contract and an `IN PROGRESS` implementation; **none is complete**, and the remaining six are `NOT STARTED`. Build steps B-1 and B-2 are both covered, and K-06 opens B-3.
 
 | ID | Component | Contract | Implementation | Build step |
 |---|---|---|---|---|

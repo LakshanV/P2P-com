@@ -1010,3 +1010,176 @@ test('migration 0011 is the file the status document and the contract describe',
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// The nine-component state, and the aggregates that describe it
+// ---------------------------------------------------------------------------
+
+test('the prose inventory in both documents counts the components on disk', () => {
+  // The derived-counts test above checks §1's table cells. This checks the *sentences*, which are
+  // what a reader actually reads and which have gone stale twice: "seven kernel components" and
+  // "Eight components — K-01 … K-09" both survived a slice that had already made them false, the
+  // second while listing nine ids in the same breath.
+  const words = [
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+  ];
+  const expected = words[implemented.length];
+  assert.ok(expected !== undefined, `${implemented.length} components is off the end of the scale`);
+
+  for (const [name, text] of DOCUMENTS) {
+    // Any sentence counting kernel components has to agree with the filesystem.
+    const claims = [
+      ...text.matchAll(
+        /\*{0,2}(\w+)\*{0,2}\s+(?:kernel\s+)?components?\s+(?:now\s+)?(?:have|has)\s+(?:implemented\s+)?(?:cores|foundations)/gi,
+      ),
+      ...text.matchAll(/\*{0,2}(\w+)\*{0,2}\s+components?\s+—\s+K-01/gi),
+    ];
+    assert.ok(claims.length > 0, `${name} no longer states how many components exist`);
+
+    for (const claim of claims) {
+      const counted = String(claim[1]).toLowerCase();
+      assert.equal(
+        counted,
+        expected,
+        `${name} says "${claim[0].trim().slice(0, 70)}" but ${implemented.length} components ` +
+          `have a CONTRACT.md on disk`,
+      );
+    }
+  }
+});
+
+test('every kernel component on disk is named in both documents’ inventories', () => {
+  // A count can be right while the list behind it is wrong. This catches the component that was
+  // renumbered into the total but never named, which is how a reader concludes it does not exist.
+  for (const [name, text] of DOCUMENTS) {
+    for (const component of implemented) {
+      assert.ok(
+        text.includes(component.id),
+        `${name} never mentions ${component.id}, which has a CONTRACT.md on disk`,
+      );
+    }
+  }
+});
+
+test('no superseded total is presented as the current one', () => {
+  // Each of these was true once and is quoted in a historical evidence block, which is correct.
+  // What must not happen is one of them appearing in a *present-tense* claim in §1 or §7 — the two
+  // places a reader looks for "where is this repository now".
+  // §1 is a level-2 heading, so its row is read from the document directly.
+  const superseded = ['702', '819', '931', '1019', '1029', '1118'];
+
+  for (const total of superseded) {
+    assert.ok(
+      !STATUS.includes(`| Tests | ${total} passing`),
+      `§1 reports ${total} passing tests, which is a superseded total`,
+    );
+  }
+
+  // §7's running tally ends with the current figure, whatever it is; it must not end with an old one.
+  const tally = /for (\d+) today/.exec(STATUS);
+  assert.ok(tally !== null, '§7 no longer carries a running test total');
+  const current = /\| Tests \| (\d+) passing/.exec(STATUS)?.[1];
+  assert.equal(
+    tally[1],
+    current,
+    `§7 says the total is ${String(tally[1])} today and §1 says ${String(current)}`,
+  );
+});
+
+test('the live-PostgreSQL skip aggregate agrees between §1 and the evidence blocks', () => {
+  // 49 tests that skip are not 49 tests that pass, and the number is the easiest thing in the
+  // document to quietly launder into evidence. §1 and the newest block must say the same thing.
+  const summary = /A further (\d+) live-PostgreSQL tests exist and are \*\*skipped\*\*/.exec(
+    STATUS,
+  );
+  assert.ok(summary !== null, '§1 no longer reports the live-suite count as skipped');
+
+  const quoted = [
+    ...STATUS.matchAll(/npm run test:integration\s+exit 0\s+tests (\d+), skipped (\d+)/g),
+  ];
+  assert.ok(quoted.length > 0, 'no evidence block quotes a test:integration result');
+
+  const latest = quoted[quoted.length - 1];
+  assert.ok(latest !== undefined);
+  assert.equal(latest[1], latest[2], 'an evidence block quotes live tests that did not all skip');
+  assert.equal(
+    summary[1],
+    latest[1],
+    `§1 says ${String(summary[1])} live tests exist; the last evidence block ran ${String(latest[1])}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// K-06 in particular: what it is, and what it is next
+// ---------------------------------------------------------------------------
+
+test('K-06 is reported as a foundation: neither complete nor merely a contract', () => {
+  const row = kernelRow('K-06');
+  assert.ok(
+    (row[2] ?? '').startsWith('`[x]`'),
+    'K-06 has a CONTRACT.md on disk but the checklist does not call its contract COMPLETE',
+  );
+  assert.ok(
+    (row[3] ?? '').startsWith('`[~]`'),
+    'K-06 is implemented but the checklist does not call its implementation IN PROGRESS',
+  );
+  assert.equal(row.at(-1), 'B-3', 'K-06 opens build step B-3; the checklist says otherwise');
+
+  // And the guarantee it exists for, which is the one claim that must never be softened: an
+  // evaluation that did not return a version id would make v3 §35 unkeepable by any caller.
+  for (const [name, text] of DOCUMENTS) {
+    assert.match(
+      text,
+      /pinn?ed?[^.]{0,80}version id|version id[^.]{0,80}pin/i,
+      `${name} no longer records that a K-06 evaluation returns the version a record pins`,
+    );
+  }
+});
+
+test('K-06 has an evidence block, and the checklist rows point at it', () => {
+  assert.match(
+    STATUS,
+    /### 11\.31 Evidence — FND-005b/,
+    'the delivered task has no evidence block, so its rows cannot be substantiated (v3 §56)',
+  );
+  const anchor = '#1131-evidence--fnd-005b-k-06-policy-engine-foundation';
+  for (const id of ['K-06', 'P0-38']) {
+    const row = CHECKLIST.split(/\r?\n/).find(
+      (candidate) => /^\|/.test(candidate) && cellsOf(candidate)[0] === id,
+    );
+    assert.ok(row !== undefined, `no row for ${id}`);
+    assert.ok(row.includes(anchor), `${id}'s row does not link the FND-005b evidence block`);
+  }
+});
+
+test('the next task is K-11, and the checklist agrees it is unbuilt and in B-3', () => {
+  // Selected from the dependency order rather than from judgement, so the assertion is that the
+  // document still names a component the checklist reports as unstarted — the failure being a
+  // selection that has already been delivered, which is how something gets built twice.
+  const selection = /Next genuinely unblocked task:[^\n]*?\b(K-\d\d)\b/.exec(STATUS)?.[1];
+  assert.equal(selection, 'K-11', '§8 no longer selects K-11 Commerce Unit Registry');
+
+  const row = kernelRow('K-11');
+  assert.match(
+    row[3] ?? '',
+    /\[ \]|NOT STARTED/,
+    'K-11 is selected as next but the checklist already reports it as started',
+  );
+  assert.equal(row.at(-1), 'B-3', 'K-11 is selected from B-3; the checklist places it elsewhere');
+  assert.ok(
+    !existsSync(path.join(KERNEL_DIR, 'commerce-unit-registry', 'CONTRACT.md')),
+    'K-11 has a CONTRACT.md on disk, so selecting it as the next task is stale',
+  );
+});
