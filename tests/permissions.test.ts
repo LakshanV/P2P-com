@@ -611,6 +611,40 @@ test('the service exposes no bypass, no update and no delete', () => {
   }
 });
 
+test('the service exposes no way to read authority at all', () => {
+  // `findGrant`, `findDecision` and `activePolicy` each took an identifier and nothing else — no
+  // session, no account, no authorisation — so holding an id, or an idempotency key out of a retry
+  // buffer, read back somebody else's authority. They are gone rather than guarded, and this test
+  // exists so a well-meaning convenience getter cannot quietly reintroduce the surface.
+  const operations = new Set<string>();
+  let proto: object | null = PermissionService.prototype;
+  while (proto !== null && proto !== Object.prototype) {
+    for (const key of Object.getOwnPropertyNames(proto)) operations.add(key);
+    proto = Object.getPrototypeOf(proto) as object | null;
+  }
+
+  for (const gone of ['findGrant', 'findDecision', 'activePolicy']) {
+    assert.ok(!operations.has(gone), `${gone} must not exist on the service`);
+    assert.equal(
+      (PermissionService.prototype as unknown as Record<string, unknown>)[gone],
+      undefined,
+      `${gone} must not be reachable at runtime either`,
+    );
+  }
+
+  // And no replacement under another name. Anything that reads is a read.
+  const readers = [...operations].filter((name) =>
+    /^(find|get|read|list|lookup|query|fetch|load|show|inspect)/i.test(name),
+  );
+  assert.deepEqual(readers, [], 'a read API is a read API whatever it is called');
+
+  assert.deepEqual(
+    [...operations].sort(),
+    ['authorize', 'constructor', 'grant', 'publishPolicy', 'revoke'],
+    'four operations and a constructor: the whole surface',
+  );
+});
+
 test('every record crossing the boundary is sealed all the way down', async () => {
   const harness = await withPolicy();
   const granted = await harness.service.grant(
@@ -623,8 +657,8 @@ test('every record crossing the boundary is sealed all the way down', async () =
     isSealed(granted.grant),
     'a returned grant must be frozen, including its condition tree',
   );
-  const policy = await harness.service.activePolicy();
-  assert.ok(isSealed(policy), 'and a policy version, including every capability list');
+  const published = await harness.service.publishPolicy(policyRequest({ version: 9 }));
+  assert.ok(isSealed(published.policy), 'and a policy version, including every capability list');
 
   assert.throws(() => {
     (granted.grant as { effect: string }).effect = 'deny';

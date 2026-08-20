@@ -27,6 +27,8 @@ import {
   build,
   grantRequest,
   policyRequest,
+  storedActivePolicy,
+  storedGrant,
   withPolicy,
 } from './helpers/permission-fixtures.ts';
 
@@ -338,7 +340,7 @@ test('a revoked grant stops applying immediately, and the grant row is untouched
   assert.match(after.decision.explanation, /not a weaker grant; it is not a grant/);
 
   // Append-only: the grant is still there, exactly as written.
-  const stored = await harness.service.findGrant(granted.grant.grantId);
+  const stored = await storedGrant(harness.repository, granted.grant.grantId);
   assert.deepEqual(stored, granted.grant, 'revocation appends; it does not edit');
   assert.equal(
     harness.repository.grants().length,
@@ -491,7 +493,7 @@ test('the active policy version is the highest number, not the most recent write
   await harness.service.publishPolicy(policyRequest({ version: 5 }));
   await harness.service.publishPolicy(policyRequest({ version: 3 }));
 
-  const active = await harness.service.activePolicy();
+  const active = await storedActivePolicy(harness.repository);
   assert.equal(active.version, 5, 'a lower version published later does not become active');
 });
 

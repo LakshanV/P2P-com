@@ -58,11 +58,20 @@ publishPolicy(request): Promise<{ policy, deduplicated }>
 grant(request): Promise<{ grant, deduplicated }>
 revoke(request): Promise<Revocation>
 authorize(request): Promise<{ decision, deduplicated }>
-findGrant(grantId) / findDecision(decisionId) / activePolicy()
 ```
 
-Seven operations, three of which are reads. There is no update, no delete, no super-user path, no
-"force allow" and no bypass; `tests/permissions.test.ts` scans the whole surface for one.
+Four operations, and **no reads**. There is no update, no delete, no super-user path, no "force
+allow" and no bypass; `tests/permissions.test.ts` scans the whole surface for one.
+
+An earlier revision also exposed `findGrant(grantId)`, `findDecision(decisionId)` and
+`activePolicy()`. Each took an identifier and nothing else — no session, no account, no
+authorisation — so possession of an id, or of an idempotency key held in a client's retry buffer,
+read back who had been granted what and what somebody else had been allowed to do. That is an
+unauthenticated read of authority data, and it is closed by **removing the surface rather than
+guarding it**: a read API this component does not need is one nobody has to keep safe. Anything
+that needs to look at stored authority goes through the repository port, which is persistence and
+a test seam, not a caller-facing API. `tests/permissions.test.ts` asserts the three names are
+absent and that nothing named like a read has replaced them.
 
 ### Guarantees
 
@@ -312,6 +321,12 @@ is an operational fact somebody should learn from a contract rather than from a 
   vocabulary and the policy structure make one derivable; nobody has derived or reviewed one.
 - **No delegation, no groups, no role hierarchy, no inheritance.** Each is a real need and each
   makes "who could do this" harder to answer; none is implemented rather than half-implemented.
+- **No way to read authority back.** The three read methods were removed (§2) and nothing replaced
+  them, so there is no supported way for a caller to see a stored grant, decision or policy version.
+  That is deliberate: an authorised read is a real feature — it needs a validated session, a
+  matching account, an explicit scope, a deny-by-default authorisation and a recorded decision of
+  its own — and half of it would be worse than none. Until it exists, inspection means database
+  access, which is an operator's privilege and leaves the database's own trail.
 - **No retention or pruning** of decision records (§8).
 - **Nothing has run against a live PostgreSQL server.** No runtime is available to this repository,
   so the schema, every `CHECK`, all four append-only triggers and every constraint are declared and
@@ -330,6 +345,7 @@ node --test tests/permissions.test.ts              # the trust boundary, refusal
 node --test tests/permissions-decisions.test.ts    # RBAC, ABAC, deny precedence, purpose, isolation
 node --test tests/permissions-concurrency.test.ts  # races, idempotency, append-only history
 node --test tests/permissions-idempotency.test.ts  # stolen keys, changed context, changed session, authors
+node --test tests/permissions-administration.test.ts # authenticated administration, derived authors, bootstrap
 node --test tests/permissions-repository.test.ts   # port conformance, adapter, migration, this contract
 npm run test:integration                           # live PostgreSQL; skips without a database
 ```

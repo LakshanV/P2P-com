@@ -28,6 +28,7 @@ import {
   grantRequest,
   policyRequest,
   revokeRequest,
+  storedActivePolicy,
   withPolicy,
 } from './helpers/permission-fixtures.ts';
 
@@ -222,7 +223,7 @@ test('a losing transaction leaves no partial authority behind', async () => {
 
   const held = new Latch();
   const ready = new Latch();
-  const policyVersionId = (await harness.service.activePolicy()).policyVersionId;
+  const policyVersionId = (await storedActivePolicy(harness.repository)).policyVersionId;
 
   // A transaction that writes a grant, then is held open while another writes the same key.
   const losing = repository.withTransaction(async (tx) => {
@@ -313,7 +314,7 @@ test('a malformed stored grant cannot authorise anything', async () => {
   // The row was written around the service — the case fail-closed decoding exists for. Nothing in
   // the store may be treated as authority unless it is exactly what this component writes.
   const harness = await withPolicy();
-  const policy = await harness.service.activePolicy();
+  const policy = await storedActivePolicy(harness.repository);
 
   harness.repository.seed({
     policies: [policy],

@@ -15,6 +15,7 @@ import {
   type BootstrapAuthority,
   type Grant,
   type PermissionRepository,
+  type PolicyVersion,
   type AccountAssertion,
   type AccountLookup,
   type Clock,
@@ -379,6 +380,28 @@ export async function installFirstAdministrator(
   };
   await repository.withTransaction((tx) => tx.insertGrant(grant));
   return grant;
+}
+
+/**
+ * The active policy version, read through the repository port.
+ *
+ * The service has no read surface at all — see `service.ts` — so a test that needs to look at
+ * what was stored goes to persistence, which is a test's privilege and not a caller's. Throws
+ * rather than returning null: every caller here has already published something, so an empty store
+ * is a broken fixture and not a case worth branching on.
+ */
+export async function storedActivePolicy(repository: PermissionRepository): Promise<PolicyVersion> {
+  const policy = await repository.withTransaction((tx) => tx.findActivePolicy());
+  if (policy === null) throw new Error('the fixture expected a published policy version');
+  return policy;
+}
+
+/** One stored grant, by id, through the same seam. Null when nothing was written under that id. */
+export async function storedGrant(
+  repository: PermissionRepository,
+  grantId: string,
+): Promise<Grant | null> {
+  return repository.withTransaction((tx) => tx.findGrantById(grantId));
 }
 
 /**

@@ -52,6 +52,7 @@ import {
   installFirstAdministrator,
   policyRequest,
   revokeRequest,
+  storedActivePolicy,
   withPolicy,
   without,
 } from './helpers/permission-fixtures.ts';
@@ -264,7 +265,7 @@ test('SUPER_ADMIN is not a way around any of this', async () => {
   // A SUPER_ADMIN grant that is not an administration grant confers no administration.
   await installFirstAdministrator(
     harness.repository,
-    (await harness.service.activePolicy()).policyVersionId,
+    (await storedActivePolicy(harness.repository)).policyVersionId,
     {
       grantId: 'grant_01HQZXSUPER01',
       subjectId: 'sub_01HQZXSUPER001',
@@ -489,7 +490,7 @@ test('concurrent administrations from different administrators do not converge',
   const harness = await withPolicy();
   await installFirstAdministrator(
     harness.repository,
-    (await harness.service.activePolicy()).policyVersionId,
+    (await storedActivePolicy(harness.repository)).policyVersionId,
     {
       grantId: 'grant_01HQZXADMIN03',
       subjectId: 'sub_01HQZXADMIN003',

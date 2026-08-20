@@ -39,6 +39,7 @@ import {
   grantRequest,
   policyRequest,
   revokeRequest,
+  storedActivePolicy,
   withPolicy,
 } from './helpers/permission-fixtures.ts';
 
@@ -288,7 +289,7 @@ test('a grant retry from a different administrator is refused', async () => {
   // A second administrator, holding the same administration authority.
   await installFirstAdministrator(
     harness.repository,
-    (await harness.service.activePolicy()).policyVersionId,
+    (await storedActivePolicy(harness.repository)).policyVersionId,
     {
       grantId: 'grant_01HQZXADMIN02',
       subjectId: 'sub_01HQZXADMIN002',

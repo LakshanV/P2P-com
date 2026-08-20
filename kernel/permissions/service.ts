@@ -25,6 +25,15 @@
  *   5. **The evaluation** (decide.ts), which is pure and deny-by-default.
  *   6. **The record**, appended. A decision that is not written down is a decision nobody can audit.
  *
+ * There are **four** operations and no reads. An earlier revision also exposed `findGrant`,
+ * `findDecision` and `activePolicy`, which took an identifier and nothing else: no session, no
+ * account, no authorisation. Possession of an id — or of an idempotency key, which a client keeps
+ * in a retry buffer — was enough to read whose authority was granted by whom, and what somebody
+ * else had been allowed to do. That is the same shape of hole as an unauthenticated write, one
+ * direction over, and it is closed by removing the surface rather than by guarding it: a read API
+ * this component does not need is one nobody has to keep safe. Persistence-level lookups remain on
+ * the repository port, where they are reachable by this service and by tests that own the store.
+ *
  * AI has no authority here, in three separate places: it may not author policy or grants
  * (`origin.kind: 'ai'` is refused), it may never hold a forbidden action or a forbidden resource
  * type however explicitly somebody grants it, and it is never the authority for a financial or a
@@ -651,27 +660,6 @@ export class PermissionService {
     }
 
     return { decision, deduplicated: false };
-  }
-
-  /** One decision, by id, or null. */
-  async findDecision(decisionId: string): Promise<Decision | null> {
-    assertPermissionIdentifier(decisionId, 'decisionId');
-    const decision = await this.#repository.withTransaction((tx) =>
-      tx.findDecisionById(decisionId),
-    );
-    return decision === null ? null : sealDecision(decision);
-  }
-
-  /** One grant, by id, or null. */
-  async findGrant(grantId: string): Promise<Grant | null> {
-    assertPermissionIdentifier(grantId, 'grantId');
-    const grant = await this.#repository.withTransaction((tx) => tx.findGrantById(grantId));
-    return grant === null ? null : sealGrant(grant);
-  }
-
-  /** The active policy version, or a refusal when none has been published. */
-  async activePolicy(): Promise<PolicyVersion> {
-    return this.#requireActivePolicy();
   }
 
   // -------------------------------------------------------------------------
