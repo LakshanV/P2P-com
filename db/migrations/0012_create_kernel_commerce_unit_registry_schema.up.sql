@@ -39,8 +39,10 @@
 -- stated in K-11's contract rather than glossed.
 --
 -- `is_opaque_identifier` is K-11's own copy of the rule set K-01, K-02, K-03, K-04, K-06 and K-07
--- also carry, in K-11's schema, for the same ownership reason. All seven bodies are required to be
--- character-for-character identical by `tests/commerce-unit-registry-repository.test.ts`.
+-- also carry, in K-11's schema, for the same ownership reason. Every copy is required to be
+-- character-for-character identical to every other by `tests/migrations.test.ts`, which reads the
+-- bodies out of the migration files themselves rather than from a list of components — so a copy
+-- that drifted fails the build whether or not it was ever named here.
 --
 -- This migration touches no other unit's schema.
 

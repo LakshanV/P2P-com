@@ -26,6 +26,7 @@ import {
   NO_REGISTRAR,
   PINNED_VERSION_FIELDS,
   UNIT_KINDS,
+  type UnitOfMeasure,
 } from '../kernel/commerce-unit-registry/index.ts';
 
 import {
@@ -368,8 +369,12 @@ test('every record crossing the boundary is sealed all the way down', async () =
   assert.ok(Object.isFrozen(version.measures));
   assert.ok(Object.isFrozen(version.measures[0]));
   assert.ok(Object.isFrozen(version.owner));
+  // Cast away the `readonly`, which is all a caller in JavaScript ever had, and the push still
+  // throws: the guarantee is the freeze at runtime and not the type. Asserted through
+  // `UnitOfMeasure[]` rather than a hand-written `{ push }`, because the two do not overlap as
+  // types and the compiler is right to say so — the point is a mutable array, not a stray method.
   assert.throws(() => {
-    (version.measures as { push: (value: unknown) => void }).push({ family: 'goods', unit: 'lot' });
+    (version.measures as UnitOfMeasure[]).push({ family: 'goods', unit: 'lot' });
   });
 
   const resolved = await harness.service.resolve({ typeKey: ROOT });

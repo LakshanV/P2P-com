@@ -1011,6 +1011,117 @@ test('migration 0011 is the file the status document and the contract describe',
   }
 });
 
+test('migration 0012 is the file the status document describes', () => {
+  const file = path.join(
+    REPO_ROOT,
+    'db',
+    'migrations',
+    '0012_create_kernel_commerce_unit_registry_schema.up.sql',
+  );
+  const sql = readFileSync(file, 'utf8');
+
+  assert.equal(
+    (sql.match(/^BEGIN;$/gm) ?? []).length,
+    1,
+    'migration 0012 must open exactly one transaction — the runner owns it',
+  );
+  assert.equal(
+    (sql.match(/^COMMIT;$/gm) ?? []).length,
+    1,
+    'migration 0012 has more than one COMMIT, which is the 0009 corruption signature (§11.29)',
+  );
+  assert.equal(
+    (sql.match(/CREATE TABLE IF NOT EXISTS/g) ?? []).length,
+    3,
+    'the status document says K-11 owns three tables: version, activation, retirement',
+  );
+  assert.equal(
+    (sql.match(/BEFORE UPDATE OR DELETE ON/g) ?? []).length,
+    3,
+    'one append-only trigger per table, or the append-only claim is not enforced',
+  );
+  assert.equal(
+    (sql.match(/CREATE UNIQUE INDEX IF NOT EXISTS/g) ?? []).length,
+    2,
+    'the two partial unique indexes are what make two versions in force at once impossible',
+  );
+
+  // 0012's own header: no price, no currency, no conversion factor, no tax column. Scanned over
+  // the statements rather than the file, so the sentence promising it cannot fail its own check.
+  const statements = stripNoise(sql);
+  for (const type of ['money', 'double precision', 'real', 'float4', 'float8']) {
+    assert.ok(
+      !new RegExp(`\\b${type.replace(' ', '\\s+')}\\b`, 'i').test(statements),
+      `migration 0012 declares a ${type} column; K-11 holds no amount and no currency`,
+    );
+  }
+});
+
+test('the trigger inventory in §1 is the triggers on disk, not the count when it was written', () => {
+  // This sentence went stale the moment a migration landed: §1 said seventeen triggers across
+  // seventeen tables while twenty were on disk. A prose number nothing derives is a number that
+  // is right until the next slice, so it is derived here.
+  const words = [
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+    'thirteen',
+    'fourteen',
+    'fifteen',
+    'sixteen',
+    'seventeen',
+    'eighteen',
+    'nineteen',
+    'twenty',
+    'twenty-one',
+    'twenty-two',
+    'twenty-three',
+    'twenty-four',
+  ];
+
+  const migrations = path.join(REPO_ROOT, 'db', 'migrations');
+  const guarded = readdirSync(migrations)
+    .filter((file) => file.endsWith('.up.sql'))
+    .flatMap((file) => [
+      ...readFileSync(path.join(migrations, file), 'utf8').matchAll(
+        /CREATE TRIGGER \w+\s+BEFORE [A-Z ]*ON ([a-z0-9_]+\.[a-z0-9_]+)/g,
+      ),
+    ])
+    .map((match) => String(match[1]));
+
+  assert.ok(guarded.length > 0, 'no triggers found; the regex no longer matches the migrations');
+  assert.equal(
+    new Set(guarded).size,
+    guarded.length,
+    'two triggers guard one table, so "one per table" is no longer the shape §1 describes',
+  );
+
+  const claim = /(\w+(?:-\w+)?) triggers across (\w+(?:-\w+)?) tables/i.exec(STATUS);
+  assert.ok(claim !== null, '§1 no longer reports how many triggers refuse a mutation');
+  const expected = words[guarded.length];
+  assert.ok(expected !== undefined, `${guarded.length} triggers is off the end of the scale`);
+  assert.equal(
+    String(claim[1]).toLowerCase(),
+    expected,
+    `§1 says "${String(claim[0])}" and ${guarded.length} triggers are on disk`,
+  );
+  assert.equal(
+    String(claim[2]).toLowerCase(),
+    expected,
+    `§1 says "${String(claim[0])}" and ${new Set(guarded).size} tables carry one`,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // The nine-component state, and the aggregates that describe it
 // ---------------------------------------------------------------------------

@@ -105,6 +105,72 @@ test('every migration is owned by the platform or by a kernel component', () => 
   }
 });
 
+/**
+ * Every schema that needs the opacity rule set carries its own copy of it, because a schema that
+ * called another schema's function could not be created, migrated or rolled back on its own — the
+ * coupling each of those migrations refuses by name. Copies are only safe while they are the same
+ * copy, so the sameness is a test rather than a convention.
+ *
+ * Derived from the migrations rather than from a list of components, and asserted here rather than
+ * in one component's suite: each new schema that carries the rule set is covered the moment its
+ * migration lands, whether or not anybody remembered to add it anywhere.
+ */
+test('every copy of the opacity rule set is character-for-character the same copy', () => {
+  const owners = new Map(
+    validateMigrations(REAL_MIGRATIONS).migrations.map((migration) => [
+      migration.file,
+      migration.owner,
+    ]),
+  );
+
+  const copies = fs
+    .readdirSync(REAL_MIGRATIONS)
+    .filter((file) => file.endsWith('.up.sql'))
+    .map((file) => ({ file, sql: fs.readFileSync(path.join(REAL_MIGRATIONS, file), 'utf8') }))
+    .filter((entry) =>
+      /CREATE OR REPLACE FUNCTION [a-z0-9_]+\.is_opaque_identifier/.test(entry.sql),
+    )
+    .map((entry) => ({
+      file: entry.file,
+      schema: /CREATE OR REPLACE FUNCTION ([a-z0-9_]+)\.is_opaque_identifier/.exec(entry.sql)?.[1],
+      body: /AS \$rules\$([\s\S]*?)\$rules\$/.exec(entry.sql)?.[1],
+    }));
+
+  // Seven today — K-01, K-02, K-03, K-04, K-06, K-07 and K-11 — and a floor rather than a count,
+  // so an eighth raises it deliberately instead of failing a test that was only ever arithmetic.
+  assert.ok(
+    copies.length >= 7,
+    `expected at least seven copies of the rule set, found ${copies.length}`,
+  );
+  assert.ok(
+    copies.some((copy) => copy.schema === 'kernel_commerce_unit_registry'),
+    'migration 0012 says K-11 carries its own copy of the rule set, and no copy is there',
+  );
+
+  const first = copies[0];
+  assert.ok(first?.body !== undefined, `${first?.file} declares the function with no $rules$ body`);
+  for (const copy of copies) {
+    assert.ok(
+      copy.body !== undefined,
+      `${copy.file} declares is_opaque_identifier with no $rules$ body to compare`,
+    );
+    assert.equal(
+      copy.body,
+      first.body,
+      `${copy.file} has drifted from ${first.file}: one schema now judges an identifier by a ` +
+        'different standard from the rest, which is the drift the copies were duplicated to avoid',
+    );
+    // The reason there are copies at all: each is declared in the schema its own migration owns,
+    // so no schema needs another one to exist before it can be created.
+    assert.equal(
+      copy.schema,
+      owners.get(copy.file),
+      `${copy.file} declares is_opaque_identifier in ${String(copy.schema)}, which is not the ` +
+        'schema it owns — a cross-schema call makes two components one object',
+    );
+  }
+});
+
 test('the platform migrations remain platform-owned', () => {
   const { migrations } = validateMigrations(REAL_MIGRATIONS);
   for (const migration of migrations.filter((candidate) => candidate.version <= '0002')) {
