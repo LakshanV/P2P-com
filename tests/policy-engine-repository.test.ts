@@ -488,7 +488,10 @@ test('K-06’s opacity rules are character-for-character every other component�
     .map((sql) => /AS \$rules\$([\s\S]*?)\$rules\$/.exec(sql)?.[1])
     .filter((body): body is string => body !== undefined);
 
-  assert.ok(bodies.length >= 6, `expected at least six copies of the rule set, found ${bodies.length}`);
+  assert.ok(
+    bodies.length >= 6,
+    `expected at least six copies of the rule set, found ${bodies.length}`,
+  );
   for (const body of bodies) {
     assert.equal(body, bodies[0], 'one schema’s opacity rule set has drifted from the others');
   }
@@ -498,7 +501,10 @@ test('the migration enforces the contract in the database, not only in the servi
   const required: ReadonlyArray<readonly [string, RegExp]> = [
     ['no AI author', /published_by_kind IN \('human', 'system'\)/],
     ['one version number per policy', /UNIQUE \(policy_key, version\)/],
-    ['one retirement per policy', /CONSTRAINT policy_retirement_policy_unique UNIQUE \(policy_key\)/],
+    [
+      'one retirement per policy',
+      /CONSTRAINT policy_retirement_policy_unique UNIQUE \(policy_key\)/,
+    ],
     ['the activation guard', /policy_activation_supersedes_unique/],
     ['the first-activation guard', /policy_activation_first_unique/],
     ['a window that is a window', /effective_until > effective_from/],
@@ -597,10 +603,16 @@ test('CONTRACT.md records version pinning, the boundaries and the deferred work'
 
 test('every file CONTRACT.md links to exists, and every suite it names exists', () => {
   for (const match of CONTRACT.matchAll(/`(tests\/[\w./-]+\.ts)`/g)) {
-    assert.ok(existsSync(path.join(HERE, '..', String(match[1]))), `${String(match[1])} is missing`);
+    assert.ok(
+      existsSync(path.join(HERE, '..', String(match[1]))),
+      `${String(match[1])} is missing`,
+    );
   }
   for (const match of CONTRACT.matchAll(/`(db\/migrations\/[\w.-]+\.sql)`/g)) {
-    assert.ok(existsSync(path.join(HERE, '..', String(match[1]))), `${String(match[1])} is missing`);
+    assert.ok(
+      existsSync(path.join(HERE, '..', String(match[1]))),
+      `${String(match[1])} is missing`,
+    );
   }
 });
 

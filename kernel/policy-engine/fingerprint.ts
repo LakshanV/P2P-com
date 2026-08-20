@@ -91,7 +91,10 @@ export function canonicalOutputSchema(schema: OutputSchema): string {
   }
 }
 
-const canonicalMap = <T>(entries: Readonly<Record<string, T>>, render: (value: T) => string): string =>
+const canonicalMap = <T>(
+  entries: Readonly<Record<string, T>>,
+  render: (value: T) => string,
+): string =>
   `{${Object.entries(entries)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, value]) => `${quote(name)}:${render(value)}`)
@@ -124,7 +127,9 @@ export function canonicalDraftRequest(facts: DraftRequestFacts): string {
     `outputSchema=${canonicalMap(facts.outputSchema, canonicalOutputSchema)}`,
     `rules=[${facts.rules.map(canonicalRule).join('|')}]`,
     `defaultOutputs=${
-      facts.defaultOutputs === null ? 'none' : canonicalMap(facts.defaultOutputs, canonicalOutputValue)
+      facts.defaultOutputs === null
+        ? 'none'
+        : canonicalMap(facts.defaultOutputs, canonicalOutputValue)
     }`,
     `notes=${quote(facts.notes)}`,
     `authorityId=${quote(facts.authorityId)}`,

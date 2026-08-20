@@ -95,7 +95,12 @@ export const OUTPUT_KINDS = [
 export type OutputKind = (typeof OUTPUT_KINDS)[number];
 
 export type OutputSchema =
-  | { readonly kind: 'decimal'; readonly scale: number; readonly minimum: Decimal; readonly maximum: Decimal }
+  | {
+      readonly kind: 'decimal';
+      readonly scale: number;
+      readonly minimum: Decimal;
+      readonly maximum: Decimal;
+    }
   | { readonly kind: 'duration-seconds'; readonly minimum: number; readonly maximum: number }
   | { readonly kind: 'boolean' }
   | { readonly kind: 'enum'; readonly values: readonly string[] }

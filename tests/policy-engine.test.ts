@@ -169,14 +169,11 @@ test('a policy key naming authority, deployment state or credentials is refused'
   ];
 
   for (const [policyKey, owner] of forbidden) {
-    await assert.rejects(
-      harness.service.draft(draftRequest({ policyKey })),
-      (error: unknown) => {
-        assert.equal(codeOf(error), 'malformed-identifier', policyKey);
-        assert.match((error as Error).message, owner, policyKey);
-        return true;
-      },
-    );
+    await assert.rejects(harness.service.draft(draftRequest({ policyKey })), (error: unknown) => {
+      assert.equal(codeOf(error), 'malformed-identifier', policyKey);
+      assert.match((error as Error).message, owner, policyKey);
+      return true;
+    });
   }
   assert.equal(harness.repository.drafts().length, 0, 'and none of them was written');
 });
@@ -234,14 +231,11 @@ test('a service with no injected authority drafts, publishes, activates and reti
   ];
 
   for (const [operation, run] of attempts) {
-    await assert.rejects(
-      run(),
-      (error: unknown) => {
-        assert.equal(codeOf(error), 'authoring-refused', operation);
-        assert.match((error as Error).message, /economics of every transaction that follows/);
-        return true;
-      },
-    );
+    await assert.rejects(run(), (error: unknown) => {
+      assert.equal(codeOf(error), 'authoring-refused', operation);
+      assert.match((error as Error).message, /economics of every transaction that follows/);
+      return true;
+    });
   }
 
   assert.equal(repository.drafts().length, 0);

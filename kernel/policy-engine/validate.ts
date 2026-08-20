@@ -183,7 +183,10 @@ export function assertOutputSchema(value: unknown, path: string): OutputSchema {
     );
   }
   const schema = value as { kind?: unknown; [key: string]: unknown };
-  if (typeof schema.kind !== 'string' || !(OUTPUT_KINDS as readonly string[]).includes(schema.kind)) {
+  if (
+    typeof schema.kind !== 'string' ||
+    !(OUTPUT_KINDS as readonly string[]).includes(schema.kind)
+  ) {
     throw new PolicyError(
       'unsupported-output',
       `${path}.kind is "${String(schema.kind)}"; expected one of ${OUTPUT_KINDS.join(', ')}`,
@@ -266,11 +269,7 @@ export function assertOutputSchema(value: unknown, path: string): OutputSchema {
 }
 
 /** A value, judged against the schema the policy declared for that output. */
-export function assertOutputValue(
-  value: unknown,
-  schema: OutputSchema,
-  path: string,
-): OutputValue {
+export function assertOutputValue(value: unknown, schema: OutputSchema, path: string): OutputValue {
   if (value === null || typeof value !== 'object') {
     throw new PolicyError(
       'unsupported-output',
@@ -448,8 +447,7 @@ function assertRules(
   const seen = new Map<string, string>();
   for (const rule of unconditional) {
     const key = JSON.stringify(
-      Object.entries(rule.selector)
-        .sort(([left], [right]) => left.localeCompare(right)),
+      Object.entries(rule.selector).sort(([left], [right]) => left.localeCompare(right)),
     );
     const clash = seen.get(key);
     if (clash !== undefined) {

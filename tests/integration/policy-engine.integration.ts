@@ -201,7 +201,9 @@ test('K-06 against a live PostgreSQL server', liveTestOptions, async (t) => {
       // And microseconds survived the timestamptz column.
       assert.equal(stored?.publishedAt, '2026-04-01T12:00:00.654321Z');
 
-      const draft = await repository.withTransaction((tx) => tx.findDraftById('draft_01HQZXLIVE01'));
+      const draft = await repository.withTransaction((tx) =>
+        tx.findDraftById('draft_01HQZXLIVE01'),
+      );
       assert.equal(draft?.draftedAt, '2026-04-01T12:00:00.123456Z');
     });
 
@@ -221,29 +223,35 @@ test('K-06 against a live PostgreSQL server', liveTestOptions, async (t) => {
       );
     });
 
-    await t.test('the activation guard is the database’s rule, not only the service’s', async () => {
-      const second = await refuses(
-        database,
-        `INSERT INTO ${ACTIVATION_TABLE} (activation_id, policy_key, policy_version_id,
+    await t.test(
+      'the activation guard is the database’s rule, not only the service’s',
+      async () => {
+        const second = await refuses(
+          database,
+          `INSERT INTO ${ACTIVATION_TABLE} (activation_id, policy_key, policy_version_id,
            supersedes_version_id, activated_at, activated_by_kind, activated_by_id,
            idempotency_key, request_fingerprint)
          VALUES ('act_01HQZXPROBE01', '${POLICY}', 'polver_01HQZXLIV01',
            'polver_01HQZXLIV01', '2026-04-01T12:00:00Z', 'system', '${AUTHORITY}',
            'idem_01HQZXPROBEA', '${'c'.repeat(64)}');`,
-      );
-      assert.ok(second !== null, 'a second activation superseding one version was accepted');
+        );
+        assert.ok(second !== null, 'a second activation superseding one version was accepted');
 
-      const firstAgain = await refuses(
-        database,
-        `INSERT INTO ${ACTIVATION_TABLE} (activation_id, policy_key, policy_version_id,
+        const firstAgain = await refuses(
+          database,
+          `INSERT INTO ${ACTIVATION_TABLE} (activation_id, policy_key, policy_version_id,
            supersedes_version_id, activated_at, activated_by_kind, activated_by_id,
            idempotency_key, request_fingerprint)
          VALUES ('act_01HQZXPROBE02', '${POLICY}', 'polver_01HQZXLIV02',
            NULL, '2026-04-01T12:00:00Z', 'system', '${AUTHORITY}',
            'idem_01HQZXPROBEB', '${'c'.repeat(64)}');`,
-      );
-      assert.ok(firstAgain !== null, 'a second first-activation was accepted; NULLs do not conflict');
-    });
+        );
+        assert.ok(
+          firstAgain !== null,
+          'a second first-activation was accepted; NULLs do not conflict',
+        );
+      },
+    );
 
     await t.test('the append-only triggers refuse every UPDATE and DELETE', async () => {
       for (const table of [DRAFT_TABLE, VERSION_TABLE, ACTIVATION_TABLE]) {
@@ -319,21 +327,30 @@ test('K-06 against a live PostgreSQL server', liveTestOptions, async (t) => {
            '2026-04-01T12:00:00Z', 'system', '${AUTHORITY}', 'idem_01HQZXPROBET',
            '${'d'.repeat(64)}');`,
       );
-      assert.ok(second !== null, 'a second retirement would rewrite when the policy stopped applying');
+      assert.ok(
+        second !== null,
+        'a second retirement would rewrite when the policy stopped applying',
+      );
     });
 
-    await t.test('an enlisted write joins the caller’s transaction and cannot commit it', async () => {
-      const client = await database.connect();
-      try {
-        await client.query('BEGIN;');
-        const enlisted = PostgresPolicyRepository.enlist(client);
-        await enlisted.withTransaction((tx) => tx.findVersionById('polver_01HQZXLIV01'));
-        await client.query('ROLLBACK;');
-      } finally {
-        await client.release();
-      }
-      assert.ok((await countRows(database, VERSION_TABLE)) >= 2, 'the rollback took nothing with it');
-    });
+    await t.test(
+      'an enlisted write joins the caller’s transaction and cannot commit it',
+      async () => {
+        const client = await database.connect();
+        try {
+          await client.query('BEGIN;');
+          const enlisted = PostgresPolicyRepository.enlist(client);
+          await enlisted.withTransaction((tx) => tx.findVersionById('polver_01HQZXLIV01'));
+          await client.query('ROLLBACK;');
+        } finally {
+          await client.release();
+        }
+        assert.ok(
+          (await countRows(database, VERSION_TABLE)) >= 2,
+          'the rollback took nothing with it',
+        );
+      },
+    );
 
     await t.test('the schema rolls back independently of every other component', async () => {
       const report = await migrateDown(database, {

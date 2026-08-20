@@ -135,14 +135,20 @@ test('a version is published from a draft verbatim, with no way to change the co
   // reviewed. A field that could change it would make review advisory.
   const harness = build();
   const drafted = await harness.service.draft(
-    draftRequest({ rules: [{ ruleId: 'rule_01HQZXREVIEW1', selector: {}, condition: null, outputs: outputs('1000') }] }),
+    draftRequest({
+      rules: [
+        { ruleId: 'rule_01HQZXREVIEW1', selector: {}, condition: null, outputs: outputs('1000') },
+      ],
+    }),
   );
 
   await assert.rejects(
     harness.service.publish({
       policyVersionId: nextId('polver'),
       draftId: drafted.draft.draftId,
-      rules: [{ ruleId: 'rule_01HQZXSNEAKY1', selector: {}, condition: null, outputs: outputs('9000') }],
+      rules: [
+        { ruleId: 'rule_01HQZXSNEAKY1', selector: {}, condition: null, outputs: outputs('9000') },
+      ],
       idempotencyKey: nextId('idem'),
     } as never),
     (error: unknown) => {
@@ -209,14 +215,11 @@ test('a retired policy accepts no further writes, and its versions stay readable
     idempotencyKey: nextId('idem'),
   });
 
-  await assert.rejects(
-    harness.service.draft(draftRequest()),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'policy-retired');
-      assert.match((error as Error).message, /make the retirement advisory/);
-      return true;
-    },
-  );
+  await assert.rejects(harness.service.draft(draftRequest()), (error: unknown) => {
+    assert.equal(codeOf(error), 'policy-retired');
+    assert.match((error as Error).message, /make the retirement advisory/);
+    return true;
+  });
 
   // The version transactions were priced under is still there, unchanged.
   const stored = harness.repository
@@ -248,9 +251,35 @@ test('a key reused with any authority-bearing input changed is refused', async (
   await harness.service.draft(request);
 
   const changes: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
-    ['a changed rate', { rules: [{ ruleId: 'rule_01HQZXGLOBAL1', selector: {}, condition: null, outputs: outputs('9999') }] }],
-    ['a changed rule id', { rules: [{ ruleId: 'rule_01HQZXRENAME1', selector: {}, condition: null, outputs: outputs('1000') }] }],
-    ['a narrowed selector', { rules: [{ ruleId: 'rule_01HQZXGLOBAL1', selector: { seller: SELLER }, condition: null, outputs: outputs('1000') }] }],
+    [
+      'a changed rate',
+      {
+        rules: [
+          { ruleId: 'rule_01HQZXGLOBAL1', selector: {}, condition: null, outputs: outputs('9999') },
+        ],
+      },
+    ],
+    [
+      'a changed rule id',
+      {
+        rules: [
+          { ruleId: 'rule_01HQZXRENAME1', selector: {}, condition: null, outputs: outputs('1000') },
+        ],
+      },
+    ],
+    [
+      'a narrowed selector',
+      {
+        rules: [
+          {
+            ruleId: 'rule_01HQZXGLOBAL1',
+            selector: { seller: SELLER },
+            condition: null,
+            outputs: outputs('1000'),
+          },
+        ],
+      },
+    ],
     ['a changed draft id', { draftId: nextId('draft') }],
     ['added defaults', { defaultOutputs: outputs('500') }],
     ['changed notes', { notes: 'approved by the commercial committee' }],
@@ -282,7 +311,9 @@ test('a retry that differs only in key order or decimal spelling still converges
       holdSeconds: { kind: 'duration-seconds', minimum: 0, maximum: 7_776_000 },
       rate: { kind: 'decimal', scale: 4, minimum: rate('0'), maximum: rate('10000') },
     },
-    rules: [{ ruleId: 'rule_01HQZXORDER01', selector: {}, condition: null, outputs: outputs('1000') }],
+    rules: [
+      { ruleId: 'rule_01HQZXORDER01', selector: {}, condition: null, outputs: outputs('1000') },
+    ],
     idempotencyKey: key,
   };
 

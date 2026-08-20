@@ -104,7 +104,10 @@ test('two equally specific matching rules are refused, not resolved by order', a
   });
 
   await assert.rejects(
-    harness.service.evaluate({ policyKey: POLICY, facts: { country: COUNTRY, category: CATEGORY } }),
+    harness.service.evaluate({
+      policyKey: POLICY,
+      facts: { country: COUNTRY, category: CATEGORY },
+    }),
     (error: unknown) => {
       assert.equal(codeOf(error), 'ambiguous-precedence');
       assert.match((error as Error).message, /rule_01HQZXBYCOUNT/);
@@ -151,8 +154,18 @@ test('two rules binding the same scope with no condition are refused at authorin
         holdSeconds: { kind: 'duration-seconds', minimum: 0, maximum: 7_776_000 },
       },
       rules: [
-        { ruleId: 'rule_01HQZXCLASH01', selector: { seller: SELLER }, condition: null, outputs: outputs('1000') },
-        { ruleId: 'rule_01HQZXCLASH02', selector: { seller: SELLER }, condition: null, outputs: outputs('2000') },
+        {
+          ruleId: 'rule_01HQZXCLASH01',
+          selector: { seller: SELLER },
+          condition: null,
+          outputs: outputs('1000'),
+        },
+        {
+          ruleId: 'rule_01HQZXCLASH02',
+          selector: { seller: SELLER },
+          condition: null,
+          outputs: outputs('2000'),
+        },
       ],
       idempotencyKey: nextId('idem'),
     }),
@@ -299,14 +312,11 @@ test('an unknown policy, and a retired one, both refuse', async () => {
     reason: 'the commission model moved to the new tier structure',
     idempotencyKey: nextId('idem'),
   });
-  await assert.rejects(
-    live.service.evaluate({ policyKey: POLICY }),
-    (error: unknown) => {
-      assert.equal(codeOf(error), 'policy-retired');
-      assert.match((error as Error).message, /remain readable/);
-      return true;
-    },
-  );
+  await assert.rejects(live.service.evaluate({ policyKey: POLICY }), (error: unknown) => {
+    assert.equal(codeOf(error), 'policy-retired');
+    assert.match((error as Error).message, /remain readable/);
+    return true;
+  });
 });
 
 test('a published but unactivated version decides nothing', async () => {
@@ -318,7 +328,9 @@ test('a published but unactivated version decides nothing', async () => {
       rate: { kind: 'decimal', scale: 4, minimum: rate('0'), maximum: rate('10000') },
       holdSeconds: { kind: 'duration-seconds', minimum: 0, maximum: 7_776_000 },
     },
-    rules: [{ ruleId: 'rule_01HQZXNOTLIVE', selector: {}, condition: null, outputs: outputs('1000') }],
+    rules: [
+      { ruleId: 'rule_01HQZXNOTLIVE', selector: {}, condition: null, outputs: outputs('1000') },
+    ],
     idempotencyKey: nextId('idem'),
   });
   await harness.service.publish({
@@ -357,7 +369,11 @@ test('a version outside its effective window decides nothing', async () => {
   assert.equal(await at('2026-04-01T12:59:59Z'), 'version-not-effective', 'a second before');
   assert.equal(await at('2026-04-01T13:00:00Z'), 'rule-matched', 'the opening instant is inside');
   assert.equal(await at('2026-04-01T15:00:00Z'), 'rule-matched', 'the closing instant is inside');
-  assert.equal(await at('2026-04-01T15:00:00.000001Z'), 'version-not-effective', 'a microsecond after');
+  assert.equal(
+    await at('2026-04-01T15:00:00.000001Z'),
+    'version-not-effective',
+    'a microsecond after',
+  );
 });
 
 test('an evaluation may be replayed as of a historic instant', async () => {
@@ -388,7 +404,9 @@ test('a window that contains no instant is refused at publication', async () => 
       rate: { kind: 'decimal', scale: 4, minimum: rate('0'), maximum: rate('10000') },
       holdSeconds: { kind: 'duration-seconds', minimum: 0, maximum: 7_776_000 },
     },
-    rules: [{ ruleId: 'rule_01HQZXBADWIND', selector: {}, condition: null, outputs: outputs('1000') }],
+    rules: [
+      { ruleId: 'rule_01HQZXBADWIND', selector: {}, condition: null, outputs: outputs('1000') },
+    ],
     idempotencyKey: nextId('idem'),
   });
 
@@ -418,7 +436,11 @@ test('a window that contains no instant is refused at publication', async () => 
 
 test('the same version, facts and instant give the same answer, every time', async () => {
   const { harness } = await withActivePolicy(build(), { rules: LADDER });
-  const request = { policyKey: POLICY, facts: { category: CATEGORY, seller: SELLER }, at: '2026-04-01T12:00:00Z' };
+  const request = {
+    policyKey: POLICY,
+    facts: { category: CATEGORY, seller: SELLER },
+    at: '2026-04-01T12:00:00Z',
+  };
 
   const first = await harness.service.evaluate(request);
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -481,7 +503,9 @@ test('a configured output resolves through K-05 and pins the version it returned
     value: 'lvl_01HQZXHIGH01',
     configurationVersionId: 'cfgver_01HQZXAAA1',
   });
-  assert.deepEqual(decision.configurationVersions, { 'risk.threshold.default': 'cfgver_01HQZXAAA1' });
+  assert.deepEqual(decision.configurationVersions, {
+    'risk.threshold.default': 'cfgver_01HQZXAAA1',
+  });
   assert.equal(harness.configuration.asked.length, 1);
   assert.equal(harness.configuration.asked[0]?.key, 'risk.threshold.default');
 });

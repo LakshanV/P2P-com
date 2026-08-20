@@ -41,7 +41,13 @@ import {
   type DraftRequestFacts,
 } from './fingerprint.ts';
 import { sealActivation, sealDraft, sealRetirement, sealVersion } from './immutable.ts';
-import { NO_AUTHORITY, NO_CONFIGURATION, type Clock, type ConfigurationLookup, type PolicyAuthority } from './ports.ts';
+import {
+  NO_AUTHORITY,
+  NO_CONFIGURATION,
+  type Clock,
+  type ConfigurationLookup,
+  type PolicyAuthority,
+} from './ports.ts';
 import {
   assertKnownFields,
   assertNoAssertedOutcome,
@@ -61,7 +67,12 @@ import {
   type PolicyVersion,
   type ResolvedOutput,
 } from './types.ts';
-import { validateActivation, validatePolicyDraft, validatePolicyVersion, validateRetirement } from './validate.ts';
+import {
+  validateActivation,
+  validatePolicyDraft,
+  validatePolicyVersion,
+  validateRetirement,
+} from './validate.ts';
 
 export interface DraftPolicyRequest {
   readonly draftId: string;
@@ -305,16 +316,22 @@ export class PolicyService {
         fingerprint = candidate.requestFingerprint;
         const existing = await tx.findVersionByIdempotencyKey(idempotencyKey);
         if (existing !== null) {
-          assertSameFingerprint(existing.requestFingerprint, candidate.requestFingerprint, 'publication');
+          assertSameFingerprint(
+            existing.requestFingerprint,
+            candidate.requestFingerprint,
+            'publication',
+          );
           return { version: sealVersion(existing), deduplicated: true };
         }
         await this.#refuseRetired(tx, candidate.policyKey, 'publish a version of');
         await tx.insertVersion(candidate);
         return { version: sealVersion(candidate), deduplicated: false };
       },
-      () => this.#repository.withTransaction((tx) => tx.findVersionByIdempotencyKey(idempotencyKey)),
+      () =>
+        this.#repository.withTransaction((tx) => tx.findVersionByIdempotencyKey(idempotencyKey)),
       (found) => {
-        if (fingerprint === null) throw new PolicyError('malformed-record', 'nothing to converge on');
+        if (fingerprint === null)
+          throw new PolicyError('malformed-record', 'nothing to converge on');
         assertSameFingerprint(found.requestFingerprint, fingerprint, 'publication');
         return { version: sealVersion(found), deduplicated: true };
       },
@@ -375,16 +392,22 @@ export class PolicyService {
 
         const existing = await tx.findActivationByIdempotencyKey(idempotencyKey);
         if (existing !== null) {
-          assertSameFingerprint(existing.requestFingerprint, candidate.requestFingerprint, 'activation');
+          assertSameFingerprint(
+            existing.requestFingerprint,
+            candidate.requestFingerprint,
+            'activation',
+          );
           return { activation: sealActivation(existing), deduplicated: true };
         }
         await this.#refuseRetired(tx, target.policyKey, 'activate a version of');
         await tx.insertActivation(candidate);
         return { activation: sealActivation(candidate), deduplicated: false };
       },
-      () => this.#repository.withTransaction((tx) => tx.findActivationByIdempotencyKey(idempotencyKey)),
+      () =>
+        this.#repository.withTransaction((tx) => tx.findActivationByIdempotencyKey(idempotencyKey)),
       (found) => {
-        if (fingerprint === null) throw new PolicyError('malformed-record', 'nothing to converge on');
+        if (fingerprint === null)
+          throw new PolicyError('malformed-record', 'nothing to converge on');
         assertSameFingerprint(found.requestFingerprint, fingerprint, 'activation');
         return { activation: sealActivation(found), deduplicated: true };
       },
@@ -430,14 +453,19 @@ export class PolicyService {
       async (tx) => {
         const existing = await tx.findRetirementByIdempotencyKey(idempotencyKey);
         if (existing !== null) {
-          assertSameFingerprint(existing.requestFingerprint, candidate.requestFingerprint, 'retirement');
+          assertSameFingerprint(
+            existing.requestFingerprint,
+            candidate.requestFingerprint,
+            'retirement',
+          );
           return { retirement: sealRetirement(existing), deduplicated: true };
         }
         await this.#refuseRetired(tx, policyKey, 'retire');
         await tx.insertRetirement(candidate);
         return { retirement: sealRetirement(candidate), deduplicated: false };
       },
-      () => this.#repository.withTransaction((tx) => tx.findRetirementByIdempotencyKey(idempotencyKey)),
+      () =>
+        this.#repository.withTransaction((tx) => tx.findRetirementByIdempotencyKey(idempotencyKey)),
       (found) => {
         assertSameFingerprint(found.requestFingerprint, candidate.requestFingerprint, 'retirement');
         return { retirement: sealRetirement(found), deduplicated: true };

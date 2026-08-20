@@ -96,6 +96,87 @@ test('every live suite enters the guarded lifecycle', () => {
   }
 });
 
+// ------------------------------------------------ discovered, and honestly skipped
+
+/**
+ * The glob `npm run test:integration` actually runs, read from package.json rather than restated.
+ *
+ * A suite that does not match this is not "not run yet" — it is invisible. It passes `npm run
+ * verify` by never executing, and the component it belongs to looks proven when nothing about it
+ * against a server has been checked at all.
+ */
+function integrationGlob(): string {
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
+    scripts?: Record<string, string>;
+  };
+  const script = manifest.scripts?.['test:integration'];
+  assert.ok(script !== undefined, 'package.json has no test:integration script');
+  const glob = /"([^"]+)"/.exec(script)?.[1];
+  assert.ok(glob !== undefined, `test:integration runs no glob: ${script}`);
+  return glob;
+}
+
+/** Every live suite a kernel contract points at, derived from the contracts themselves. */
+function suitesNamedByContracts(): { component: string; suite: string }[] {
+  const kernel = path.join(REPO_ROOT, 'kernel');
+  return fs
+    .readdirSync(kernel, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .filter((entry) => fs.existsSync(path.join(kernel, entry.name, 'CONTRACT.md')))
+    .flatMap((entry) => {
+      const contract = fs.readFileSync(path.join(kernel, entry.name, 'CONTRACT.md'), 'utf8');
+      return [...contract.matchAll(/tests\/integration\/([\w.-]+\.integration\.ts)/g)].map(
+        (match) => ({ component: entry.name, suite: String(match[1]) }),
+      );
+    });
+}
+
+test('every live suite a contract names is discovered by npm run test:integration', () => {
+  // The failure this prevents is silent by construction: a suite in the wrong directory, or named
+  // `.test.ts`, or `.integration.mts`, is never run by either command. `npm run verify` stays green
+  // and the contract still says the live claims are covered — so the component reads as proven
+  // against a server it has never touched.
+  const glob = integrationGlob();
+  const [globDir, globFile] = [
+    path.posix.dirname(glob).replace('/**', ''),
+    path.posix.basename(glob),
+  ];
+  assert.equal(globDir, INTEGRATION_DIR, `the glob no longer covers ${INTEGRATION_DIR}`);
+
+  const suffix = globFile.replace('*', '');
+  const named = suitesNamedByContracts();
+  assert.ok(named.length > 0, 'no kernel contract names a live suite; the convention moved');
+
+  for (const { component, suite } of named) {
+    assert.ok(
+      suite.endsWith(suffix),
+      `kernel/${component} names ${suite}, which does not match ${glob} and would never run`,
+    );
+    assert.ok(
+      fs.existsSync(path.join(INTEGRATION_PATH, suite)),
+      `kernel/${component} names ${suite}, which is not in ${INTEGRATION_DIR}`,
+    );
+    assert.ok(
+      realFiles().some((file) => file.name === suite),
+      `${suite} is not one of the files the safety contract checks`,
+    );
+  }
+});
+
+test('every live suite skips honestly rather than passing without a database', () => {
+  // The other half. A suite that is discovered but does not gate on `liveTestOptions` would either
+  // fail the whole run wherever no database is configured, or — worse — quietly pass while
+  // asserting nothing, which is the shape of evidence that is not evidence.
+  for (const file of realFiles()) {
+    if (file.name === HARNESS_FILE) continue;
+    assert.match(
+      file.source,
+      /liveTestOptions/,
+      `${file.name} does not gate on liveTestOptions, so it cannot skip with a stated reason`,
+    );
+  }
+});
+
 // --------------------------------------------------------------- planted mistakes
 
 const PLANTED: ReadonlyArray<{

@@ -53,15 +53,15 @@
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures` and by every runner path (FND-002d, as corrected). **Never loaded into a live server.** No business-module, financial-policy or production data. |
-| Migrations | 10 forward + 10 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, the `kernel_identity` schema with K-01's write-once subject table, the `kernel_accounts` schema with K-03's universal-account table and its `UNIQUE (subject_id)` one-account-per-party constraint, the `kernel_authentication` schema with K-02's binding, evidence and session tables, the `kernel_permissions` schema with K-04's policy-version, grant, revocation and decision tables, and the `kernel_feature_flags` schema with K-07's flag-version, activation and lifecycle tables. Twelve triggers across nine tables refuse to update or delete a row — all four of K-04's, because authority history is append-only; K-02's session trigger permits exactly two changes — rotate the secret, record a revocation — and refuses everything else. No business-module tables exist. |
-| Tests | 1029 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, K-05 Configuration, K-07 Feature Flags, K-08 Event Infrastructure and K-09 Audit Foundation suites. K-04 accounts for 104 of them across six suites (`permissions` 19, `permissions-decisions` 21, `permissions-administration` 20, `permissions-repository` 18, `permissions-idempotency` 14, `permissions-concurrency` 12), and K-07 for 88 across five (`feature-flags` 17, `feature-flags-evaluation` 20, `feature-flags-repository` 21, `feature-flags-concurrency` 18, `feature-flags-rollout` 12). A further 48 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Migrations | 11 forward + 11 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, the `kernel_identity` schema with K-01's write-once subject table, the `kernel_accounts` schema with K-03's universal-account table and its `UNIQUE (subject_id)` one-account-per-party constraint, the `kernel_authentication` schema with K-02's binding, evidence and session tables, the `kernel_permissions` schema with K-04's policy-version, grant, revocation and decision tables, the `kernel_feature_flags` schema with K-07's flag-version, activation and lifecycle tables, and the `kernel_policy_engine` schema with K-06's draft, version, activation and retirement tables. Sixteen triggers across thirteen tables refuse to update or delete a row — all four of K-04's, because authority history is append-only; K-02's session trigger permits exactly two changes — rotate the secret, record a revocation — and refuses everything else. No business-module tables exist. |
+| Tests | 1118 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, K-05 Configuration, K-06 Policy Engine, K-07 Feature Flags, K-08 Event Infrastructure and K-09 Audit Foundation suites. K-04 accounts for 104 of them across six suites (`permissions` 19, `permissions-decisions` 21, `permissions-administration` 20, `permissions-repository` 18, `permissions-idempotency` 14, `permissions-concurrency` 12), and K-07 for 88 across five (`feature-flags` 17, `feature-flags-evaluation` 20, `feature-flags-repository` 21, `feature-flags-concurrency` 18, `feature-flags-rollout` 12). K-06 accounts for 81 of them across five suites (`policy-engine-repository` 22, `policy-engine-evaluation` 18, `policy-engine-lifecycle` 15, `policy-engine` 13, `policy-engine-decimal` 13). A further 49 live-PostgreSQL tests exist and are **skipped**, not passing |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
 | Monitoring | None |
-| Modules implemented | 8 of 62 partially — **K-01 Identity** (FND-004a), **K-02 Authentication** (FND-004c), **K-03 Accounts** (FND-004b), **K-04 Permissions** (FND-004d), **K-05 Configuration** (FND-003a), **K-07 Feature Flags** (FND-004e), **K-08 Event Infrastructure** (FND-003b) and **K-09 Audit Foundation** (FND-003c), cores only; 0 business modules. All 62 registered in the architecture manifest |
+| Modules implemented | 9 of 62 partially — **K-01 Identity** (FND-004a), **K-02 Authentication** (FND-004c), **K-03 Accounts** (FND-004b), **K-04 Permissions** (FND-004d), **K-05 Configuration** (FND-003a), **K-06 Policy Engine** (FND-005b), **K-07 Feature Flags** (FND-004e), **K-08 Event Infrastructure** (FND-003b) and **K-09 Audit Foundation** (FND-003c), cores only; 0 business modules. All 62 registered in the architecture manifest |
 | Boundary rules enforced | 4 of 8 (`layer-direction`, `kernel-purity`, `financial-zone-ai`, `provider-import`); the other 4 need a schema, policy values or module contracts to exist |
-| Module contracts written | 8 of 62 — [`kernel/identity/CONTRACT.md`](../kernel/identity/CONTRACT.md), [`kernel/authentication/CONTRACT.md`](../kernel/authentication/CONTRACT.md), [`kernel/accounts/CONTRACT.md`](../kernel/accounts/CONTRACT.md), [`kernel/permissions/CONTRACT.md`](../kernel/permissions/CONTRACT.md), [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md), [`kernel/feature-flags/CONTRACT.md`](../kernel/feature-flags/CONTRACT.md), [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md) and [`kernel/audit-foundation/CONTRACT.md`](../kernel/audit-foundation/CONTRACT.md) |
+| Module contracts written | 9 of 62 — [`kernel/identity/CONTRACT.md`](../kernel/identity/CONTRACT.md), [`kernel/authentication/CONTRACT.md`](../kernel/authentication/CONTRACT.md), [`kernel/accounts/CONTRACT.md`](../kernel/accounts/CONTRACT.md), [`kernel/permissions/CONTRACT.md`](../kernel/permissions/CONTRACT.md), [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md), [`kernel/policy-engine/CONTRACT.md`](../kernel/policy-engine/CONTRACT.md), [`kernel/feature-flags/CONTRACT.md`](../kernel/feature-flags/CONTRACT.md), [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md) and [`kernel/audit-foundation/CONTRACT.md`](../kernel/audit-foundation/CONTRACT.md) |
 | Tracked requirements | 474, each with an explicit status; **4 of 472 implementation items complete** (P0-03, P0-11, P0-12, P0-13). 28 are `IN PROGRESS`, 9 are `BLOCKED`. |
 | Release gates met | 0 of 26 |
 | Open P0 defects | 0 |
@@ -214,7 +214,7 @@ a live server** — a foundation is not a finished component.
 | Permissions framework | **Foundation only** — FND-004d, §11.26. Deny by default, explicit grants, deny precedence, staff purpose limitation; **nothing calls it**, so no path is guarded | K-04 |
 | Audit framework | **Foundation only** — FND-003c, §11.19–§11.20. No unit records anything | K-09 |
 | Configuration | **Foundation only** — FND-003a, §11.10–§11.13 | K-05 |
-| Policy engine | Absent | K-06 |
+| Policy engine | **Foundation only** — FND-005b, §11.31. Versioned policy whose every evaluation returns the version id a transaction pins; nothing evaluates one | K-06 |
 | Event infrastructure | **Foundation only** — FND-003b, §11.14–§11.15. No producer, no consumer | K-08 |
 | Feature flags | **Foundation only** — FND-004e, §11.30. Deployment control that is nothing else; nothing evaluates a flag | K-07 |
 | Ledger foundation | Absent | K-10 |
@@ -297,7 +297,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction); FND-004a added a fourth and 80 more (67 at delivery, 13 by its correction); FND-004b added a fifth and 85 more (74 at delivery, 11 by its correction); FND-004c added a sixth and 95 more across delivery and four corrections; FND-004d added a seventh and 104 more (69 at delivery, 35 across its three corrections); and FND-004e added an eighth and 88 more, for 1029 today — the last ten being the documentation anti-regression assertions this acceptance pass added, which is why the figure moved after the component was finished. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable; three were found in FND-004a by review and corrected (§11.22) — a decoder that asked far less than creation, and a migration whose comments claimed to prohibit natural keys that its predicates admitted; one was found in FND-004b by review and corrected (§11.24) — retry convergence that depended on which unique index PostgreSQL happened to report, invisible because the in-memory repository always reported the same one; and **three were found in FND-004d by review and corrected (§11.27, §11.28, §11.29), all three of them security defects and each more serious than anything above it in this paragraph**.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction); FND-004a added a fourth and 80 more (67 at delivery, 13 by its correction); FND-004b added a fifth and 85 more (74 at delivery, 11 by its correction); FND-004c added a sixth and 95 more across delivery and four corrections; FND-004d added a seventh and 104 more (69 at delivery, 35 across its three corrections); and FND-004e added an eighth and 88 more, and FND-005b added a ninth and 81 more, for 1118 today — the last eight being the documentation assertions this slice added to protect its own claims. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable; three were found in FND-004a by review and corrected (§11.22) — a decoder that asked far less than creation, and a migration whose comments claimed to prohibit natural keys that its predicates admitted; one was found in FND-004b by review and corrected (§11.24) — retry convergence that depended on which unique index PostgreSQL happened to report, invisible because the in-memory repository always reported the same one; and **three were found in FND-004d by review and corrected (§11.27, §11.28, §11.29), all three of them security defects and each more serious than anything above it in this paragraph**.
 
 **The three K-04 defects, stated plainly, because they are the most serious this register has recorded.** Each was an authority control that could be walked around, and each was found by review of delivered code rather than by a test that already existed:
 
@@ -335,24 +335,25 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 **Every link of the kernel's internal chain `K-01 → K-02/K-03 → K-04` now exists in code, and none of them has a caller.** K-02 asks K-01 whether a subject exists; K-03 asks the same; K-04 asks K-02 who is asking and K-03 which account they hold, each through a one-method public contract and nothing else. Six transaction-enlisted paths now exist (K-01, K-02, K-03, K-04, K-08, K-09), each letting a caller couple a domain write to a kernel write in one transaction; all six are capabilities and **no unit uses any of them**. What every one of the seven components still lacks is the same list: no API, no UI, no caller, and nothing ever applied to a running PostgreSQL server.
 
-FND-002d (seed and fixture strategy, P0-17), named here previously as the next task, was delivered and twice corrected (§11.16–§11.18). FND-003c delivered K-09 (§11.19) and was corrected once (§11.20). FND-004a delivered K-01 (§11.21) and was corrected once (§11.22). FND-004b delivered K-03 (§11.23) and was corrected once (§11.24). FND-004c delivered K-02 (§11.25). FND-004d delivered K-04 (§11.26) and was corrected **three times** — §11.27, §11.28 and §11.29, all three security corrections (§7). FND-004e has now delivered K-07 (§11.30), **which covers build step B-2**. Each of those was, when selected, the next genuinely unblocked task; this section records the current one below.
+FND-002d (seed and fixture strategy, P0-17), named here previously as the next task, was delivered and twice corrected (§11.16–§11.18). FND-003c delivered K-09 (§11.19) and was corrected once (§11.20). FND-004a delivered K-01 (§11.21) and was corrected once (§11.22). FND-004b delivered K-03 (§11.23) and was corrected once (§11.24). FND-004c delivered K-02 (§11.25). FND-004d delivered K-04 (§11.26) and was corrected **three times** — §11.27, §11.28 and §11.29, all three security corrections (§7). FND-004e delivered K-07 (§11.30), **which covers build step B-2**. FND-005b has now delivered K-06 (§11.31), **which opens B-3**. Each of those was, when selected, the next genuinely unblocked task; this section records the current one below.
 
-**Next genuinely unblocked task: FND-005b — K-06 Policy Engine, the first component of build step B-3.**
+**Next genuinely unblocked task: FND-005c — K-11 Commerce Unit Registry, the second component of build step B-3.**
 
 It is selected on the build order rather than on judgement about what is most useful, which is the
-discipline this section is for. §B of the checklist assigns every kernel component a build step.
-**B-1 and B-2 are now both covered**: K-05 and K-08 in B-1; K-01, K-02, K-03, K-04, K-09 and — as of
-FND-004e — K-07 in B-2. Every remaining unbuilt kernel component is **B-3**, and MODULE_MAP §12
-lists K-06 Policy first within it.
+discipline this section is for. B-1 and B-2 are covered; MODULE_MAP §12 orders B-3 as **K-06, K-11,
+K-13, K-15, K-14, K-12, K-10**, and K-06 landed as FND-005b (§11.31). K-11 is next in that list.
 
 It is genuinely unblocked, in the strict sense. Its single declared dependency, **K-05
-Configuration, is delivered** (§11.10–§11.13). It needs no external credential, no HTTP surface and
-no live database to be written and tested, so no blocker in §6 touches it. And it is the mitigation
-§5 names for **R-04**, the highest-severity open risk in this document: the ~45-day hold, the
-~24-hour accelerated payout and the 50% coverage target read naturally as constants, v3 §20 and §35
-require them to be versioned policy, and every financial module in B-10 onward is built on top of
-whichever answer lands first. MODULE_MAP §12 puts K-06 before the financial core for exactly that
-reason.
+Configuration, is delivered** (§11.10–§11.13), and it needs no external credential, no HTTP surface
+and no live database to be written and tested, so no blocker in §6 touches it. **K-13 AI Gateway,
+which follows it in the step, does not clear that bar**: a live adapter needs BL-04 (no AI provider
+credentials), so it should be taken with that limit stated in advance rather than discovered.
+
+**R-04 is now partly mitigated rather than open.** The ~45-day hold, the ~24-hour accelerated payout
+and the 50% coverage target read naturally as constants, and v3 §20 and §35 require them to be
+versioned policy; K-06 is the place they now belong, and its evaluation returns the version id a
+transaction pins. What remains of the risk is that **no module puts them there yet** — the values
+are still nowhere, rather than being constants in the wrong place.
 
 **Why not the provider adapter behind K-02's `Verifier` port**, which this section named two tasks ago.
 It is real and it is still the change that would turn the kernel chain into something a person can
@@ -378,9 +379,9 @@ The other alternatives, and why each waits:
   It waits because auditing decisions nobody makes about parties nobody authenticated records
   nothing worth reading, and because K-09's actor `CHECK` needs a bounded migration to accept a
   real authenticated actor — which should happen once there is one.
-- **K-10 Ledger foundation**, **K-11 Commerce Unit Registry** and the rest of B-3 are unblocked and
-  sit behind K-06 within the step. K-10 in particular should not precede it: a ledger built before
-  the policy engine is a ledger whose rates are constants, which is R-04 arriving as code.
+- **K-10 Ledger foundation** is unblocked and sits **last** in MODULE_MAP §12's B-3 order, which is
+  the right place for it: a ledger built before the policy engine would be one whose rates are
+  constants, and that ordering is now satisfied rather than merely intended.
 - **The operational role matrix** (v3 §47 Level 4) is now derivable from K-04's vocabulary and
   policy structure, and nobody has derived or reviewed one. That is a documentation slice, not a
   foundation slice.
@@ -511,7 +512,7 @@ The first true vertical slice is scheduled as **build step B-5 / Phase 1**: *acc
 
 ## 11. Evidence register
 
-Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository: four documentation artefacts from DOC-001 and fourteen delivered engineering tasks, each backed by named commands with recorded exit codes. Seven of those tasks were subsequently corrected after review, and each correction has its own numbered block rather than being folded into the original — an over-claim that is quietly edited away teaches nobody anything. The full set of blocks is §11.1–§11.30. **FND-004d carries three corrections, all of them security corrections**, which is more than any other task in this register and is recorded in §7 as well as here.
+Per v3 §56, completion requires evidence. Below is every evidence claim currently made in this repository: four documentation artefacts from DOC-001 and fifteen delivered engineering tasks, each backed by named commands with recorded exit codes. Seven of those tasks were subsequently corrected after review, and each correction has its own numbered block rather than being folded into the original — an over-claim that is quietly edited away teaches nobody anything. The full set of blocks is §11.1–§11.31. **FND-004d carries three corrections, all of them security corrections**, which is more than any other task in this register and is recorded in §7 as well as here.
 
 | Item | Status | Evidence type | Evidence |
 |---|---|---|---|
@@ -535,6 +536,7 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | FND-004d — K-04 Permissions foundation | DELIVERED | Commands + exit codes + planted regressions on every guard | See §11.26. **Nothing marked COMPLETE.** The checklist K-04 row moves to `IN PROGRESS`: **nothing calls it**, so no path in this repository is guarded; no API, no UI, no policy studio, no audit record (K-09), no event (K-08), no business-module actions, no operational role matrix, and the schema has never been applied to a live server. |
 | FND-004d — K-04 idempotency correction | DELIVERED | Commands + exit codes + a planted regression failing 5 of 13 adversarial cases | See §11.27. **Nothing marked COMPLETE.** An idempotency key was a bearer token for somebody else’s decision: the stored answer was returned before the presented session was validated, and the retry comparison omitted the subject, the session and the ABAC context. Both are closed, and every decision now stores a fingerprint of its own inputs. |
 | FND-004d — K-04 authority-administration correction | DELIVERED | Commands + exit codes + 20 adversarial cases | See §11.28. **Nothing marked COMPLETE.** `publishPolicy`, `grant` and `revoke` took no session and accepted their own author as a request field, so any caller could grant itself anything and sign it in somebody else's name. Administration now authenticates through K-02, resolves the K-03 account, derives authorship from that binding and requires an explicit administration grant, with one enumerated bootstrap authority that is injected, refuses by default, cannot mint a grant and leaves permanent evidence. |
+| FND-005b — K-06 Policy Engine foundation | DELIVERED | Commands + exit codes + two planted regressions found by test | See §11.31. **Nothing marked COMPLETE.** The checklist K-06 row moves to `IN PROGRESS`, and **build step B-3 is opened**. Every successful evaluation returns the policy version id a transaction pins (v3 §35, §24), every rate is an exact decimal with no floating point anywhere in the component, and two equally specific matching rules are refused rather than resolved by row order. **Nothing evaluates a policy**, so no amount has been priced by one and no record has pinned a version; no API, no studio, no approval workflow, authoring is not authenticated (K-02/K-04 deferred), no audit (K-09), no event (K-08), and nothing applied to a live server. |
 | FND-004e — K-07 Feature Flags foundation | DELIVERED | Commands + exit codes + two planted regressions found by test | See §11.30. **Nothing marked COMPLETE.** The checklist K-07 row moves to `IN PROGRESS`, and **build step B-2 is covered**. A flag says whether code is running and never whether something is permitted, owed, priced or assigned — enforced in the service and by a database `CHECK`. **Nothing evaluates a flag**; no API, no UI, no control plane, administration is not authenticated (K-02/K-04 deferred), no audit (K-09), no event (K-08) follows a kill, and nothing applied to a live server. |
 | FND-004d — K-04 read-surface removal and migration 0009 repair | DELIVERED | Commands + exit codes + a planted regression + a programmatic SQL balance check | See §11.29. **Nothing marked COMPLETE.** `findGrant`, `findDecision` and `activePolicy` returned authority data to anybody holding an id, and are **removed rather than guarded**: the surface is four operations and no reads. Migration 0009 was also found committed syntactically invalid — 2389 lines, sixteen `COMMIT;` statements — and is repaired to 374; the static migration gate passed over it because no gate here parses SQL. |
 
@@ -1713,7 +1715,8 @@ ITEM ID:            K-05 Configuration (FND-003a); P0-38 partially
 MODULE / PHASE:     Commerce kernel, build step B-1 / Phase 0
 STATUS:             K-05 contract   COMPLETE  — kernel/configuration/CONTRACT.md
                     K-05 implementation IN PROGRESS
-                    P0-38 IN PROGRESS (K-06 Policy Engine not started)
+                    P0-38 IN PROGRESS (K-06 Policy Engine unbuilt at that time; it was
+                    delivered later by FND-005b, §11.31)
                     Nothing else changed status.
 
 IMPLEMENTED:        kernel/configuration/types.ts — scopes, value schemas, immutable version
@@ -2489,8 +2492,9 @@ ON CONFLICT removed, host and confirmation guards off  5 of 19 failed
 - **No business-module data.** No module is implemented; seeding orders or listings would invent
   contracts that do not exist, and every test written against them would be rewritten when the real
   ones land.
-- **No financial policy values.** K-06 owns those and K-06 does not exist. A test fails if a fixture
-  declares one.
+- **No financial policy values.** K-06 owns those, and a test fails if a fixture declares one.
+  (K-06 was unbuilt when this block was written; it was delivered by FND-005b, §11.31, and the
+  fixture set still declares no policy value — loading one is a separate decision.)
 - **No production defaults**, and no `production` purpose in the format at all.
 - **No authoritative events.** The K-08 rows are delivery-state scenarios written by hand, not
   published through `EventService` and consumed by nothing.
@@ -4047,6 +4051,132 @@ STILL NOT VERIFIED: **Nothing evaluates a flag**, so no code path in this reposi
                     `npm run test:integration` reports **48 tests, 0 passing, 48 skipped** — the
                     honest shape of a live gate nothing has ever run. A skipped run is not
                     evidence of anything, and none of the live claims above may be read as made.
+```
+
+---
+
+### 11.31 Evidence — FND-005b (K-06 Policy Engine foundation)
+
+**Task:** FND-005b — K-06 Policy Engine foundation.
+**Selected in:** §8, as the first component of build step B-3 and the mitigation §5 names for R-04.
+**Status:** DELIVERED. **Nothing marked COMPLETE.** The checklist K-06 contract row moves to
+`COMPLETE`; the K-06 implementation row moves to `IN PROGRESS`. **Build step B-3 is opened.**
+
+**What K-06 is, in one sentence:** the component that answers *what does business policy say about
+this situation, and which version said it* — and returns the version id with every answer, because
+that is the only way the promise below can be kept by anybody.
+
+**The requirement this component exists for**, quoted rather than paraphrased:
+
+| Source | Requirement |
+|---|---|
+| v3 §35 | "Policies must be versioned. **Historic transactions retain the policy version originally applied.**" |
+| v3 §24 | "Every transaction stores the exact commission policy version applied at purchase time. **Changing future policy must not rewrite historical economics.**" |
+| v3 §20 | Payout logic is "a standalone policy-driven module" that determines, among other things, the **policy version** |
+| v3 §38 | "**AI must never be the financial authority.**" Deterministic services for commissions, refunds, settlements, reserves, payouts |
+| v3 §50 | Acceptance: "policy version retained" |
+
+Those are promises a *caller* keeps by storing something. So `PolicyDecision.policyVersionId` is not
+optional, not nullable and not derivable later — and when an output reads K-05, the configuration
+version id is pinned beside it in `configurationVersions`, for the same reason.
+
+**Delivered:**
+
+| Area | What landed |
+|---|---|
+| Version pinning | Every successful evaluation returns `policyVersionId`, `version` and a deterministic explanation naming the version and the rule. Superseding a version leaves the old one readable and unchanged, so replaying a historic decision reproduces the number it was priced at |
+| Explicit lifecycle | **draft → publish → activate → retire**, each a separate append. A draft can never be evaluated; the publish request carries **no rules, no schema and no outputs**, so what goes live is verbatim what was reviewed; publication does not put anything in force; retirement stops new evaluations without erasing the versions historic decisions are pinned to |
+| No floating point, anywhere | Rates, thresholds and amounts are exact `{ units, scale }` decimals compared through `BigInt` and carried as text end to end. `1234.56 * 0.175` is not `216.048` in a double, and a commission computed from an inexact rate is a penny nobody can trace. A `number` where a decimal belongs is refused as **`lossy-numeric-value`** rather than as malformed, because it is not a typo — it is a value that keeps working until it is one a double cannot hold |
+| Precedence, ties refused | The matching rule binding the most scope dimensions wins. Two matching rules of equal specificity are **`ambiguous-precedence`** — refused, not resolved by row order. First-match-wins would make a commission depend on a query plan, which is a difference nobody would ever find. Two rules that could never be told apart are refused earlier still, at authoring |
+| Fail closed | A fact a matching rule needs but the request omitted is `missing-fact`, never a fall-through to a less specific rule — omitting `sellerTier` must not quietly buy the global rate. No match and no declared defaults is `no-matching-rule`: **there is no implicit zero** |
+| Bounded windows | `effectiveFrom` / `effectiveUntil`, both inclusive, against the injected clock, with `evaluate({ at })` for replaying a historic instant. A window containing no instant is refused at publication |
+| No executable policy | Six literal predicate shapes. No arithmetic, no regular expressions, no interpolation, no functions — `assertPredicate` refuses a function and a `RegExp` by name. Depth ≤ 4, breadth ≤ 8, rules ≤ 64, because a condition nobody can hold in their head is one nobody can confirm, and what this returns is pinned into a financial record |
+| Allowlisted facts | Five, all from v3 §24's list (country, category, sellerTier, seller, amount). **None describes a person** — no name, no address, no payment instrument, no purchase history |
+| No AI author | There is no `ai` origin kind in the component **at all** — absent from the type, not refused at the boundary — in the service and by a database `CHECK`. v3 §38 |
+| K-05, only where the specification needs it | One `configured` output kind, read through K-05's public `resolve` and only when the version in force declares one. The configuration version is pinned into the decision; a key K-05 cannot resolve **refuses the evaluation** rather than defaulting. No import of K-05 anywhere in the component |
+| Caller states nothing | `outputs`, `rate`, `commission`, `ruleId`, `total`, `allowed`, `enabled` and more refused **by name**; on `evaluate` only, so are `policyVersionId`, `version` and `draftId`, because naming the version you want is choosing the economics of your own transaction. No mutation request carries an author: the identity comes from an injected authority that **defaults to refusing** |
+| Idempotency and convergence | Every mutation stores a SHA-256 fingerprint of its **validated** content, so a retry differing only in key order or decimal spelling converges while one differing in a rate is refused. Two overlapping copies of one call converge on the row that landed, compared exactly as a retry is |
+| Persistence | Migration 0011 (`kernel_policy_engine`): four tables, opacity and policy-key `CHECK`s calling two SQL rule sets, **four append-only triggers**, two partial unique indexes, and **no floating-point column of any type**. In-memory reference repository checking uniqueness at commit, PostgreSQL adapter whose version-in-force query is an **anti-join**, and an enlisted repository refusing transaction control |
+| Contract | [`kernel/policy-engine/CONTRACT.md`](../kernel/policy-engine/CONTRACT.md) — nine sections including the ownership boundaries, the trust model, the evaluation order and the full deferred list |
+
+**One boundary worth stating twice: K-06 does not compute money.** It returns `1.7500` and the
+version that said so; K-10 Ledger foundation multiplies. `tests/policy-engine.test.ts` scans the
+service surface for any method that sounds like it calculates an amount, and
+`tests/policy-engine-decimal.test.ts` scans the source for `parseFloat`, `toFixed` and `Math.round`.
+A policy engine that did the arithmetic would be a second place money is calculated, and v3 §38
+wants exactly one.
+
+```text
+ITEM ID:            K-06 (FND-005b)
+MODULE / PHASE:     K-06 Policy Engine / Phase 0, build step B-3 — which this opens
+STATUS:             DELIVERED — implementation IN PROGRESS, contract COMPLETE
+IMPLEMENTED:        kernel/policy-engine/{types,decimal,registry,immutable,validate,fingerprint,
+                    decide,ports,repository,postgres-repository,service,index}.ts, CONTRACT.md,
+                    and db/migrations/0011_create_kernel_policy_engine_schema.{up,down}.sql
+
+COMMANDS:           npm run verify                                    exit 0   tests 1118, pass 1118
+                    node --test tests/policy-engine.test.ts           exit 0   tests 13, pass 13
+                    node --test tests/policy-engine-evaluation.test.ts
+                                                                      exit 0   tests 18, pass 18
+                    node --test tests/policy-engine-decimal.test.ts   exit 0   tests 13, pass 13
+                    node --test tests/policy-engine-lifecycle.test.ts exit 0   tests 15, pass 15
+                    node --test tests/policy-engine-repository.test.ts
+                                                                      exit 0   tests 22, pass 22
+                    npm run check:migrations                          exit 0   22 files, 0 violations
+                    npm run test:integration                          exit 0   tests 49, skipped 49
+                    node docs/tools/validate-doc-links.mjs            exit 0   0 broken
+                    npm audit --audit-level=high                      exit 0   0 vulnerabilities
+                    git diff --check                                  exit 0
+
+ADVERSARIAL COVER:  Policy keys naming another component's decision (authority, deployment state,
+                    credentials — five cases, each refused with the owner named); requests asserting
+                    the answer, and requests naming the version they want to be decided by; a
+                    service with no injected authority (all four write operations); a rate supplied
+                    as a `number`, at a wrong scale, outside its declared range, with a leading
+                    zero, in scientific notation, as Infinity and as NaN; an amount threshold
+                    probed a ten-thousandth either side of its boundary and at three different
+                    scales; two equally specific matching rules; two rules that can never be told
+                    apart; a fact a matching rule needs but the request omitted; no match with and
+                    without declared defaults; a version outside its window by one microsecond; a
+                    window containing no instant, including equal bounds; a policy retired and
+                    then written to; stale activations, two first activations, and an activation
+                    losing the race **at commit** while held open by a latch; idempotency keys
+                    reused across six changed inputs; and fourteen malformed persisted rows, each
+                    refused rather than evaluated.
+
+PLANTED REGRESSION: Two design defects were found by test and corrected before delivery. (1) The
+                    blanket asserted-outcome table refused `policyVersionId` on every operation,
+                    including `publish`, where supplying the id of the record being created is the
+                    convention every other component follows; the refusal moved to `evaluate`,
+                    where naming a version is choosing your own economics, and is raised *before*
+                    the generic unknown-field check so the caller is told what is actually wrong.
+                    (2) `reason` was refused the same way, which blocked `retire` from recording
+                    why a policy stopped applying.
+
+UI/UX:              N/A — no user-facing surface exists in this repository.
+
+SECURITY:           No credential and no personal identifier is stored, logged or echoed. Seller,
+                    category, country and tier handles pass K-01's opacity rules, and an
+                    explanation names facts and rules but never a fact value.
+
+STILL NOT VERIFIED: **Nothing evaluates a policy**, so no amount anywhere has been priced by one and
+                    **no record has yet pinned a version id** — the guarantee the component exists
+                    for is implemented and unexercised. There is no API, no UI, **no policy studio**
+                    (M-43 does not exist), no approval workflow — v3 §32's "approval as required" is
+                    not modelled, so a draft can be published by whoever can draft it — and no
+                    simulation or diff, which is the single most useful thing a studio offers.
+                    **Authoring is not authenticated**: the injected authority refuses by default
+                    but identifies a deployment capability rather than a person, so *who* changed a
+                    commission rate is not recorded; K-02 and K-04 wiring is deferred and is a
+                    change to one method. **No audit record (K-09) and no event (K-08) follows a
+                    draft, a publication, an activation or a retirement**, which for the component
+                    holding the commission rate is the most conspicuous absence in it. **Nothing has
+                    been applied to a live PostgreSQL server:** migration 0011, every CHECK, all
+                    four append-only triggers, both partial unique indexes and every constraint are
+                    declared and unproven, and the opt-in suite that would prove them
+                    (tests/integration/policy-engine.integration.ts, 8 cases) skips with its reason
+                    stated. **Rolling back 0011 is data loss rather than a reversal** once anything
+                    pins a version — the down migration says so in its header.
 ```
 
 ---

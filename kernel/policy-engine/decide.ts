@@ -281,5 +281,5 @@ export function assertFacts(value: unknown, field = 'facts'): EvaluationFacts {
 
 /** An output that needs nothing resolved, as it will appear in the decision. */
 export function staticOutput(output: OutputValue): ResolvedOutput | null {
-  return output.kind === 'configured' ? null : (output);
+  return output.kind === 'configured' ? null : output;
 }

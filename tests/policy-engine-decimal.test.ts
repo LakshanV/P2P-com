@@ -95,7 +95,10 @@ test('a stored decimal keeps the scale its author wrote', () => {
   // decimal is never trimmed on the way through.
   assert.equal(decimalToText(rate('17500', 4)), '1.7500');
   assert.equal(decimalToText(rate('175', 2)), '1.75');
-  assert.ok(decimalsEqual(rate('17500', 4), rate('175', 2)), 'and they are still the same quantity');
+  assert.ok(
+    decimalsEqual(rate('17500', 4), rate('175', 2)),
+    'and they are still the same quantity',
+  );
 });
 
 test('zero and sign are exact at any scale', () => {
@@ -265,8 +268,7 @@ test('an amount threshold decides exactly at its boundary', async () => {
   });
 
   const at = async (amount: { units: string; scale: number }) =>
-    (await harness.service.evaluate({ policyKey: POLICY, facts: { amount } }))
-      .ruleId;
+    (await harness.service.evaluate({ policyKey: POLICY, facts: { amount } })).ruleId;
 
   assert.equal(await at(rate('9999999')), 'rule_01HQZXSMALL01', 'a ten-thousandth below');
   assert.equal(await at(rate('10000000')), 'rule_01HQZXLARGE01', 'exactly at the boundary');
@@ -304,7 +306,13 @@ test('there is no floating-point arithmetic anywhere in the component', () => {
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/(^|\s)\/\/[^\n]*/g, ' ');
 
-  for (const forbidden of ['parseFloat', 'Number.parseFloat', 'toFixed', 'Math.round', 'Math.pow']) {
+  for (const forbidden of [
+    'parseFloat',
+    'Number.parseFloat',
+    'toFixed',
+    'Math.round',
+    'Math.pow',
+  ]) {
     assert.ok(
       !source.includes(forbidden),
       `${forbidden} appears in the policy engine; policy values are exact and never rounded here`,

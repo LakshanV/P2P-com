@@ -104,7 +104,7 @@ The kernel is small, stable, and shared. It contains capability that is genuinel
 | K-03 | **Accounts** | The one universal JAYA Account and its profile core | account, account_profile | K-01 |
 | K-04 | **Permissions** | RBAC/ABAC evaluation, role and grant storage, purpose-based staff access | role, grant, permission_check_log | K-01, K-03 |
 | K-05 | **Configuration** | Environment and platform configuration resolution | config_entry | substrate |
-| K-06 | **Policy Engine** | Versioned business policy storage and evaluation; every policy read returns a version id | policy, policy_version | K-05 |
+| K-06 | **Policy Engine** | Versioned business policy storage and evaluation; every policy read returns a version id | policy_draft, policy_version, policy_activation, policy_retirement | K-05 |
 | K-07 | **Feature Flags** | Flag definitions, targeting, rollout stages, kill switches | feature_flag_version, feature_flag_activation, feature_flag_lifecycle | K-05 |
 | K-08 | **Event Infrastructure** | Durable publish/subscribe, idempotency keys, retries, dead-letter, replay | event, event_delivery, dead_letter | substrate |
 | K-09 | **Audit Foundation** | Append-only audit trail of who did what, with what purpose | audit_event | K-01, K-04 |

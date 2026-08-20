@@ -398,7 +398,10 @@ export function assertKnownFields(
  * internally, but absent from the type. v3 §38 says AI must never be the financial authority, and
  * an agent that could author the commission policy would be exactly that, one indirection out.
  */
-export function assertOrigin(value: unknown, field: string): { kind: 'human' | 'system'; id: string } {
+export function assertOrigin(
+  value: unknown,
+  field: string,
+): { kind: 'human' | 'system'; id: string } {
   if (value === null || typeof value !== 'object') {
     throw new PolicyError(
       'malformed-record',

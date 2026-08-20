@@ -116,7 +116,10 @@ export function sealVersion(version: PolicyVersion): PolicyVersion {
 }
 
 export function sealActivation(activation: PolicyActivation): PolicyActivation {
-  return Object.freeze({ ...activation, activatedBy: Object.freeze({ ...activation.activatedBy }) });
+  return Object.freeze({
+    ...activation,
+    activatedBy: Object.freeze({ ...activation.activatedBy }),
+  });
 }
 
 export function sealRetirement(retirement: PolicyRetirement): PolicyRetirement {

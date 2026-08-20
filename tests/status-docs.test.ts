@@ -24,8 +24,10 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { KERNEL_COMPONENTS } from '../platform/architecture/manifest.ts';
+import { stripNoise } from '../platform/db/migrations.ts';
 import { FeatureFlagService } from '../kernel/feature-flags/index.ts';
 import { PermissionService } from '../kernel/permissions/index.ts';
+import { PolicyService } from '../kernel/policy-engine/index.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KERNEL_DIR = path.join(REPO_ROOT, 'kernel');
@@ -720,7 +722,9 @@ test('migration 0010 is the file the status document and the contract describe',
     'one append-only trigger per table, or the append-only claim is not enforced',
   );
 
-  assert.match(STATUS, /10 forward \+ 10 rollback/, '§1 does not report the migration count');
+  // Derived, not pinned: the exact count belongs to the sibling test that reads the directory, and
+  // a second hardcoded copy would be a second thing to keep in step.
+  assert.match(STATUS, /\d+ forward \+ \d+ rollback/, '§1 does not report the migration count');
 });
 
 test('the migration count in §1 is the number of migrations on disk', () => {
@@ -832,5 +836,177 @@ test('the live-suite skip is reported as a skip, never as evidence', () => {
         `${name} claims the integration suite passed: "${hit[0].trim().slice(0, 90)}"`,
       );
     }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// K-06 in particular: delivered, honestly incomplete, and not still "next"
+// ---------------------------------------------------------------------------
+
+test('both documents describe K-06 as the five operations the service actually has', () => {
+  const surface = new Set<string>();
+  let proto: object | null = PolicyService.prototype;
+  while (proto !== null && proto !== Object.prototype) {
+    for (const key of Object.getOwnPropertyNames(proto)) surface.add(key);
+    proto = Object.getPrototypeOf(proto) as object | null;
+  }
+  surface.delete('constructor');
+
+  assert.deepEqual(
+    [...surface].sort(),
+    ['activate', 'draft', 'evaluate', 'publish', 'retire'],
+    `K-06's surface is now ${[...surface].sort().join(', ')}; both documents describe the old one`,
+  );
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const step of ['draft', 'publish', 'activat', 'retire']) {
+      assert.ok(
+        text.toLowerCase().includes(step),
+        `${name} does not describe K-06's ${step}… step of the lifecycle`,
+      );
+    }
+  }
+});
+
+test('neither document claims the policy engine is absent, unbuilt or the next task', () => {
+  const denials: ReadonlyArray<{ readonly pattern: RegExp; readonly why: string }> = [
+    { pattern: /\|\s*Policy engine\s*\|\s*Absent\s*\|/i, why: 'lists the policy engine as absent' },
+    {
+      pattern:
+        /\bK-06\b[^.|]{0,60}\b(does not exist|is absent|is not built|is unbuilt|is not started)\b/i,
+      why: 'states K-06 does not exist',
+    },
+    {
+      pattern: /next genuinely unblocked task:\s*\*{0,2}FND-005b/i,
+      why: 'still selects FND-005b as the next task, which has been delivered',
+    },
+    {
+      pattern: /\bK-06\b[^.|]{0,50}\bthe first component of build step B-3\b/i,
+      why: 'still describes K-06 as the task to be taken next',
+    },
+  ];
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const { pattern, why } of denials) {
+      assert.ok(
+        !pattern.test(text),
+        `${name} ${why} — K-06 Policy Engine is implemented in kernel/policy-engine`,
+      );
+    }
+  }
+});
+
+test('both documents record what K-06 still lacks, item by item', () => {
+  // The first is the one that matters most: a reader who believes an amount somewhere has been
+  // priced by a policy will not notice that nothing has.
+  const gaps: ReadonlyArray<readonly [string, RegExp]> = [
+    ['no caller', /nothing evaluates a policy/i],
+    ['no API or UI', /no API/i],
+    ['no policy studio', /no policy studio|no studio/i],
+    ['no approval workflow', /no approval workflow/i],
+    ['unauthenticated authoring', /authoring is not authenticated|no K-02 authentication/i],
+    ['no audit record', /\bK-09\b/],
+    ['no events', /\bK-08\b/],
+    ['nothing applied to a live server', /nothing applied to a live server/i],
+  ];
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const [gap, pattern] of gaps) {
+      assert.match(text, pattern, `${name} no longer records that K-06 has ${gap}`);
+    }
+  }
+});
+
+test('both documents record the guarantee K-06 exists for, and its two hard rules', () => {
+  // These three claims are the component. A document that stopped making them would describe
+  // something that merely stores rules.
+  for (const [name, text] of DOCUMENTS) {
+    assert.match(
+      text,
+      /returns the (policy )?version id/i,
+      `${name} no longer records that every evaluation returns the version a transaction pins`,
+    );
+    assert.match(
+      text,
+      /no floating point|exact decimal/i,
+      `${name} no longer records that K-06 holds no floating-point value`,
+    );
+    assert.match(
+      text,
+      /(ties|equally specific)[^.]{0,80}refus/i,
+      `${name} no longer records that an ambiguous precedence is refused rather than resolved`,
+    );
+  }
+});
+
+test('the K-06 suite sizes quoted in the status document are the sizes on disk', () => {
+  const suites = [
+    'policy-engine',
+    'policy-engine-evaluation',
+    'policy-engine-decimal',
+    'policy-engine-lifecycle',
+    'policy-engine-repository',
+  ] as const;
+
+  let total = 0;
+  for (const suite of suites) {
+    const source = readFileSync(path.join(REPO_ROOT, 'tests', `${suite}.test.ts`), 'utf8');
+    const cases = source.split(/^test\(/m).length - 1;
+    assert.ok(cases > 0, `tests/${suite}.test.ts has no top-level cases; the convention moved`);
+    total += cases;
+    assert.match(
+      STATUS,
+      new RegExp(`\`${suite}\` ${cases}\\b`),
+      `§1 does not report tests/${suite}.test.ts as ${cases} cases, which is what it holds`,
+    );
+  }
+  assert.match(
+    STATUS,
+    new RegExp(`K-06 accounts for ${total} of them`),
+    `§1 must report ${total} K-06 cases, the sum of the five suites on disk`,
+  );
+});
+
+test('migration 0011 is the file the status document and the contract describe', () => {
+  const file = path.join(
+    REPO_ROOT,
+    'db',
+    'migrations',
+    '0011_create_kernel_policy_engine_schema.up.sql',
+  );
+  const sql = readFileSync(file, 'utf8');
+
+  assert.equal(
+    (sql.match(/^BEGIN;$/gm) ?? []).length,
+    1,
+    'migration 0011 must open exactly one transaction — the runner owns it',
+  );
+  assert.equal(
+    (sql.match(/^COMMIT;$/gm) ?? []).length,
+    1,
+    'migration 0011 has more than one COMMIT, which is the 0009 corruption signature (§11.29)',
+  );
+  assert.equal(
+    (sql.match(/CREATE TABLE IF NOT EXISTS/g) ?? []).length,
+    4,
+    'the status document and the contract both say K-06 owns four tables',
+  );
+  assert.equal(
+    (sql.match(/BEFORE UPDATE OR DELETE ON/g) ?? []).length,
+    4,
+    'one append-only trigger per table, or the append-only claim is not enforced',
+  );
+
+  // The claim that would be most expensive to lose, and cheapest to lose by accident.
+  //
+  // Scanned over the *statements* rather than the raw file: 0011's header says in prose that there
+  // is no `double precision` column in the schema and never will be, and a check that failed on
+  // its own documentation would be one somebody deletes rather than fixes.
+  const statements = stripNoise(sql);
+  for (const type of ['double precision', 'real', 'float4', 'float8', 'money']) {
+    assert.ok(
+      !new RegExp(`\\b${type.replace(' ', '\\s+')}\\b`, 'i').test(statements),
+      `migration 0011 declares a ${type} column; K-06 holds no floating-point value`,
+    );
   }
 });
