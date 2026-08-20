@@ -540,15 +540,122 @@ export class CommerceUnitRegistryService {
     }
   }
 
-  /** The in-force set as a map, which is what a pure ancestry walk needs. */
+  /**
+   * The in-force set as a map, which is what a pure ancestry walk needs.
+   *
+   * **This is a trust boundary, and it is the last one.** The repository is an injected port: the
+   * PostgreSQL adapter validates what it decodes, but the port also admits the in-memory
+   * implementation, a future enlisted one, and whatever a caller passes to the constructor. What
+   * arrives here is a claim about which definition describes every listing in the platform, and
+   * everything downstream — the ancestry walk, the effective-window check, the risk pack a
+   * category resolves to — believes it without re-deriving any of it.
+   *
+   * A `new Map(rows.map(…))` believed all of it. Four ways that reads as an answer rather than as
+   * a fault, each of which resolves *successfully* to the wrong thing:
+   *
+   *   - **A record that is not one this component writes.** An unvalidated version carries any
+   *     `kind`, any `measures`, any owner — a category nobody registered, copied into every
+   *     listing created under it. So both records go back through the same validators that judge
+   *     them on the way in, as `stored row`.
+   *   - **An activation paired with a version it does not name.** The map was keyed on the
+   *     *version's* type key while the risk policy id came from the *activation*, so a mismatched
+   *     pair filed one category's definition under another's name, with a third's policy pinned to
+   *     it — and the type that should have been there vanishes from the set, which reads as
+   *     `no-such-type`: never registered.
+   *   - **Two rows for one type key.** `Map.set` keeps the last silently. Which of two definitions
+   *     described a listing would then depend on row order, decided per read.
+   *   - **One activation or one version appearing twice.** The chain says a version is in force
+   *     for two types at once, or one activation put two versions in force. Neither is a history
+   *     anything can be resolved against.
+   *
+   * Every one of them is `malformed-record`, which is deliberately not in `RECOVERABLE`: a store
+   * that contradicts itself must not be converged on by a retry.
+   */
   async #inForceIndex(tx: CommerceUnitTransaction): Promise<Map<string, InForce>> {
-    const rows = await tx.listInForce();
-    return new Map(
-      rows.map((row) => [
-        row.version.typeKey,
-        { version: row.version, riskPolicyVersionId: row.activation.riskPolicyVersionId },
-      ]),
-    );
+    // Taken as `unknown` on purpose. The port's return type is a promise this method is here to
+    // stop believing, and typing the local by that promise would hide the checks below behind a
+    // compiler guarantee that holds for the two implementations in this repository and for no
+    // injected one.
+    const returned: unknown = await tx.listInForce();
+    if (!Array.isArray(returned)) {
+      throw new CommerceUnitError(
+        'malformed-record',
+        'the repository answered the in-force set with something that is not a list of rows',
+      );
+    }
+
+    const index = new Map<string, InForce>();
+    const activationIds = new Map<string, string>();
+    const versionIds = new Map<string, string>();
+
+    for (const entry of returned as readonly unknown[]) {
+      if (entry === null || typeof entry !== 'object') {
+        throw new CommerceUnitError(
+          'malformed-record',
+          `the in-force set holds ${entry === null ? 'null' : typeof entry} where a version and ` +
+            'the activation putting it in force belong',
+        );
+      }
+      const row = entry as { readonly activation?: unknown; readonly version?: unknown };
+
+      const activation = validateActivation(row.activation, 'stored row');
+      const version = sealVersion(validateUnitTypeVersion(row.version, 'stored row'));
+
+      if (activation.typeVersionId !== version.typeVersionId) {
+        throw new CommerceUnitError(
+          'malformed-record',
+          `activation ${activation.activationId} puts version ${activation.typeVersionId} in ` +
+            `force and was paired with version ${version.typeVersionId}. The pair decides which ` +
+            'definition describes every listing under this category, and two halves naming ' +
+            'different versions decide nothing',
+        );
+      }
+      if (activation.typeKey !== version.typeKey) {
+        throw new CommerceUnitError(
+          'malformed-record',
+          `activation ${activation.activationId} is for ${activation.typeKey} and its version ` +
+            `${version.typeVersionId} belongs to ${version.typeKey}. Filing it would answer for ` +
+            `one category with another one’s definition, and lose ${activation.typeKey} from the ` +
+            'set entirely — which reads as a category nobody ever registered',
+        );
+      }
+
+      if (index.has(version.typeKey)) {
+        throw new CommerceUnitError(
+          'malformed-record',
+          `${version.typeKey} appears twice in the in-force set. Only one version of a type is ` +
+            'ever in force, and keeping the second would decide by row order which definition ' +
+            'described every listing created since',
+        );
+      }
+      const activationSeen = activationIds.get(activation.activationId);
+      if (activationSeen !== undefined) {
+        throw new CommerceUnitError(
+          'malformed-record',
+          `activation ${activation.activationId} appears twice in the in-force set, for ` +
+            `${activationSeen} and for ${activation.typeKey}. One activation puts one version of ` +
+            'one type in force',
+        );
+      }
+      const versionSeen = versionIds.get(version.typeVersionId);
+      if (versionSeen !== undefined) {
+        throw new CommerceUnitError(
+          'malformed-record',
+          `version ${version.typeVersionId} is in force for ${versionSeen} and for ` +
+            `${version.typeKey} at once. A version belongs to one type key, and a lineage walked ` +
+            'through this set would find the same definition on two branches',
+        );
+      }
+
+      activationIds.set(activation.activationId, activation.typeKey);
+      versionIds.set(version.typeVersionId, version.typeKey);
+      index.set(version.typeKey, {
+        version,
+        riskPolicyVersionId: activation.riskPolicyVersionId,
+      });
+    }
+
+    return index;
   }
 
   /**
