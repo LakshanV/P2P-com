@@ -174,12 +174,105 @@ export function assertMeasureFamily(value: unknown, field: string): MeasureFamil
   return value as MeasureFamily;
 }
 
+/** The whole of a unit of measure. There is no third field, and there is no room for one. */
+const MEASURE_FIELDS: readonly string[] = ['family', 'unit'];
+
+/**
+ * Refuse a measure entry that is anything but a plain `{ family, unit }` record.
+ *
+ * `assertMeasure` reads two properties and rebuilds the record from them, so anything else a
+ * caller attached was *dropped* rather than refused — and dropped is the dangerous one. Three
+ * consequences, none of which leaves a trace:
+ *
+ *   - **A field nobody reads is a property somebody believes the vocabulary carries.** A caller
+ *     who writes `{ family, unit, price: 500 }` has recorded a price with the registry, as far as
+ *     they can tell: no error came back. K-11 holds no price, no currency and no display text —
+ *     that is v3's boundary — and silently discarding one lets a caller build on a belief that the
+ *     next reader of the stored type has no way to discover.
+ *   - **`familly` spelt wrong is not an unqualified unit.** It is a measure the author thinks they
+ *     qualified. The top-level request is already checked field-by-field so a typo cannot be
+ *     ignored (`assertKnownFields`); measures were the one nested structure where it could.
+ *   - **What is dropped is invisible to the fingerprint.** `canonicalMeasures` hashes
+ *     `family/unit` pairs, so two publications differing *only* in what a measure secretly carried
+ *     fingerprint identically — and a retry on the same idempotency key converges, handing back a
+ *     type version id for a request that was not the one made. That is precisely the failure K-04
+ *     shipped (§11.27), reached through a nested object instead of through the key.
+ *
+ * An allowlist and not a denylist. A list of forbidden names — `price`, `currency`, `label` —
+ * refuses what somebody thought of and admits `unitPrice`; requiring exactly the two fields the
+ * vocabulary has refuses everything nobody has thought of yet, which is the set that matters.
+ *
+ * Every way of hiding a field is closed, not just the obvious one: inherited through a prototype,
+ * defined as a getter, keyed by a symbol, or made non-enumerable — each is invisible to
+ * `Object.keys`, and the first three are invisible to `JSON.stringify` too, so a review of the
+ * request payload would not show them.
+ */
+function assertCanonicalMeasure(value: object, path: string): void {
+  if (Array.isArray(value)) {
+    throw new CommerceUnitError(
+      'unsupported-measure',
+      `${path} is an array; expected { family, unit }`,
+    );
+  }
+
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new CommerceUnitError(
+      'unsupported-measure',
+      `${path} is not a plain record: it inherits from something. A unit of measure carries what ` +
+        'it declares and nothing a prototype supplies, because what a prototype supplies is not ' +
+        'in the request anybody reviewed and not in the fingerprint anybody compared',
+    );
+  }
+
+  const symbols = Object.getOwnPropertySymbols(value);
+  if (symbols.length > 0) {
+    throw new CommerceUnitError(
+      'unsupported-measure',
+      `${path} carries ${symbols.length} symbol-keyed field(s). A unit of measure is { family, ` +
+        'unit }, and a key that cannot be written down is one no stored record can carry',
+    );
+  }
+
+  for (const field of Object.getOwnPropertyNames(value)) {
+    if (!MEASURE_FIELDS.includes(field)) {
+      throw new CommerceUnitError(
+        'unsupported-measure',
+        `${path} carries the field "${field}". A unit of measure is exactly { family, unit }: ` +
+          'this component holds no price, no currency, no conversion factor, no tax rule and no ' +
+          'display text, and dropping the field silently would let a caller believe it had ' +
+          'recorded one here',
+      );
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, field);
+    if (descriptor === undefined || descriptor.get !== undefined || descriptor.set !== undefined) {
+      throw new CommerceUnitError(
+        'unsupported-measure',
+        `${path}.${field} is an accessor rather than a value. What it answers can differ between ` +
+          'the read that validated it and the read that stored it, so the type recorded need not ' +
+          'be the type checked',
+      );
+    }
+    if (!descriptor.enumerable) {
+      throw new CommerceUnitError(
+        'unsupported-measure',
+        `${path}.${field} is non-enumerable, so it is absent from the request as anybody reading ` +
+          'it would see it. A unit of measure declares both its fields plainly',
+      );
+    }
+  }
+}
+
 /**
  * Validate one unit of measure, qualified by its family.
  *
  * `hour` exists under both `service` and `rental` and means different things in each — an hour of
  * somebody's labour is not an hour of a machine's availability. The family is therefore required,
  * and an unqualified unit is refused rather than guessed at.
+ *
+ * The shape is checked before either field is read, so a non-canonical entry is refused before it
+ * reaches the deduplication, the canonical sort or the fingerprint that decides whether a retry
+ * converges.
  */
 export function assertMeasure(value: unknown, path: string): UnitOfMeasure {
   if (value === null || typeof value !== 'object') {
@@ -188,6 +281,7 @@ export function assertMeasure(value: unknown, path: string): UnitOfMeasure {
       `${path} is ${value === null ? 'null' : typeof value}; expected { family, unit }`,
     );
   }
+  assertCanonicalMeasure(value, path);
   const candidate = value as { family?: unknown; unit?: unknown };
   const family = assertMeasureFamily(candidate.family, `${path}.family`);
   const permitted: readonly string[] = MEASURE_FAMILIES[family];
