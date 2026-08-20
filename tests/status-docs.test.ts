@@ -24,6 +24,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { KERNEL_COMPONENTS } from '../platform/architecture/manifest.ts';
+import { PermissionService } from '../kernel/permissions/index.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KERNEL_DIR = path.join(REPO_ROOT, 'kernel');
@@ -31,6 +32,12 @@ const DOCS_DIR = path.join(REPO_ROOT, 'docs');
 
 const STATUS = readFileSync(path.join(DOCS_DIR, 'CURRENT_IMPLEMENTATION_STATUS.md'), 'utf8');
 const CHECKLIST = readFileSync(path.join(DOCS_DIR, 'MASTER_IMPLEMENTATION_CHECKLIST.md'), 'utf8');
+
+/** Both governing documents, for the many cases that must hold of each. */
+const DOCUMENTS = [
+  ['CURRENT_IMPLEMENTATION_STATUS.md', STATUS],
+  ['MASTER_IMPLEMENTATION_CHECKLIST.md', CHECKLIST],
+] as const;
 
 /**
  * Components with a `CONTRACT.md`, which is this repository's marker for "the contract is fixed and
@@ -340,5 +347,237 @@ test('neither document claims a live PostgreSQL run or a complete component', ()
         );
       }
     }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// K-04 in particular: the surface, the migration, the aggregate, the limits
+// ---------------------------------------------------------------------------
+
+test('both documents describe K-04 as the four operations the service actually has', () => {
+  // Derived from the class, not written down. If somebody adds a fifth operation — or restores a
+  // read — the documents stop describing the component and this fails.
+  const surface = new Set<string>();
+  let proto: object | null = PermissionService.prototype;
+  while (proto !== null && proto !== Object.prototype) {
+    for (const key of Object.getOwnPropertyNames(proto)) surface.add(key);
+    proto = Object.getPrototypeOf(proto) as object | null;
+  }
+  surface.delete('constructor');
+
+  assert.equal(
+    surface.size,
+    4,
+    `K-04's surface is now ${[...surface].sort().join(', ')}; both documents claim four operations ` +
+      'and must be rewritten before this test is changed',
+  );
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const operation of surface) {
+      assert.ok(
+        text.includes(`\`${operation}\``),
+        `${name} does not name K-04's \`${operation}\` operation`,
+      );
+    }
+  }
+});
+
+test('neither document presents a K-04 authority-read API that no longer exists', () => {
+  // The three removed reads took an identifier and nothing else. A document that still offers one
+  // is telling a future caller to build against a hole (§11.29).
+  const removed = ['findGrant', 'findDecision', 'activePolicy'];
+  const service = PermissionService.prototype as unknown as Record<string, unknown>;
+
+  for (const name of removed) {
+    assert.equal(service[name], undefined, `${name} is back on the service; §11.29 was undone`);
+  }
+
+  for (const [name, text] of DOCUMENTS) {
+    // Fenced blocks quote the old surface, which is how the removal is recorded. What is checked
+    // is the claim the prose makes around them.
+    const prose = text.replace(/^```[\s\S]*?^```/gm, '');
+    for (const method of removed) {
+      // A mention is fine — the documents record the removal — but only in a paragraph that says
+      // it is gone. An offered capability is not.
+      for (const paragraph of prose.split(/\n\s*\n/)) {
+        if (!new RegExp(`\\b${method}\\b`).test(paragraph)) continue;
+        assert.match(
+          paragraph,
+          // Past tense or an explicit removal. What fails is a paragraph that offers one of these
+          // in the present tense, which is a document telling a caller to build against a hole.
+          /\b(remov|delet|no longer|absent|gone|earlier revision|rather than guard|no way|took|returned|exposed|were|was)\b/i,
+          `${name} still offers K-04's ${method} as a capability: "${paragraph.trim().slice(0, 140)}"`,
+        );
+      }
+    }
+    assert.match(
+      text,
+      /no way (for a caller )?to read (a grant|authority)/i,
+      `${name} does not record that K-04 has no way to read authority back`,
+    );
+  }
+});
+
+test('the K-04 suite sizes quoted in the status document are the sizes on disk', () => {
+  // Every count is derived by counting the suites. A quoted number that drifts from the file is
+  // the failure mode this whole test file exists for.
+  const suites = [
+    'permissions',
+    'permissions-decisions',
+    'permissions-administration',
+    'permissions-repository',
+    'permissions-idempotency',
+    'permissions-concurrency',
+  ] as const;
+
+  let total = 0;
+  for (const suite of suites) {
+    const source = readFileSync(path.join(REPO_ROOT, 'tests', `${suite}.test.ts`), 'utf8');
+    const cases = source.split(/^test\(/m).length - 1;
+    assert.ok(cases > 0, `tests/${suite}.test.ts has no top-level cases; the convention moved`);
+    total += cases;
+    assert.match(
+      STATUS,
+      new RegExp(`\`${suite}\` ${cases}\\b`),
+      `§1 does not report tests/${suite}.test.ts as ${cases} cases, which is what it holds`,
+    );
+  }
+
+  assert.match(
+    STATUS,
+    new RegExp(`K-04 accounts for ${total} of them`),
+    `§1 must report ${total} K-04 cases, the sum of the six suites on disk`,
+  );
+});
+
+test('the verification aggregate is the same number everywhere it is quoted', () => {
+  // Nothing here can run the suite, so this cannot check the number is true. It can check the
+  // document does not disagree with itself, which is how a stale aggregate actually survives:
+  // one place gets updated and the other does not.
+  const summary = /\| Tests \| (\d+) passing \(`npm test`, exit 0\)/.exec(STATUS);
+  assert.ok(summary !== null, '§1 has no test-count row');
+  const aggregate = Number(summary[1]);
+
+  const quoted = [...STATUS.matchAll(/npm run verify\s+exit 0\s+tests (\d+), pass (\d+)/g)];
+  assert.ok(quoted.length > 0, 'no evidence block quotes an npm run verify result');
+
+  for (const [, tests, passing] of quoted) {
+    assert.equal(tests, passing, `an evidence block quotes ${tests} tests but ${passing} passing`);
+  }
+
+  // The most recent block is the landed state, and §1 must agree with it.
+  const last = quoted[quoted.length - 1];
+  assert.ok(last !== undefined, 'no evidence block quotes an npm run verify result');
+  const latest = Number(last[1]);
+  assert.equal(
+    aggregate,
+    latest,
+    `§1 reports ${aggregate} passing tests; the last evidence block reports ${latest}`,
+  );
+});
+
+test('migration 0009 is the repaired file the status document describes', () => {
+  // Both halves matter. The line count is derived from the file, so a document quoting a stale
+  // number fails; and the structural check is the repair itself (§11.29) — 0009 was committed as
+  // 2389 lines with sixteen COMMIT statements, and no gate in this repository parses SQL, so this
+  // is the only thing standing between that recurring and nobody noticing again.
+  const file = path.join(
+    REPO_ROOT,
+    'db',
+    'migrations',
+    '0009_create_kernel_permissions_schema.up.sql',
+  );
+  const sql = readFileSync(file, 'utf8');
+  const lines = sql.split('\n').length - 1;
+
+  assert.equal(
+    (sql.match(/^BEGIN;$/gm) ?? []).length,
+    1,
+    'migration 0009 must open exactly one transaction — the runner owns it',
+  );
+  assert.equal(
+    (sql.match(/^COMMIT;$/gm) ?? []).length,
+    1,
+    'migration 0009 has more than one COMMIT; the duplication repaired in §11.29 is back',
+  );
+  assert.ok(
+    !/~ '\^\[0-9a-f\]\{64\}$/m.test(sql),
+    'a fingerprint CHECK in migration 0009 has an unterminated regex literal again (§11.29)',
+  );
+
+  assert.match(
+    STATUS,
+    new RegExp(`\\*\\*${lines} lines\\*\\*`),
+    `§11.29 must report migration 0009 as ${lines} lines, which is what is on disk`,
+  );
+});
+
+test('both documents record what K-04 still lacks, item by item', () => {
+  // The other half of accuracy, mirroring the K-02 gap test above. K-04 landing and being
+  // corrected three times is not permission to stop saying what it cannot do.
+  const gaps: ReadonlyArray<readonly [string, RegExp]> = [
+    ['no caller', /nothing calls (it|K-04)/i],
+    ['no API or UI', /no API/i],
+    ['no policy studio', /no policy studio/i],
+    ['no audit record', /\bK-09\b/],
+    ['no events', /\bK-08\b/],
+    ['no operational role matrix', /no operational role matrix/i],
+    ['nothing applied to a live server', /nothing applied to a live server/i],
+  ];
+
+  for (const [name, text] of DOCUMENTS) {
+    for (const [gap, pattern] of gaps) {
+      assert.match(text, pattern, `${name} no longer records that K-04 has ${gap}`);
+    }
+  }
+});
+
+test('every FND-004d correction has a block, and the checklist points at all of them', () => {
+  // Derived from the headings themselves: add a §11.30 correction and forget to link it, and this
+  // fails. The corrections are the most serious defects in the register (§7) and the row that
+  // describes the component is where a reader will look for them.
+  const headings = [...STATUS.matchAll(/^### (11\.\d+) Correction — FND-004d (.+)$/gm)];
+  assert.ok(
+    headings.length >= 3,
+    `FND-004d has ${headings.length} correction blocks; three security corrections are recorded ` +
+      'in §7 and each needs its own block (v3 §56)',
+  );
+
+  const k04Row = kernelRow('K-04').join(' | ');
+  for (const [, section] of headings) {
+    assert.ok(section !== undefined, 'a correction heading carries no section number');
+    const anchor = `#${section.replace('.', '')}`;
+    assert.ok(
+      k04Row.includes(anchor),
+      `the checklist K-04 row does not link §${section}, so the correction is invisible from it`,
+    );
+    assert.ok(
+      STATUS.includes(`§${section}`),
+      `§${section} is never referenced from anywhere in the status document`,
+    );
+  }
+});
+
+test('the next task is not one that has already been delivered', () => {
+  // The failure this catches is specific and has happened: a task is selected, delivered, and the
+  // selection stays, so the next reader builds it again.
+  const selection = /Next genuinely unblocked task:\s*\*{0,2}([A-Z]+-\d+[a-z]?)/.exec(STATUS);
+  const next = selection?.[1];
+  assert.ok(next !== undefined, '§8 no longer names a next task');
+
+  assert.ok(
+    !new RegExp(`### 11\\.\\d+ Evidence — ${next}\\b`).test(STATUS),
+    `§8 selects ${next}, which already has an evidence block — it has been delivered`,
+  );
+
+  // And it must be a component the checklist agrees is unbuilt, when it names one.
+  const named = /Next genuinely unblocked task:[^\n]*?\b(K-\d\d)\b/.exec(STATUS)?.[1];
+  if (named !== undefined) {
+    const implementation = kernelRow(named)[3] ?? '';
+    assert.match(
+      implementation,
+      /\[ \]|NOT STARTED/,
+      `§8 selects ${named}, which the checklist already reports as started`,
+    );
   }
 });
