@@ -25,7 +25,7 @@ import type { Database } from '../../platform/db/client.ts';
 import { loadEnvFile } from '../../platform/db/env-file.ts';
 import { MIGRATIONS_DIR } from '../../platform/db/migrations.ts';
 import { DATABASE_URL_ENV, PostgresDatabase } from '../../platform/db/postgres.ts';
-import { migrationStatus, type StatusReport } from '../../platform/db/runner.ts';
+import { migrateDown, migrationStatus, type StatusReport } from '../../platform/db/runner.ts';
 import {
   assertSafeTestTarget,
   databaseNameOf,
@@ -220,4 +220,42 @@ export async function leftoverMarkerExists(database: Database): Promise<boolean>
 export async function removeTestDatabase(): Promise<void> {
   const url = testDatabaseUrl();
   await dropTestDatabase(new PostgresDatabase(maintenanceUrl(url)), url);
+}
+
+/**
+ * Roll back every applied migration down to and including `version`, newest first.
+ *
+ * The runner refuses to roll back anything but the most recently applied migration — correctly, and
+ * for the reason its error says: rollbacks compose only in reverse order. That makes the obvious
+ * form of a reversibility test — `migrateDown(db, { version: myVersion })` — quietly fragile. It
+ * passes while the module under test owns the newest migration, and every module that lands after
+ * it breaks a test that has nothing to do with the new work. This is GAP-INF-6 in
+ * `docs/JAYA_FINAL_GAP_ANALYSIS.md`, and it caught M-02 the day M-04's migration landed.
+ *
+ * Rolling the whole tail back is what an operator would actually do, and it proves the stronger
+ * property: the migration is reversible *given* everything built on top of it has been reversed
+ * first, whatever that turns out to be.
+ */
+export async function rollBackTo(
+  database: Database,
+  directory: string,
+  version: string,
+): Promise<void> {
+  const { applied } = await migrationStatus(database, { directory });
+  const tail = applied
+    .map((row) => row.version)
+    .filter((candidate) => candidate >= version)
+    .sort()
+    .reverse();
+
+  if (tail.at(-1) !== version) {
+    throw new Error(
+      `rollBackTo(${version}) found no applied migration with that version; applied are ` +
+        applied.map((row) => row.version).join(', '),
+    );
+  }
+
+  for (const candidate of tail) {
+    await migrateDown(database, { directory, version: candidate });
+  }
 }

@@ -15,7 +15,7 @@ import {
   PostgresUniversalAccountRepository,
   UniversalAccountService,
 } from '../../modules/universal-account/index.ts';
-import { migrateDown, migrateUp } from '../../platform/db/runner.ts';
+import { migrateUp } from '../../platform/db/runner.ts';
 import type { Database } from '../../platform/db/client.ts';
 
 import {
@@ -27,6 +27,7 @@ import {
   developmentDatabaseName,
   developmentSnapshot,
   liveTestOptions,
+  rollBackTo,
   withTestDatabase,
 } from './harness.ts';
 
@@ -254,7 +255,7 @@ test('migration 0024 rolls back and leaves no trace of the schema', liveTestOpti
       await client.release();
     }
 
-    await migrateDown(database, { directory, version: '0024' });
+    await rollBackTo(database, directory, '0024');
 
     const after = await database.connect();
     try {

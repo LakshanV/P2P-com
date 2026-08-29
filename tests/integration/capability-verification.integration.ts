@@ -18,7 +18,7 @@ import {
   CapabilityVerificationService,
   PostgresCapabilityVerificationRepository,
 } from '../../modules/capability-verification/index.ts';
-import { migrateDown, migrateUp } from '../../platform/db/runner.ts';
+import { migrateUp } from '../../platform/db/runner.ts';
 import type { Database } from '../../platform/db/client.ts';
 
 import {
@@ -32,6 +32,7 @@ import {
   developmentDatabaseName,
   developmentSnapshot,
   liveTestOptions,
+  rollBackTo,
   withTestDatabase,
 } from './harness.ts';
 
@@ -337,7 +338,7 @@ test('migration 0025 rolls back and leaves no trace of the schema', liveTestOpti
       await present.release();
     }
 
-    await migrateDown(database, { directory, version: '0025' });
+    await rollBackTo(database, directory, '0025');
 
     const after = await database.connect();
     try {
