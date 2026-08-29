@@ -84,24 +84,33 @@ test('migration versions are unique and densely ordered from 0001', () => {
   });
 });
 
-test('every migration is owned by the platform or by a kernel component', () => {
+test('every migration is owned by the platform, a kernel component or a registered module', () => {
   // FND-002a delivered platform-owned migrations only. FND-003a added the first kernel-owned pair
   // (K-05 Configuration), which is exactly how a unit is meant to arrive: with its own schema.
-  // What still must not exist is a business-module table — no module has been built.
+  // Migration 0024 adds the first module-owned pair (M-01 Universal Account) the same way.
+  //
+  // What must still not exist is a schema belonging to nobody. A `module_` migration is only legal
+  // when the manifest registers a module of that name, so a typo in a schema name — the cheapest
+  // way to create a table no unit owns — fails here rather than in production.
   const { migrations } = validateMigrations(REAL_MIGRATIONS);
   assert.ok(migrations.length > 0);
   for (const migration of migrations) {
     const owner = String(migration.owner);
     assert.ok(
-      owner === PLATFORM_SCHEMA || owner.startsWith(KERNEL_SCHEMA_PREFIX),
-      `${migration.file} is owned by ${owner}; only the platform and kernel components own ` +
-        'schemas so far',
+      owner === PLATFORM_SCHEMA ||
+        owner.startsWith(KERNEL_SCHEMA_PREFIX) ||
+        owner.startsWith(MODULE_SCHEMA_PREFIX),
+      `${migration.file} is owned by ${owner}; only the platform, kernel components and business ` +
+        'modules own schemas',
     );
-    assert.equal(
-      owner.startsWith(MODULE_SCHEMA_PREFIX),
-      false,
-      `${migration.file} creates business-module tables, and no business module exists yet`,
-    );
+    if (owner.startsWith(MODULE_SCHEMA_PREFIX)) {
+      const resolved = ownerOfSchema(owner);
+      assert.ok(
+        resolved !== null && resolved.kind === 'module',
+        `${migration.file} claims module schema ${owner}, which the architecture manifest does ` +
+          'not register to any business module',
+      );
+    }
   }
 });
 
