@@ -16,9 +16,9 @@ Status: **PHASE 1 COMPLETE. M-01 delivered.** All 15 kernel components (K-01 thr
 
 ## CURRENT MODULE
 
-**M-04 Universal Listing**
+**M-04 Universal Listing — slice B, the inventory interface**
 
-M-01 and M-02 are both delivered, so L1 is complete: an account holds roles, and the platform records how far it has checked them. M-04 Universal Listing is next — the replaceability requirement is the single most-cited architectural requirement in the brief and nothing implements it.
+L1 is complete and M-04's listing half is delivered: an offer is a stable identity whose terms change by version, never by edit. Slice B adds the inventory interface — the brief's replaceability requirement — with availability derived from an append-only movement log and a contract-test suite any replacement must pass.
 
 ---
 
@@ -47,6 +47,7 @@ These modules have a contract and a working library foundation. They are **not**
 | K-15 | Search Foundation | `kernel/search-foundation/`, migration 0021, PostgreSQL full-text search, 50+ unit tests, 5 live PostgreSQL integration tests |
 | M-01 | Universal Account | `modules/universal-account/`, migration 0024, **the first module-owned schema**, 32 unit tests, 6 live PostgreSQL integration tests |
 | M-02 | Capability & Verification | `modules/capability-verification/`, migration 0025, ordered levels, evidence held as an opaque reference only, 42 unit tests, 7 live PostgreSQL integration tests |
+| M-04 | Universal Listing (listing half) | `modules/universal-listing/`, migration 0026, versioned offers that are never edited, bigint money, 40 unit tests, 7 live PostgreSQL integration tests. **Inventory interface not built** |
 
 ---
 
@@ -63,7 +64,7 @@ These modules have a contract and a working library foundation. They are **not**
 
 None.
 
-- Unit tests: 1,704 pass / 0 fail
+- Unit tests: 1,744 pass / 0 fail
 - Integration tests: 104 pass / 0 fail / 0 skipped (last completed run, live PostgreSQL 16)
 
 ---

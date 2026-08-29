@@ -10,11 +10,12 @@ K-13's authority controls — have since been closed by this same pass. Sections
 to describe what is now true, and section 12 records the work. One finding in revision 1 was
 overstated and is corrected: K-13 already carried an `AIDecision` record with a 0–4 `policyLevel`,
 so the gap was the absence of *enforcement*, not the absence of the concept.
-**Revision 3 (2026-08-29):** M-01 Universal Account and M-02 Capability & Verification have since
-been built, so section 0's statement that `modules/` holds no code is no longer true and layer L1 is
-complete. Sections 13 and 14 record that work. Everything else in section 0 stands: 45 of 47 business
-modules are unbuilt, `apps/` and `design-system/` are still empty, and the schedule assessment in
-section 10 is unchanged.
+**Revision 3 (2026-08-29):** M-01, M-02 and the listing half of M-04 have since been built, so
+section 0's statement that `modules/` holds no code is no longer true and layer L1 is complete.
+Sections 13, 14 and 15 record that work. Everything else in section 0 stands: 44 of 47 business
+modules are unbuilt, M-04's inventory interface — the replaceability requirement — is still
+outstanding, `apps/` and `design-system/` are still empty, and the schedule assessment in section 10
+is unchanged.
 
 ---
 
@@ -362,8 +363,10 @@ passed. The K-04 finding below is the one item that becomes High the moment an A
 3. ~~**M-01 / M-02** — Universal Account and Capability & Verification.~~ **DONE** — migrations 0024
    and 0025, 74 unit tests and 13 live-PostgreSQL integration tests, sections 13 and 14. L1 is
    complete.
-4. **M-04 Universal Listing / Inventory contract** — the replaceability requirement (brief section 10)
-   is the single most-cited architectural requirement in the brief and nothing implements it.
+4. **M-04 Universal Listing / Inventory contract** — the listing half is **DONE** (migration 0026,
+   40 unit tests, 7 live-PostgreSQL integration tests, section 15). The **inventory interface — the
+   replaceability requirement — is still outstanding**, and it is the item that carries the
+   mandatory contract-test suite.
 5. **M-11 / M-12 / M-13** — Orders, Payments (with a `PaymentProvider` port and mock adapter),
    Financial Ledger posting onto K-10.
 6. **Wire K-04 Permissions into every service entry point.**
@@ -514,3 +517,52 @@ no document verification, no sanctions or PEP screening, no liveness check, no i
 consumer of any of the five events, no `withdraw` operation, no evidence expiry or re-verification
 schedule, and no K-02 authentication or K-04 authorisation behind approval — anyone holding the
 repository can approve any case.
+
+---
+
+## 15. Work completed after the audit — M-04 Universal Listing, slice A
+
+**Date:** 2026-08-29. The listing half of M-04. The inventory interface — the item section 9 ranks
+fourth and calls the most-cited architectural requirement in the brief — is **still outstanding**
+and is being built as slice B with the contract-test suite `docs/JAYA_TEST_MATRIX.md` §1.3 requires.
+
+| # | Item | Evidence |
+|---|---|---|
+| 1 | M-04 listing domain, service, in-memory repository, PostgreSQL adapter, contract | `modules/universal-listing/` |
+| 2 | Migration 0026, with three append-only triggers and `UNIQUE (listing_id, version_number)` | `db/migrations/0026_*` |
+| 3 | 40 unit tests | `tests/universal-listing*.test.ts` |
+| 4 | 7 live-PostgreSQL integration tests | `tests/integration/universal-listing.integration.ts` |
+| 5 | Defect: `addMedia` and `addDeclaration` did not guard against withdrawal | Fixed — a claim could be appended to an offer that no longer existed |
+| 6 | Defect: `sealListings` was used without being imported | Fixed — the module did not compile |
+| 7 | **GAP-INF-6 closed**: rollback isolation lost when a component is extended | `rollBackTo` in `tests/integration/harness.ts`; M-01, M-02 and M-04 all use it |
+
+### GAP-INF-6, and why it was worth fixing rather than working around
+
+The runner refuses to roll back anything but the most recently applied migration — correctly, since
+rollbacks compose only in reverse order. That made the obvious form of a reversibility test quietly
+fragile: `migrateDown(db, { version: myVersion })` passes while the module under test owns the newest
+migration, and breaks the day any later module ships. It caught M-02 within an hour of migration 0026
+landing.
+
+`rollBackTo(database, directory, version)` rolls the whole tail back in reverse order, which is what
+an operator would actually do, and proves the stronger property: the migration is reversible *given*
+everything built on top of it has been reversed first, whatever that turns out to be. Revision 1's
+workaround — narrowing the two affected tests to a weaker assertion — is no longer needed.
+
+### The property this slice exists to hold
+
+A listing's terms change by **version, never by edit**. An order placed in March pins
+`(listing L, version 3)`, and publishing version 4 in June must not change what version 3 said,
+because version 3 is the agreement. `UNIQUE (listing_id, version_number)` makes that pair a permanent
+address, the append-only trigger stops the terms being rewritten, and a public-surface regression
+asserts that no operation exists which edits a version.
+
+The same reasoning covers `listing_declaration`: what the supplier asserted about the goods is what a
+dispute is judged against, and a claim that can be edited after a dispute begins is not evidence.
+
+### What slice A does not do
+
+The inventory interface does not exist — no `getAvailability`, `reserve`, `release`, `commit`,
+`receive` or `adjust`, and no `inventory_snapshot`. Nothing calls the module. There is no API, no UI,
+no consumer of any of the four events, no verification gate against M-02 before publishing, no K-11
+type check, no K-02 authentication, no K-04 authorisation, and no indexing into K-15.

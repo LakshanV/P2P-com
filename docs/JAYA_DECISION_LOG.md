@@ -427,6 +427,18 @@ Each entry includes:
 
 ---
 
+## D-035 — M-04 Universal Listing: versioned offers, and inventory as a movement log
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-29 |
+| Decision | Implement M-04 in two slices. **Slice A** owns `listing` plus three append-only companions — `listing_version`, `listing_media`, `listing_declaration` — in schema `module_universal_listing`. A listing's terms change by **version, never by edit**, and `UNIQUE (listing_id, version_number)` makes that pair the permanent address an order pins. **Slice B** implements the inventory interface with availability **derived from an append-only movement log**, exactly as K-10 derives balances, with a cached `inventory_snapshot` written in the same transaction and a database `CHECK (reserved <= on_hand)`. Money is `bigint` minor units; events carry amounts as strings. |
+| Context | `docs/JAYA_MIGRATION_PLAN.md` MU-018 rates inventory *"High risk — inventory is explicitly required to be replaceable"*, and `docs/JAYA_TEST_MATRIX.md` §1.3 makes an inventory contract test mandatory. A replaceable interface is only replaceable if there is an executable definition of what it must do, so slice B ships a suite parameterised over an implementation rather than a suite about M-04. Separately, the listing itself had to answer what an order is actually against: a mutable listing means an order references terms that can change after it was agreed. |
+| Consequences | An order pins `(listingId, versionId)` and reads the same terms forever; `getVersion` is the operation it uses. Publishing again appends a version and the service exposes no operation that edits one, asserted by a public-surface regression. Declarations are append-only for the same reason — they are the claims a dispute is judged against. Availability is never a mutable counter: it is `onHand - reserved` computed from a log that can be replayed, which makes concurrent reservation a constraint violation rather than a lost update. A replacement inventory module is valid exactly when it passes `tests/contracts/inventory.contract.test.ts`. The inventory tables live in migration 0027 rather than 0026, so the replaceable half has its own reversible unit. |
+| Status | active |
+
+---
+
 ## Decision Status Legend
 
 | Status | Meaning |
