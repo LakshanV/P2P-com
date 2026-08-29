@@ -10,10 +10,11 @@ K-13's authority controls — have since been closed by this same pass. Sections
 to describe what is now true, and section 12 records the work. One finding in revision 1 was
 overstated and is corrected: K-13 already carried an `AIDecision` record with a 0–4 `policyLevel`,
 so the gap was the absence of *enforcement*, not the absence of the concept.
-**Revision 3 (2026-08-29):** M-01 Universal Account has since been built, so section 0's statement
-that `modules/` holds no code is no longer true. Section 13 records that work. Everything else in
-section 0 stands: 46 of 47 business modules are unbuilt, `apps/` and `design-system/` are still
-empty, and the schedule assessment in section 10 is unchanged.
+**Revision 3 (2026-08-29):** M-01 Universal Account and M-02 Capability & Verification have since
+been built, so section 0's statement that `modules/` holds no code is no longer true and layer L1 is
+complete. Sections 13 and 14 record that work. Everything else in section 0 stands: 45 of 47 business
+modules are unbuilt, `apps/` and `design-system/` are still empty, and the schedule assessment in
+section 10 is unchanged.
 
 ---
 
@@ -358,9 +359,9 @@ passed. The K-04 finding below is the one item that becomes High the moment an A
 
 1. ~~**K-10 multi-value completion.**~~ **DONE** — migration 0022, section 3.
 2. ~~**K-13 AI authority model.**~~ **DONE** — migration 0023, section 3a.
-3. ~~**M-01** — Universal Account.~~ **DONE** — migration 0024, `modules/universal-account/`, 32 unit
-   tests and 6 live-PostgreSQL integration tests, section 13. **M-02 Capability & Verification is
-   still outstanding**, and everything above L1 needs it.
+3. ~~**M-01 / M-02** — Universal Account and Capability & Verification.~~ **DONE** — migrations 0024
+   and 0025, 74 unit tests and 13 live-PostgreSQL integration tests, sections 13 and 14. L1 is
+   complete.
 4. **M-04 Universal Listing / Inventory contract** — the replaceability requirement (brief section 10)
    is the single most-cited architectural requirement in the brief and nothing implements it.
 5. **M-11 / M-12 / M-13** — Orders, Payments (with a `PaymentProvider` port and mock adapter),
@@ -472,3 +473,44 @@ calls it. No API, no UI, no consumer of `capability.activated` or `capability.de
 `suspend` operation, no K-02 authentication and no K-04 authorisation behind activation, and no
 check that the K-03 account it names exists. It is a foundation, on the same terms as every kernel
 component above it.
+
+---
+
+## 14. Work completed after the audit — M-02 Capability & Verification
+
+**Date:** 2026-08-29. With M-01 and M-02 both delivered, **layer L1 is complete**: an account holds
+roles, and the platform records how far it has checked them. Section 9's backlog item 3 is closed.
+45 of the 47 business modules remain unbuilt, `apps/` and `design-system/` are still empty, and
+section 10's schedule assessment is unchanged.
+
+| # | Item | Evidence |
+|---|---|---|
+| 1 | M-02 domain, service, in-memory repository, PostgreSQL adapter, contract | `modules/capability-verification/` |
+| 2 | Migration 0025, with a **partial** unique index and two append-only triggers | `db/migrations/0025_*` |
+| 3 | 42 unit tests | `tests/capability-verification*.test.ts` |
+| 4 | 7 live-PostgreSQL integration tests | `tests/integration/capability-verification.integration.ts` |
+| 5 | Defect: rejecting a case emitted nothing at all | Fixed — `verification.rejected` and its audit record |
+| 6 | Defect: a purpose beginning with a digit passed TypeScript and would have been refused by the migration's CHECK | Fixed — the validator now requires a leading letter |
+| 7 | `occurredAt` on a rejection request was a field the module ignored | Removed rather than left in the surface |
+
+### The property this module exists to hold
+
+`evidence.reference` is an opaque handle to an artefact another system stores, checked against the
+same `is_opaque_identifier` rule set as every identifier — **twice**, in the service and as a
+database `CHECK`. The integration suite proves the second by issuing five inserts that each carry
+something real and forbidden — an email, a passport-shaped digit run, an IBAN, a URL to the document
+itself, a credential — and asserting the database refuses each by constraint name.
+
+A verification record outlives the thing it verifies and is copied into every downstream projection.
+A document number written into one is disclosed for as long as the platform exists, and no later
+deletion policy can recall it. That is why the refusal is enforced in the schema rather than only in
+the code that writes to it.
+
+### What M-02 does not do
+
+**No verifier exists.** M-02 records the level a caller says was reached and checks nothing itself:
+no document verification, no sanctions or PEP screening, no liveness check, no identity bureau. The
+`evaluateLevel` caller is the authority, and there is no such caller. There is also no API, no UI, no
+consumer of any of the five events, no `withdraw` operation, no evidence expiry or re-verification
+schedule, and no K-02 authentication or K-04 authorisation behind approval — anyone holding the
+repository can approve any case.

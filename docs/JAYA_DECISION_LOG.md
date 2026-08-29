@@ -415,6 +415,18 @@ Each entry includes:
 
 ---
 
+## D-034 — M-02 Capability & Verification, and what a verification record may hold
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-29 |
+| Decision | Implement M-02 as the second business module, owning `verification_case`, `evidence` and `level_record` in schema `module_capability_verification`. Verification levels are an **ordered** vocabulary (`none` → `basic` → `standard` → `enhanced` → `full`) compared by rank, never as strings. Evidence stores an **opaque reference** to an artefact another system holds, and that reference runs through the same `is_opaque_identifier` rule set as every identifier — in the service and again as a database `CHECK`. `evaluateLevel` refuses a downward move; standing is removed by opening a new case, never by editing the record that granted it. |
+| Context | The brief requires progressive verification with evidence and tax/payout identifiers. The tempting design stores the identifiers: a passport number, a tax number, a bank account. A verification record outlives the thing it verifies and is copied into every downstream projection, so a natural key written into one is disclosed for as long as the platform exists and no later deletion policy can recall it. M-02 is also the same layer as M-01, so it cannot call it: a capability and a verification level are different facts about the same account, owned by different units and joined only by event. |
+| Consequences | Consumers ask `currentLevel(accountId)` — the highest level across an account's approved cases — rather than reading a table. `seller.verified` is emitted from the level decision itself, so it cannot be raised without a case behind it. One *open* case per `(account, purpose)` is enforced by a **partial** unique index rather than a plain `UNIQUE`, so a decided or withdrawn case cannot block the next attempt: an account that failed onboarding in March can try again in June. Rejection carries its own `verification.rejected` event, because it changes no level and would otherwise be visible only in a status column nobody subscribes to. Any future document-verification provider is an adapter that hands M-02 a reference and a level, and never the document. |
+| Status | active |
+
+---
+
 ## Decision Status Legend
 
 | Status | Meaning |

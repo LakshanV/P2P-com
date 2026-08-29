@@ -16,9 +16,9 @@ Status: **PHASE 1 COMPLETE. M-01 delivered.** All 15 kernel components (K-01 thr
 
 ## CURRENT MODULE
 
-**M-02 Capability & Verification**
+**M-04 Universal Listing**
 
-M-01 is delivered: buyer, seller, host, provider, introducer, driver and business-purchaser capabilities activate against a K-03 universal account, with an append-only transition log behind each. M-02 adds progressive verification levels and evidence, which M-01 refuses by name as a foreign concern. Together they unlock the commerce verticals.
+M-01 and M-02 are both delivered, so L1 is complete: an account holds roles, and the platform records how far it has checked them. M-04 Universal Listing is next — the replaceability requirement is the single most-cited architectural requirement in the brief and nothing implements it.
 
 ---
 
@@ -46,6 +46,7 @@ These modules have a contract and a working library foundation. They are **not**
 | K-14 | Notifications | `kernel/notifications/`, migration 0020, in-app provider, 60+ unit tests, 5 live PostgreSQL integration tests |
 | K-15 | Search Foundation | `kernel/search-foundation/`, migration 0021, PostgreSQL full-text search, 50+ unit tests, 5 live PostgreSQL integration tests |
 | M-01 | Universal Account | `modules/universal-account/`, migration 0024, **the first module-owned schema**, 32 unit tests, 6 live PostgreSQL integration tests |
+| M-02 | Capability & Verification | `modules/capability-verification/`, migration 0025, ordered levels, evidence held as an opaque reference only, 42 unit tests, 7 live PostgreSQL integration tests |
 
 ---
 
@@ -53,7 +54,7 @@ These modules have a contract and a working library foundation. They are **not**
 
 | Priority | Module | Task |
 |---|---|---|
-| P2 | M-02 | Capability & Verification |
+| P0 | M-04 | Universal Listing / Inventory contract |
 | P2 | M-36 | User Cockpit shell |
 
 ---
@@ -62,8 +63,8 @@ These modules have a contract and a working library foundation. They are **not**
 
 None.
 
-- Unit tests: 1,662 pass / 0 fail
-- Integration tests: 97 pass / 0 fail / 0 skipped (last completed run, live PostgreSQL 16)
+- Unit tests: 1,704 pass / 0 fail
+- Integration tests: 104 pass / 0 fail / 0 skipped (last completed run, live PostgreSQL 16)
 
 ---
 
