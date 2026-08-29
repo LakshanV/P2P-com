@@ -403,6 +403,18 @@ Each entry includes:
 
 ---
 
+## D-033 — M-01 Universal Account, and the first module-owned schema
+
+| Field | Value |
+|---|---|
+| Date | 2026-08-29 |
+| Decision | Implement M-01 as the first business module. It owns `account_capability` and `capability_state` in schema `module_universal_account`, derived from its manifest directory `universal-account`. It exposes `activateCapability`, `deactivateCapability`, `listCapabilities` and `getCapabilityHistory`, and emits `capability.activated` and `capability.deactivated` through a module-owned outbox. `accountId` is an opaque K-03 identifier and is deliberately not a foreign key. |
+| Context | Everything above L1 depends on knowing which roles an account may act in. `docs/JAYA_FINAL_GAP_ANALYSIS.md` §9 ranks M-01 and M-02 as the third P0 item, behind the two kernel gaps that are now closed. The module map named the schema `module_account`, but `platform/db/schema-namespaces.ts` derives every schema name from the manifest directory, and the derivation is the authority — the same correction K-14 took when `kernel_notification` became `kernel_notifications`. |
+| Consequences | The current state of a role and the history of how it got there are separate tables: one row per `(account, capability)` in `account_capability`, and an append-only `capability_state` log enforced by a database trigger. Reactivating a deactivated capability moves the same row back to `active` and appends a transition, so a capability has one identity for its whole life and consumers may hold its id. `tests/migrations.test.ts` no longer asserts that no business module owns a schema; it asserts the property that survives M-01 — a `module_` migration is legal only when the manifest registers a module of that name. Verification levels are refused as a foreign concern: they belong to M-02. |
+| Status | active |
+
+---
+
 ## Decision Status Legend
 
 | Status | Meaning |
