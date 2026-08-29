@@ -1,6 +1,6 @@
 # JAYA — Autonomous Development Status
 
-**Updated:** 2026-08-24  
+**Updated:** 2026-08-29  
 **Current branch:** `jaya-p2p-com-47859d`  
 **Governing documents:** `docs/JAYA_MASTER_ARCHITECTURE.md`, `docs/JAYA_MODULE_MAP.md`
 
@@ -10,15 +10,15 @@
 
 **Phase 2 — Identity + Cockpit Shell**
 
-Status: **PHASE 1 COMPLETE**. All 15 kernel components (K-01 through K-15) are implemented with contracts, migrations, and passing tests. Module-owned outbox pattern is wired across the kernel. Live PostgreSQL integration tests pass. Next: business modules starting with M-01 Universal Account, M-02 Capability & Verification, and M-36 User Cockpit shell.
+Status: **PHASE 1 COMPLETE. M-01 delivered.** All 15 kernel components (K-01 through K-15) are implemented with contracts, migrations, and passing tests. The two P0 kernel gaps an independent audit found — K-10 multi-value and K-13 AI authority — are closed. **M-01 Universal Account is the first business module and the first module-owned schema.** Next: M-02 Capability & Verification, then M-04 Universal Listing.
 
 ---
 
 ## CURRENT MODULE
 
-**M-01 Universal Account / M-02 Capability & Verification**
+**M-02 Capability & Verification**
 
-M-01 activates buyer, seller, host, provider, introducer, driver, and business purchaser capabilities against a K-03 universal account. M-02 adds progressive verification levels and evidence. These two modules unlock the commerce verticals.
+M-01 is delivered: buyer, seller, host, provider, introducer, driver and business-purchaser capabilities activate against a K-03 universal account, with an append-only transition log behind each. M-02 adds progressive verification levels and evidence, which M-01 refuses by name as a foreign concern. Together they unlock the commerce verticals.
 
 ---
 
@@ -45,6 +45,7 @@ These modules have a contract and a working library foundation. They are **not**
 | K-13 | AI Gateway | `kernel/ai-gateway/`, migration 0019, mock provider adapter, 80 unit tests, 5 live PostgreSQL integration tests |
 | K-14 | Notifications | `kernel/notifications/`, migration 0020, in-app provider, 60+ unit tests, 5 live PostgreSQL integration tests |
 | K-15 | Search Foundation | `kernel/search-foundation/`, migration 0021, PostgreSQL full-text search, 50+ unit tests, 5 live PostgreSQL integration tests |
+| M-01 | Universal Account | `modules/universal-account/`, migration 0024, **the first module-owned schema**, 32 unit tests, 6 live PostgreSQL integration tests |
 
 ---
 
@@ -52,7 +53,6 @@ These modules have a contract and a working library foundation. They are **not**
 
 | Priority | Module | Task |
 |---|---|---|
-| P2 | M-01 | Universal Account |
 | P2 | M-02 | Capability & Verification |
 | P2 | M-36 | User Cockpit shell |
 
@@ -62,7 +62,7 @@ These modules have a contract and a working library foundation. They are **not**
 
 None.
 
-- Unit tests: 1,591 pass / 0 fail
+- Unit tests: 1,662 pass / 0 fail
 - Integration tests: 91 pass / 0 fail / 0 skipped (last completed run)
 
 ---

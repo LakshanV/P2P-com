@@ -10,6 +10,10 @@ K-13's authority controls — have since been closed by this same pass. Sections
 to describe what is now true, and section 12 records the work. One finding in revision 1 was
 overstated and is corrected: K-13 already carried an `AIDecision` record with a 0–4 `policyLevel`,
 so the gap was the absence of *enforcement*, not the absence of the concept.
+**Revision 3 (2026-08-29):** M-01 Universal Account has since been built, so section 0's statement
+that `modules/` holds no code is no longer true. Section 13 records that work. Everything else in
+section 0 stands: 46 of 47 business modules are unbuilt, `apps/` and `design-system/` are still
+empty, and the schedule assessment in section 10 is unchanged.
 
 ---
 
@@ -354,7 +358,9 @@ passed. The K-04 finding below is the one item that becomes High the moment an A
 
 1. ~~**K-10 multi-value completion.**~~ **DONE** — migration 0022, section 3.
 2. ~~**K-13 AI authority model.**~~ **DONE** — migration 0023, section 3a.
-3. **M-01 / M-02** — Universal Account and Capability & Verification. Everything above L1 needs them.
+3. ~~**M-01** — Universal Account.~~ **DONE** — migration 0024, `modules/universal-account/`, 32 unit
+   tests and 6 live-PostgreSQL integration tests, section 13. **M-02 Capability & Verification is
+   still outstanding**, and everything above L1 needs it.
 4. **M-04 Universal Listing / Inventory contract** — the replaceability requirement (brief section 10)
    is the single most-cited architectural requirement in the brief and nothing implements it.
 5. **M-11 / M-12 / M-13** — Orders, Payments (with a `PaymentProvider` port and mock adapter),
@@ -441,3 +447,28 @@ baseline run was in progress. Nothing in this document depends on that number.
 
 Test count moved from 1591 to 1630 unit cases. Everything else in section 9's backlog is untouched:
 **0 of 47 business modules exist**, and the conclusion in section 10 is unchanged.
+
+---
+
+## 13. Work completed after the audit — M-01 Universal Account
+
+**Date:** 2026-08-29. Section 0's headline finding — "**No business capability exists.** `modules/`
+contains one README and no code" — is no longer true of `modules/`. It remains true of `apps/` and
+`design-system/`, and 46 of the 47 business modules are still unbuilt.
+
+| # | Item | Evidence |
+|---|---|---|
+| 1 | M-01 domain, service, in-memory repository, PostgreSQL adapter, contract | `modules/universal-account/` |
+| 2 | The first module-owned schema | Migration 0024, `module_universal_account` |
+| 3 | 32 unit tests | `tests/universal-account.test.ts`, `tests/universal-account-repository.test.ts` |
+| 4 | 6 live-PostgreSQL integration tests | `tests/integration/universal-account.integration.ts` |
+| 5 | Defect: an outbox id collided with itself on reactivation | Found by test, fixed; ids derive from the transition |
+| 6 | Defect: a whitespace-only reason passed TypeScript and would have been refused by the migration's `btrim` CHECK | Found by test, fixed |
+| 7 | `tests/migrations.test.ts` asserted no business module owned a schema | Replaced by the property that survives M-01 |
+| 8 | `tests/status-docs.test.ts` counted only kernel units as implemented | Now counts business modules on the same terms |
+
+**What M-01 does not do**, and what section 10's schedule assessment therefore still holds: nothing
+calls it. No API, no UI, no consumer of `capability.activated` or `capability.deactivated`, no
+`suspend` operation, no K-02 authentication and no K-04 authorisation behind activation, and no
+check that the K-03 account it names exists. It is a foundation, on the same terms as every kernel
+component above it.

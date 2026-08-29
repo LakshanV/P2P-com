@@ -23,7 +23,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { KERNEL_COMPONENTS } from '../platform/architecture/manifest.ts';
+import { BUSINESS_MODULES, KERNEL_COMPONENTS } from '../platform/architecture/manifest.ts';
 import { stripNoise } from '../platform/db/migrations.ts';
 import { FeatureFlagService } from '../kernel/feature-flags/index.ts';
 import { PermissionService } from '../kernel/permissions/index.ts';
@@ -31,6 +31,7 @@ import { PolicyService } from '../kernel/policy-engine/index.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KERNEL_DIR = path.join(REPO_ROOT, 'kernel');
+const MODULES_DIR = path.join(REPO_ROOT, 'modules');
 const DOCS_DIR = path.join(REPO_ROOT, 'docs');
 
 const STATUS = readFileSync(path.join(DOCS_DIR, 'CURRENT_IMPLEMENTATION_STATUS.md'), 'utf8');
@@ -43,12 +44,21 @@ const DOCUMENTS = [
 ] as const;
 
 /**
- * Components with a `CONTRACT.md`, which is this repository's marker for "the contract is fixed and
- * the implementation exists". The same rule `tests/kernel-overview.test.ts` derives from.
+ * Units with a `CONTRACT.md`, which is this repository's marker for "the contract is fixed and the
+ * implementation exists". The same rule `tests/kernel-overview.test.ts` derives from.
+ *
+ * Business modules count on exactly the same terms as kernel components. M-01 Universal Account is
+ * the first of them; before it, this list was the kernel and the distinction never came up.
  */
-const implemented = KERNEL_COMPONENTS.filter((component) =>
+const implementedKernel = KERNEL_COMPONENTS.filter((component) =>
   existsSync(path.join(KERNEL_DIR, component.dir, 'CONTRACT.md')),
-);
+).map((component) => ({ ...component, root: 'kernel' }));
+
+const implementedModules = BUSINESS_MODULES.filter((mod) =>
+  existsSync(path.join(MODULES_DIR, mod.dir, 'CONTRACT.md')),
+).map((mod) => ({ ...mod, root: 'modules' }));
+
+const implemented = [...implementedKernel, ...implementedModules];
 
 /** A row of a Markdown table, as trimmed cells. */
 const cellsOf = (line: string): string[] =>
@@ -66,6 +76,24 @@ function kernelRow(id: string): string[] {
   return cellsOf(line);
 }
 
+/**
+ * The contract and implementation cells of a unit's checklist row.
+ *
+ * §B (kernel) and §C (business modules) do not have the same columns — §C carries a Layer between
+ * the name and the contract — so the two status-bearing cells are found by shape rather than by
+ * index. A row that stops carrying two of them is a row this file can no longer judge, and says so.
+ */
+function statusCells(id: string): { readonly contract: string; readonly implementation: string } {
+  const marked = kernelRow(id).filter((cell) => /^`\[.\]`/.test(cell));
+  assert.equal(
+    marked.length,
+    2,
+    `${id}'s checklist row carries ${marked.length} status cells; a unit row has a contract and ` +
+      'an implementation',
+  );
+  return { contract: marked[0] ?? '', implementation: marked[1] ?? '' };
+}
+
 // ---------------------------------------------------------------------------
 // Delivered components are reported as delivered
 // ---------------------------------------------------------------------------
@@ -79,16 +107,14 @@ test('the fixture for these tests is the real kernel, and it holds K-01, K-02 an
 
 test('every implemented component has a COMPLETE contract row and a started implementation', () => {
   for (const component of implemented) {
-    const cells = kernelRow(component.id);
-    const contract = cells[2] ?? '';
-    const implementation = cells[3] ?? '';
+    const { contract, implementation } = statusCells(component.id);
 
     assert.ok(
       contract.startsWith('`[x]`'),
       `${component.id} has a CONTRACT.md on disk but its checklist contract cell says ${contract.slice(0, 24)}`,
     );
     assert.ok(
-      contract.includes(`kernel/${component.dir}/CONTRACT.md`),
+      contract.includes(`${component.root}/${component.dir}/CONTRACT.md`),
       `${component.id}'s checklist row does not link its contract, so a reader cannot reach it`,
     );
     assert.ok(
@@ -99,7 +125,7 @@ test('every implemented component has a COMPLETE contract row and a started impl
     );
     assert.ok(
       !/`\[x\]`/.test(implementation),
-      `${component.id}'s implementation is marked COMPLETE; no kernel component is complete`,
+      `${component.id}'s implementation is marked COMPLETE; no unit in this repository is complete`,
     );
   }
 });
@@ -125,7 +151,7 @@ test('CURRENT_IMPLEMENTATION_STATUS.md reports every implemented component as a 
     assert.ok(line !== undefined, `§4.3 has no row for ${component.id}`);
     assert.ok(
       !/\|\s*Absent\b/.test(line),
-      `§4.3 still calls ${component.id} Absent, but kernel/${component.dir}/CONTRACT.md exists`,
+      `§4.3 still calls ${component.id} Absent, but ${component.root}/${component.dir}/CONTRACT.md exists`,
     );
     assert.match(
       line,
@@ -149,7 +175,7 @@ test('the derived component counts in both documents match the filesystem', () =
   );
   for (const component of implemented) {
     assert.ok(
-      STATUS.includes(`kernel/${component.dir}/CONTRACT.md`),
+      STATUS.includes(`${component.root}/${component.dir}/CONTRACT.md`),
       `§1 does not link ${component.id}'s contract`,
     );
   }
@@ -1164,8 +1190,14 @@ test('the prose inventory in both documents counts the components on disk', () =
     'thirteen',
     'fourteen',
   ];
-  const expected = words[implemented.length];
-  assert.ok(expected !== undefined, `${implemented.length} components is off the end of the scale`);
+  // These sentences count *kernel components* by name, so they are checked against the kernel
+  // subset. M-01 is a business module and does not belong in a "kernel components" total; the
+  // §1 table cells above are what count every implemented unit.
+  const expected = words[implementedKernel.length];
+  assert.ok(
+    expected !== undefined,
+    `${implementedKernel.length} kernel components is off the end of the scale`,
+  );
 
   for (const [name, text] of DOCUMENTS) {
     // Any sentence counting kernel components has to agree with the filesystem.
@@ -1182,7 +1214,7 @@ test('the prose inventory in both documents counts the components on disk', () =
       assert.equal(
         counted,
         expected,
-        `${name} says "${claim[0].trim().slice(0, 70)}" but ${implemented.length} components ` +
+        `${name} says "${claim[0].trim().slice(0, 70)}" but ${implementedKernel.length} components ` +
           `have a CONTRACT.md on disk`,
       );
     }
