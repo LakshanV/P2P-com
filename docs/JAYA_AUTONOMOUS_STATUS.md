@@ -63,7 +63,7 @@ These modules have a contract and a working library foundation. They are **not**
 None.
 
 - Unit tests: 1,662 pass / 0 fail
-- Integration tests: 91 pass / 0 fail / 0 skipped (last completed run)
+- Integration tests: 97 pass / 0 fail / 0 skipped (last completed run, live PostgreSQL 16)
 
 ---
 
