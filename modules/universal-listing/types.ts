@@ -1,10 +1,10 @@
 /**
- * M-04 Universal Listing — slice A domain types.
+ * M-04 Universal Listing — slices A and B domain types.
  *
  * A listing is a stable identity that offers one `CommerceUnit` type. What it offers changes by
  * version, never by edit. Slice A owns the listing lifecycle, the append-only version history, and
- * the media and declarations pinned to each version. It does not own the inventory interface (slice
- * B), the `CommerceUnit` type registry (K-11), or the artefacts another system stores.
+ * the media and declarations pinned to each version. Slice B owns the inventory interface: an
+ * append-only movement log and a derived snapshot that makes the current position cheap to read.
  *
  * Deterministic by construction: the caller supplies every identifier and every instant. Nothing
  * here reads a clock or generates randomness.
@@ -147,6 +147,74 @@ export interface ListingDeclaration {
   readonly idempotencyKey: string;
 }
 
+/**
+ * Kinds of inventory movement. The kind carries the direction; the quantity is always a positive
+ * bigint.
+ */
+export const MOVEMENT_KINDS = [
+  'receive',
+  'adjust-up',
+  'adjust-down',
+  'reserve',
+  'release',
+  'commit',
+] as const;
+export type MovementKind = (typeof MOVEMENT_KINDS)[number];
+
+/**
+ * One append-only inventory movement. A movement is a fact; the current availability is derived from
+ * the sum of every movement for a `(listingId, versionId)` pair.
+ */
+export interface InventoryMovement {
+  /** Caller-supplied opaque identifier for the movement fact. */
+  readonly movementId: string;
+  /** The listing whose stock moved. */
+  readonly listingId: string;
+  /** The version the movement applies to. */
+  readonly versionId: string;
+  /** What kind of movement this is. */
+  readonly kind: MovementKind;
+  /** Always positive; the kind says which way the stock moves. */
+  readonly quantity: bigint;
+  /** Set for reserve, release and commit; null for receive and adjust. */
+  readonly reservationId: string | null;
+  /** Why the movement happened, 1-500 characters with at least one non-whitespace character. */
+  readonly reason: string;
+  /** When the movement happened, as a canonical UTC instant. */
+  readonly occurredAt: string;
+  /** Correlates with the caller request trace. */
+  readonly correlationId: string;
+  /** Stable across retries of one logical request. */
+  readonly idempotencyKey: string;
+}
+
+/**
+ * A derived cache of the movement sum for one `(listingId, versionId)` pair.
+ *
+ * The snapshot is written in the same transaction as the movement that changes it. `available` is
+ * not stored; it is computed on read as `onHand - reserved`.
+ */
+export interface InventorySnapshot {
+  readonly listingId: string;
+  readonly versionId: string;
+  readonly onHand: bigint;
+  readonly reserved: bigint;
+  readonly committed: bigint;
+  readonly updatedAt: string;
+  readonly correlationId: string;
+}
+
+/**
+ * The availability derived from a snapshot. A listing that has never received stock reports all
+ * zeroes.
+ */
+export interface InventoryAvailability {
+  readonly onHand: bigint;
+  readonly reserved: bigint;
+  readonly committed: bigint;
+  readonly available: bigint;
+}
+
 export type UniversalListingErrorCode =
   /** An identifier is not well formed. */
   | 'malformed-identifier'
@@ -178,6 +246,8 @@ export type UniversalListingErrorCode =
   | 'unknown-media-kind'
   /** The declaration kind is not one M-04 recognises. */
   | 'unknown-declaration-kind'
+  /** The inventory movement kind is not one M-04 recognises. */
+  | 'unknown-movement-kind'
   /** The title is malformed. */
   | 'malformed-title'
   /** The description is malformed. */
@@ -194,6 +264,8 @@ export type UniversalListingErrorCode =
   | 'negative-amount'
   /** A quantity is negative. */
   | 'negative-quantity'
+  /** An inventory movement quantity is not a positive integer. */
+  | 'negative-movement'
   /** A listing id already exists with different content on create. */
   | 'listing-already-exists'
   /** The listing id is unknown. */
@@ -205,7 +277,15 @@ export type UniversalListingErrorCode =
   /** The version is not the listing's current one. */
   | 'version-not-current'
   /** The version number conflicts with an existing version. */
-  | 'version-number-conflict';
+  | 'version-number-conflict'
+  /** The requested stock is not available. */
+  | 'insufficient-stock'
+  /** A movement id already exists with different content. */
+  | 'duplicate-movement-id'
+  /** A reservation id is unknown. */
+  | 'reservation-not-found'
+  /** A reservation has already been released or committed. */
+  | 'reservation-not-open';
 
 /** A refusal the caller must act on. */
 export class UniversalListingError extends Error {

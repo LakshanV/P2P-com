@@ -13,10 +13,13 @@ import {
   assertDeclarationKind,
   assertListingStatus,
   assertMediaKind,
+  assertMovementKind,
   assertUniversalListingIdentifier,
 } from './registry.ts';
 import {
   UniversalListingError,
+  type InventoryMovement,
+  type InventorySnapshot,
   type Listing,
   type ListingDeclaration,
   type ListingMedia,
@@ -227,6 +230,125 @@ const LISTING_DECLARATION_FIELDS: readonly string[] = [
   'idempotencyKey',
 ];
 
+export function validateInventoryMovement(
+  candidate: unknown,
+  source: RecordSource,
+): InventoryMovement {
+  try {
+    return checkInventoryMovement(candidate, source);
+  } catch (error) {
+    if (source === 'request' || !(error instanceof UniversalListingError)) throw error;
+    throw new UniversalListingError(error.code, `${error.message}. ${STORED_ROW_NOTE}`);
+  }
+}
+
+const INVENTORY_MOVEMENT_FIELDS: readonly string[] = [
+  'movementId',
+  'listingId',
+  'versionId',
+  'kind',
+  'quantity',
+  'reservationId',
+  'reason',
+  'occurredAt',
+  'correlationId',
+  'idempotencyKey',
+];
+
+function checkInventoryMovement(candidate: unknown, source: RecordSource): InventoryMovement {
+  if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new UniversalListingError(
+      'malformed-record',
+      `an inventory movement must be an object, got ${candidate === null ? 'null' : typeof candidate}`,
+    );
+  }
+
+  for (const key of Object.keys(candidate)) {
+    if (!INVENTORY_MOVEMENT_FIELDS.includes(key)) {
+      throw new UniversalListingError(
+        'malformed-record',
+        `an inventory movement carried the unrecognised field "${key}"; the permitted fields are ` +
+          INVENTORY_MOVEMENT_FIELDS.join(', '),
+      );
+    }
+  }
+
+  const fields = candidate as Record<string, unknown>;
+  const kind = assertMovementKind(fields.kind, 'kind');
+  const reservationId = assertOptionalIdentifier(fields.reservationId, 'reservationId');
+  if (['reserve', 'release', 'commit'].includes(kind) && reservationId === null) {
+    throw new UniversalListingError('malformed-record', `${kind} requires a reservationId`);
+  }
+  if (['receive', 'adjust-up', 'adjust-down'].includes(kind) && reservationId !== null) {
+    throw new UniversalListingError('malformed-record', `${kind} must not carry a reservationId`);
+  }
+
+  return {
+    movementId: assertUniversalListingIdentifier(fields.movementId, 'movementId'),
+    listingId: assertUniversalListingIdentifier(fields.listingId, 'listingId'),
+    versionId: assertUniversalListingIdentifier(fields.versionId, 'versionId'),
+    kind,
+    quantity: assertPositiveQuantity(fields.quantity, 'quantity'),
+    reservationId,
+    reason: assertReason(fields.reason, 'reason'),
+    occurredAt: checkInstant(fields.occurredAt, 'occurredAt', source),
+    correlationId: assertUniversalListingIdentifier(fields.correlationId, 'correlationId'),
+    idempotencyKey: assertUniversalListingIdentifier(fields.idempotencyKey, 'idempotencyKey'),
+  };
+}
+
+export function validateInventorySnapshot(
+  candidate: unknown,
+  source: RecordSource,
+): InventorySnapshot {
+  try {
+    return checkInventorySnapshot(candidate, source);
+  } catch (error) {
+    if (source === 'request' || !(error instanceof UniversalListingError)) throw error;
+    throw new UniversalListingError(error.code, `${error.message}. ${STORED_ROW_NOTE}`);
+  }
+}
+
+const INVENTORY_SNAPSHOT_FIELDS: readonly string[] = [
+  'listingId',
+  'versionId',
+  'onHand',
+  'reserved',
+  'committed',
+  'updatedAt',
+  'correlationId',
+];
+
+function checkInventorySnapshot(candidate: unknown, source: RecordSource): InventorySnapshot {
+  if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new UniversalListingError(
+      'malformed-record',
+      `an inventory snapshot must be an object, got ${candidate === null ? 'null' : typeof candidate}`,
+    );
+  }
+
+  for (const key of Object.keys(candidate)) {
+    if (!INVENTORY_SNAPSHOT_FIELDS.includes(key)) {
+      throw new UniversalListingError(
+        'malformed-record',
+        `an inventory snapshot carried the unrecognised field "${key}"; the permitted fields are ` +
+          INVENTORY_SNAPSHOT_FIELDS.join(', '),
+      );
+    }
+  }
+
+  const fields = candidate as Record<string, unknown>;
+  return {
+    listingId: assertUniversalListingIdentifier(fields.listingId, 'listingId'),
+    versionId: assertUniversalListingIdentifier(fields.versionId, 'versionId'),
+    onHand: assertNonNegativeQuantity(fields.onHand, 'onHand'),
+    reserved: assertNonNegativeQuantity(fields.reserved, 'reserved'),
+    committed: assertNonNegativeQuantity(fields.committed, 'committed'),
+    updatedAt: checkInstant(fields.updatedAt, 'updatedAt', source),
+    correlationId: assertUniversalListingIdentifier(fields.correlationId, 'correlationId'),
+  };
+}
+
 function checkListingDeclaration(candidate: unknown, source: RecordSource): ListingDeclaration {
   if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
     throw new UniversalListingError(
@@ -376,6 +498,26 @@ function assertNonNegativeQuantity(value: unknown, field: string): bigint {
   );
 }
 
+function assertPositiveQuantity(value: unknown, field: string): bigint {
+  const parsed = assertNonNegativeQuantity(value, field);
+  if (parsed === 0n) {
+    throw new UniversalListingError(
+      'negative-movement',
+      `${field} is 0; a movement quantity must be positive`,
+    );
+  }
+  return parsed;
+}
+
+function assertReason(value: unknown, field: string): string {
+  return assertBoundedText(value, field, 'malformed-record', 1, 500);
+}
+
+function assertOptionalIdentifier(value: unknown, field: string): string | null {
+  if (value === null || value === undefined) return null;
+  return assertUniversalListingIdentifier(value, field);
+}
+
 function assertCurrency(value: unknown, field: string): string {
   if (typeof value !== 'string') {
     throw new UniversalListingError(
@@ -411,7 +553,12 @@ function assertStatement(value: unknown, field: string): string {
 function assertBoundedText(
   value: unknown,
   field: string,
-  code: 'malformed-title' | 'malformed-description' | 'malformed-caption' | 'malformed-statement',
+  code:
+    | 'malformed-title'
+    | 'malformed-description'
+    | 'malformed-caption'
+    | 'malformed-statement'
+    | 'malformed-record',
   min: number,
   max: number,
 ): string {

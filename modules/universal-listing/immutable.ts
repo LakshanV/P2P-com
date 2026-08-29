@@ -1,15 +1,22 @@
 /**
- * M-04 Universal Listing — slice A immutability boundary.
+ * M-04 Universal Listing — slices A and B immutability boundary.
  *
  * Every record that crosses a service or repository boundary is deep-frozen and cloned, so a caller
- * cannot edit what was stored. Listing versions, media and declarations are append-only; the listing
- * row itself is updated only through the service's lifecycle operations. The only defence against
- * silent mutation at the boundary is to make mutation throw.
+ * cannot edit what was stored. Listing versions, media, declarations and inventory movements are
+ * append-only; the listing row and the inventory snapshot are updated only through the service's
+ * operations. The only defence against silent mutation at the boundary is to make mutation throw.
  *
  * Owned by: M-04 Universal Listing.
  */
 
-import type { Listing, ListingDeclaration, ListingMedia, ListingVersion } from './types.ts';
+import type {
+  InventoryMovement,
+  InventorySnapshot,
+  Listing,
+  ListingDeclaration,
+  ListingMedia,
+  ListingVersion,
+} from './types.ts';
 
 function sealRecord(value: unknown): unknown {
   if (value === null || typeof value !== 'object') return value;
@@ -98,4 +105,31 @@ export function isListingMediaSealed(media: ListingMedia): boolean {
 /** Is this declaration sealed? */
 export function isListingDeclarationSealed(declaration: ListingDeclaration): boolean {
   return Object.isFrozen(declaration);
+}
+
+/** A deep, frozen copy of an inventory movement. */
+export function sealInventoryMovement(movement: InventoryMovement): InventoryMovement {
+  return Object.freeze({ ...movement });
+}
+
+/** Frozen copies of a list of inventory movements. */
+export function sealInventoryMovements(
+  movements: readonly InventoryMovement[],
+): readonly InventoryMovement[] {
+  return Object.freeze(movements.map(sealInventoryMovement));
+}
+
+/** A deep, frozen copy of an inventory snapshot. */
+export function sealInventorySnapshot(snapshot: InventorySnapshot): InventorySnapshot {
+  return Object.freeze({ ...snapshot });
+}
+
+/** Is this inventory movement sealed? */
+export function isInventoryMovementSealed(movement: InventoryMovement): boolean {
+  return Object.isFrozen(movement);
+}
+
+/** Is this inventory snapshot sealed? */
+export function isInventorySnapshotSealed(snapshot: InventorySnapshot): boolean {
+  return Object.isFrozen(snapshot);
 }

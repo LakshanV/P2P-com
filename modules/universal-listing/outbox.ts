@@ -1,9 +1,9 @@
 /**
- * M-04 Universal Listing — slice A outbox event and audit definitions.
+ * M-04 Universal Listing — slices A and B outbox event and audit definitions.
  *
  * These definitions describe the facts M-04 publishes when a listing is created, a version is
- * published, or a listing is suspended or withdrawn. They are declared separately from the service
- * so a relay can register them without importing M-04 internals.
+ * published, a listing is suspended or withdrawn, or inventory moves. They are declared separately
+ * from the service so a relay can register them without importing M-04 internals.
  *
  * Owned by: M-04 Universal Listing.
  */
@@ -16,7 +16,7 @@ import type {
   PayloadField,
 } from '../../kernel/event-infrastructure/registry.ts';
 
-import type { Listing, ListingVersion } from './types.ts';
+import type { InventoryMovement, Listing, ListingVersion } from './types.ts';
 
 export const LISTING_CREATED_EVENT: EventTypeDefinition = {
   type: 'listing.created',
@@ -364,6 +364,175 @@ export const LISTING_WITHDRAWN_ACTION: AuditActionDefinition = {
       description: 'The idempotency key supplied when withdrawing the listing.',
     },
   ],
+};
+
+const INVENTORY_EVENT_FIELDS = [
+  {
+    name: 'listing_id',
+    kind: 'string',
+    required: true,
+    description: 'The listing identifier.',
+  },
+  {
+    name: 'version_id',
+    kind: 'string',
+    required: true,
+    description: 'The version identifier.',
+  },
+  {
+    name: 'quantity',
+    kind: 'string',
+    required: true,
+    description: 'How many units moved, as a string.',
+  },
+  {
+    name: 'reservation_id',
+    kind: 'string',
+    required: false,
+    description: 'The reservation identifier, when the movement carries one.',
+  },
+  {
+    name: 'occurred_at',
+    kind: 'string',
+    required: true,
+    description: 'ISO-8601 instant when the movement happened.',
+  },
+  {
+    name: 'idempotency_key',
+    kind: 'string',
+    required: true,
+    description: 'The idempotency key supplied when recording the movement.',
+  },
+] satisfies PayloadField[];
+
+const INVENTORY_AUDIT_FIELDS = [
+  {
+    name: 'listing_id',
+    kind: 'string',
+    required: true,
+    classification: 'internal',
+    description: 'The listing identifier.',
+  },
+  {
+    name: 'version_id',
+    kind: 'string',
+    required: true,
+    classification: 'internal',
+    description: 'The version identifier.',
+  },
+  {
+    name: 'quantity',
+    kind: 'string',
+    required: true,
+    classification: 'internal',
+    description: 'How many units moved, as a string.',
+  },
+  {
+    name: 'reservation_id',
+    kind: 'string',
+    required: false,
+    classification: 'internal',
+    description: 'The reservation identifier, when the movement carries one.',
+  },
+  {
+    name: 'occurred_at',
+    kind: 'string',
+    required: true,
+    classification: 'internal',
+    description: 'ISO-8601 instant when the movement happened.',
+  },
+  {
+    name: 'idempotency_key',
+    kind: 'string',
+    required: true,
+    classification: 'internal',
+    description: 'The idempotency key supplied when recording the movement.',
+  },
+] as const;
+
+export const INVENTORY_RECEIVED_EVENT: EventTypeDefinition = {
+  type: 'inventory.received',
+  schemaVersion: 1,
+  owner: 'M-04',
+  description: 'Stock was received into a listing version.',
+  payloadFields: INVENTORY_EVENT_FIELDS,
+};
+
+export const INVENTORY_ADJUSTED_EVENT: EventTypeDefinition = {
+  type: 'inventory.adjusted',
+  schemaVersion: 1,
+  owner: 'M-04',
+  description: 'Inventory was adjusted up or down.',
+  payloadFields: INVENTORY_EVENT_FIELDS,
+};
+
+export const INVENTORY_RESERVED_EVENT: EventTypeDefinition = {
+  type: 'inventory.reserved',
+  schemaVersion: 1,
+  owner: 'M-04',
+  description: 'Stock was reserved for a caller.',
+  payloadFields: INVENTORY_EVENT_FIELDS,
+};
+
+export const INVENTORY_RELEASED_EVENT: EventTypeDefinition = {
+  type: 'inventory.released',
+  schemaVersion: 1,
+  owner: 'M-04',
+  description: 'A reservation was released.',
+  payloadFields: INVENTORY_EVENT_FIELDS,
+};
+
+export const INVENTORY_COMMITTED_EVENT: EventTypeDefinition = {
+  type: 'inventory.committed',
+  schemaVersion: 1,
+  owner: 'M-04',
+  description: 'A reservation was committed to a sale.',
+  payloadFields: INVENTORY_EVENT_FIELDS,
+};
+
+export const INVENTORY_RECEIVED_ACTION: AuditActionDefinition = {
+  action: 'inventory.received',
+  owner: 'M-04',
+  authority: 'business-authoritative',
+  description: 'Stock was received into a listing version.',
+  resourceTypes: ['inventory'],
+  evidenceFields: [...INVENTORY_AUDIT_FIELDS],
+};
+
+export const INVENTORY_ADJUSTED_ACTION: AuditActionDefinition = {
+  action: 'inventory.adjusted',
+  owner: 'M-04',
+  authority: 'business-authoritative',
+  description: 'Inventory was adjusted up or down.',
+  resourceTypes: ['inventory'],
+  evidenceFields: [...INVENTORY_AUDIT_FIELDS],
+};
+
+export const INVENTORY_RESERVED_ACTION: AuditActionDefinition = {
+  action: 'inventory.reserved',
+  owner: 'M-04',
+  authority: 'business-authoritative',
+  description: 'Stock was reserved for a caller.',
+  resourceTypes: ['inventory'],
+  evidenceFields: [...INVENTORY_AUDIT_FIELDS],
+};
+
+export const INVENTORY_RELEASED_ACTION: AuditActionDefinition = {
+  action: 'inventory.released',
+  owner: 'M-04',
+  authority: 'business-authoritative',
+  description: 'A reservation was released.',
+  resourceTypes: ['inventory'],
+  evidenceFields: [...INVENTORY_AUDIT_FIELDS],
+};
+
+export const INVENTORY_COMMITTED_ACTION: AuditActionDefinition = {
+  action: 'inventory.committed',
+  owner: 'M-04',
+  authority: 'business-authoritative',
+  description: 'A reservation was committed to a sale.',
+  resourceTypes: ['inventory'],
+  evidenceFields: [...INVENTORY_AUDIT_FIELDS],
 };
 
 /**
@@ -728,4 +897,273 @@ export function makeListingWithdrawnAction(
     correlationId,
     causationId,
   });
+}
+
+function inventoryEventId(movement: InventoryMovement): string {
+  return `${movement.movementId}:${movement.kind}`;
+}
+
+function inventoryPayload(movement: InventoryMovement): Record<string, string | undefined> {
+  return {
+    listing_id: movement.listingId,
+    version_id: movement.versionId,
+    quantity: String(movement.quantity),
+    reservation_id: movement.reservationId ?? undefined,
+    occurred_at: movement.occurredAt,
+    idempotency_key: movement.idempotencyKey,
+  };
+}
+
+/** The event reporting that inventory was received. */
+export function makeInventoryReceivedEvent(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  const eventId = inventoryEventId(movement);
+  const recordedAt = movement.occurredAt;
+
+  return eventOutboxEntry({
+    outboxId: `M-04:${eventId}`,
+    idempotencyKey: `M-04:${eventId}`,
+    payload: {
+      eventId,
+      type: INVENTORY_RECEIVED_EVENT.type,
+      schemaVersion: INVENTORY_RECEIVED_EVENT.schemaVersion,
+      occurredAt: recordedAt,
+      recordedAt,
+      producer: 'M-04',
+      correlationId,
+      causationId,
+      origin: 'system',
+      actor: { kind: 'system', id: 'M-04' },
+      idempotencyKey: `M-04:${eventId}`,
+      now: recordedAt,
+      payload: inventoryPayload(movement),
+    },
+    occurredAt: recordedAt,
+    recordedAt,
+    producer: 'M-04',
+    correlationId,
+    causationId,
+  });
+}
+
+/** The event reporting that inventory was adjusted. */
+export function makeInventoryAdjustedEvent(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  const eventId = inventoryEventId(movement);
+  const recordedAt = movement.occurredAt;
+
+  return eventOutboxEntry({
+    outboxId: `M-04:${eventId}`,
+    idempotencyKey: `M-04:${eventId}`,
+    payload: {
+      eventId,
+      type: INVENTORY_ADJUSTED_EVENT.type,
+      schemaVersion: INVENTORY_ADJUSTED_EVENT.schemaVersion,
+      occurredAt: recordedAt,
+      recordedAt,
+      producer: 'M-04',
+      correlationId,
+      causationId,
+      origin: 'system',
+      actor: { kind: 'system', id: 'M-04' },
+      idempotencyKey: `M-04:${eventId}`,
+      now: recordedAt,
+      payload: inventoryPayload(movement),
+    },
+    occurredAt: recordedAt,
+    recordedAt,
+    producer: 'M-04',
+    correlationId,
+    causationId,
+  });
+}
+
+/** The event reporting that inventory was reserved. */
+export function makeInventoryReservedEvent(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  const eventId = inventoryEventId(movement);
+  const recordedAt = movement.occurredAt;
+
+  return eventOutboxEntry({
+    outboxId: `M-04:${eventId}`,
+    idempotencyKey: `M-04:${eventId}`,
+    payload: {
+      eventId,
+      type: INVENTORY_RESERVED_EVENT.type,
+      schemaVersion: INVENTORY_RESERVED_EVENT.schemaVersion,
+      occurredAt: recordedAt,
+      recordedAt,
+      producer: 'M-04',
+      correlationId,
+      causationId,
+      origin: 'system',
+      actor: { kind: 'system', id: 'M-04' },
+      idempotencyKey: `M-04:${eventId}`,
+      now: recordedAt,
+      payload: inventoryPayload(movement),
+    },
+    occurredAt: recordedAt,
+    recordedAt,
+    producer: 'M-04',
+    correlationId,
+    causationId,
+  });
+}
+
+/** The event reporting that a reservation was released. */
+export function makeInventoryReleasedEvent(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  const eventId = inventoryEventId(movement);
+  const recordedAt = movement.occurredAt;
+
+  return eventOutboxEntry({
+    outboxId: `M-04:${eventId}`,
+    idempotencyKey: `M-04:${eventId}`,
+    payload: {
+      eventId,
+      type: INVENTORY_RELEASED_EVENT.type,
+      schemaVersion: INVENTORY_RELEASED_EVENT.schemaVersion,
+      occurredAt: recordedAt,
+      recordedAt,
+      producer: 'M-04',
+      correlationId,
+      causationId,
+      origin: 'system',
+      actor: { kind: 'system', id: 'M-04' },
+      idempotencyKey: `M-04:${eventId}`,
+      now: recordedAt,
+      payload: inventoryPayload(movement),
+    },
+    occurredAt: recordedAt,
+    recordedAt,
+    producer: 'M-04',
+    correlationId,
+    causationId,
+  });
+}
+
+/** The event reporting that a reservation was committed to a sale. */
+export function makeInventoryCommittedEvent(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  const eventId = inventoryEventId(movement);
+  const recordedAt = movement.occurredAt;
+
+  return eventOutboxEntry({
+    outboxId: `M-04:${eventId}`,
+    idempotencyKey: `M-04:${eventId}`,
+    payload: {
+      eventId,
+      type: INVENTORY_COMMITTED_EVENT.type,
+      schemaVersion: INVENTORY_COMMITTED_EVENT.schemaVersion,
+      occurredAt: recordedAt,
+      recordedAt,
+      producer: 'M-04',
+      correlationId,
+      causationId,
+      origin: 'system',
+      actor: { kind: 'system', id: 'M-04' },
+      idempotencyKey: `M-04:${eventId}`,
+      now: recordedAt,
+      payload: inventoryPayload(movement),
+    },
+    occurredAt: recordedAt,
+    recordedAt,
+    producer: 'M-04',
+    correlationId,
+    causationId,
+  });
+}
+
+/** The audit record for one inventory movement. */
+function makeInventoryAction(
+  movement: InventoryMovement,
+  definition: AuditActionDefinition,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  const recordId = inventoryEventId(movement);
+  const outboxId = `M-04:audit:${recordId}`;
+  const recordedAt = movement.occurredAt;
+
+  return auditOutboxEntry({
+    outboxId,
+    idempotencyKey: outboxId,
+    payload: {
+      recordId,
+      action: definition.action,
+      recordedAt,
+      actor: { kind: 'system', id: 'M-04', authentication: 'unauthenticated', sessionId: null },
+      resource: { owner: 'M-04', type: 'inventory', id: movement.listingId },
+      outcome: 'succeeded',
+      reason: `inventory ${movement.kind} of ${String(movement.quantity)} for listing ${movement.listingId}`,
+      correlationId,
+      causationId,
+      idempotencyKey: outboxId,
+      evidence: inventoryPayload(movement),
+    },
+    recordedAt,
+    producer: 'M-04',
+    correlationId,
+    causationId,
+  });
+}
+
+/** The audit record for one receive movement. */
+export function makeInventoryReceivedAction(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  return makeInventoryAction(movement, INVENTORY_RECEIVED_ACTION, correlationId, causationId);
+}
+
+/** The audit record for one adjust movement. */
+export function makeInventoryAdjustedAction(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  return makeInventoryAction(movement, INVENTORY_ADJUSTED_ACTION, correlationId, causationId);
+}
+
+/** The audit record for one reserve movement. */
+export function makeInventoryReservedAction(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  return makeInventoryAction(movement, INVENTORY_RESERVED_ACTION, correlationId, causationId);
+}
+
+/** The audit record for one release movement. */
+export function makeInventoryReleasedAction(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  return makeInventoryAction(movement, INVENTORY_RELEASED_ACTION, correlationId, causationId);
+}
+
+/** The audit record for one commit movement. */
+export function makeInventoryCommittedAction(
+  movement: InventoryMovement,
+  correlationId: string,
+  causationId: string | null,
+): OutboxEntry {
+  return makeInventoryAction(movement, INVENTORY_COMMITTED_ACTION, correlationId, causationId);
 }

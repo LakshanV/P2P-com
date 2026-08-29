@@ -17,10 +17,12 @@ import {
   DECLARATION_KINDS,
   LISTING_STATUSES,
   MEDIA_KINDS,
+  MOVEMENT_KINDS,
   UniversalListingError,
   type DeclarationKind,
   type ListingStatus,
   type MediaKind,
+  type MovementKind,
   type UniversalListingErrorCode,
 } from './types.ts';
 
@@ -28,6 +30,7 @@ export type {
   DeclarationKind,
   ListingStatus,
   MediaKind,
+  MovementKind,
   UniversalListingErrorCode,
 } from './types.ts';
 
@@ -97,6 +100,19 @@ export function assertDeclarationKind(value: unknown, field: string): Declaratio
     );
   }
   return value as DeclarationKind;
+}
+
+/**
+ * Refuse an inventory movement kind that is not one M-04 recognises.
+ */
+export function assertMovementKind(value: unknown, field: string): MovementKind {
+  if (typeof value !== 'string' || !(MOVEMENT_KINDS as readonly string[]).includes(value)) {
+    throw new UniversalListingError(
+      'unknown-movement-kind',
+      `${field} is "${String(value)}"; expected one of ${MOVEMENT_KINDS.join(', ')}`,
+    );
+  }
+  return value as MovementKind;
 }
 
 /**

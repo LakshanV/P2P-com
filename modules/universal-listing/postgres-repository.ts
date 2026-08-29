@@ -19,6 +19,8 @@ import type { Database, DatabaseClient } from '../../platform/db/client.ts';
 import type { OutboxEntry } from '../../platform/outbox/types.ts';
 
 import {
+  sealInventoryMovement,
+  sealInventorySnapshot,
   sealListing,
   sealListingDeclaration,
   sealListingMedia,
@@ -28,12 +30,16 @@ import type { UniversalListingRepository, UniversalListingTransaction } from './
 import {
   UniversalListingError,
   type UniversalListingErrorCode,
+  type InventoryMovement,
+  type InventorySnapshot,
   type Listing,
   type ListingDeclaration,
   type ListingMedia,
   type ListingVersion,
 } from './types.ts';
 import {
+  validateInventoryMovement,
+  validateInventorySnapshot,
   validateListing,
   validateListingDeclaration,
   validateListingMedia,
@@ -45,6 +51,8 @@ export const LISTING_TABLE = `${UNIVERSAL_LISTING_SCHEMA}.listing`;
 export const LISTING_VERSION_TABLE = `${UNIVERSAL_LISTING_SCHEMA}.listing_version`;
 export const LISTING_MEDIA_TABLE = `${UNIVERSAL_LISTING_SCHEMA}.listing_media`;
 export const LISTING_DECLARATION_TABLE = `${UNIVERSAL_LISTING_SCHEMA}.listing_declaration`;
+export const INVENTORY_MOVEMENT_TABLE = `${UNIVERSAL_LISTING_SCHEMA}.inventory_movement`;
+export const INVENTORY_SNAPSHOT_TABLE = `${UNIVERSAL_LISTING_SCHEMA}.inventory_snapshot`;
 export const OUTBOX_TABLE = `${UNIVERSAL_LISTING_SCHEMA}.outbox`;
 
 /** SQLSTATE 23505. The only driver code this adapter interprets. */
@@ -92,6 +100,34 @@ const CONSTRAINT_MEANINGS: Readonly<
   listing_declaration_idempotency_unique: {
     code: 'idempotency-key-reuse',
     explanation: 'this idempotency key has already been used for a declaration',
+  },
+  inventory_movement_pkey: {
+    code: 'duplicate-movement-id',
+    explanation: 'a movement with this id already exists, and a movement is never rewritten',
+  },
+  inventory_movement_idempotency_unique: {
+    code: 'idempotency-key-reuse',
+    explanation: 'this idempotency key has already been used for a movement',
+  },
+  inventory_snapshot_pkey: {
+    code: 'idempotency-key-reuse',
+    explanation: 'this snapshot id already exists',
+  },
+  inventory_snapshot_on_hand_non_negative: {
+    code: 'insufficient-stock',
+    explanation: 'the movement would take onHand negative',
+  },
+  inventory_snapshot_reserved_non_negative: {
+    code: 'insufficient-stock',
+    explanation: 'the movement would take reserved negative',
+  },
+  inventory_snapshot_committed_non_negative: {
+    code: 'insufficient-stock',
+    explanation: 'the movement would take committed negative',
+  },
+  inventory_snapshot_reserved_lte_on_hand: {
+    code: 'insufficient-stock',
+    explanation: 'the movement would reserve more than is on hand',
   },
   outbox_pkey: {
     code: 'idempotency-key-reuse',
@@ -175,6 +211,29 @@ const LISTING_DECLARATION_COLUMNS = [
   'idempotency_key',
 ] as const;
 
+const INVENTORY_MOVEMENT_COLUMNS = [
+  'movement_id',
+  'listing_id',
+  'version_id',
+  'kind',
+  'quantity',
+  'reservation_id',
+  'reason',
+  'occurred_at',
+  'correlation_id',
+  'idempotency_key',
+] as const;
+
+const INVENTORY_SNAPSHOT_COLUMNS = [
+  'listing_id',
+  'version_id',
+  'on_hand',
+  'reserved',
+  'committed',
+  'updated_at',
+  'correlation_id',
+] as const;
+
 function utcText(column: string): string {
   return `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS ${column}`;
 }
@@ -230,6 +289,29 @@ const LISTING_DECLARATION_PROJECTION = [
   utcText('declared_at'),
   'correlation_id',
   'idempotency_key',
+].join(', ');
+
+const INVENTORY_MOVEMENT_PROJECTION = [
+  'movement_id',
+  'listing_id',
+  'version_id',
+  'kind',
+  'quantity',
+  'reservation_id',
+  'reason',
+  utcText('occurred_at'),
+  'correlation_id',
+  'idempotency_key',
+].join(', ');
+
+const INVENTORY_SNAPSHOT_PROJECTION = [
+  'listing_id',
+  'version_id',
+  'on_hand',
+  'reserved',
+  'committed',
+  utcText('updated_at'),
+  'correlation_id',
 ].join(', ');
 
 const OUTBOX_COLUMN_NAMES = [
@@ -358,6 +440,69 @@ export function toListingDeclaration(row: Record<string, unknown>): ListingDecla
   );
 }
 
+function bigintValue(value: unknown, column: string): bigint {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'string') {
+    if (!/^-?\d+$/.test(value)) {
+      throw new UniversalListingError(
+        'malformed-record',
+        `${column} "${value}" is not an integer string`,
+      );
+    }
+    return BigInt(value);
+  }
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) {
+      throw new UniversalListingError(
+        'malformed-record',
+        `${column} is ${value}; expected a safe integer`,
+      );
+    }
+    return BigInt(value);
+  }
+  throw new UniversalListingError(
+    'malformed-record',
+    `${column} is ${value === null ? 'null' : typeof value}; expected an integer`,
+  );
+}
+
+export function toInventoryMovement(row: Record<string, unknown>): InventoryMovement {
+  return sealInventoryMovement(
+    validateInventoryMovement(
+      {
+        movementId: text(row.movement_id, 'movement_id'),
+        listingId: text(row.listing_id, 'listing_id'),
+        versionId: text(row.version_id, 'version_id'),
+        kind: text(row.kind, 'kind'),
+        quantity: bigintValue(row.quantity, 'quantity'),
+        reservationId: optionalText(row.reservation_id, 'reservation_id'),
+        reason: text(row.reason, 'reason'),
+        occurredAt: text(row.occurred_at, 'occurred_at'),
+        correlationId: text(row.correlation_id, 'correlation_id'),
+        idempotencyKey: text(row.idempotency_key, 'idempotency_key'),
+      },
+      'stored row',
+    ),
+  );
+}
+
+export function toInventorySnapshot(row: Record<string, unknown>): InventorySnapshot {
+  return sealInventorySnapshot(
+    validateInventorySnapshot(
+      {
+        listingId: text(row.listing_id, 'listing_id'),
+        versionId: text(row.version_id, 'version_id'),
+        onHand: bigintValue(row.on_hand, 'on_hand'),
+        reserved: bigintValue(row.reserved, 'reserved'),
+        committed: bigintValue(row.committed, 'committed'),
+        updatedAt: text(row.updated_at, 'updated_at'),
+        correlationId: text(row.correlation_id, 'correlation_id'),
+      },
+      'stored row',
+    ),
+  );
+}
+
 const TRANSACTION_CONTROL =
   /^\s*(BEGIN|START\s+TRANSACTION|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE\s+SAVEPOINT)\b/i;
 
@@ -429,6 +574,7 @@ export const TIMESTAMP_COLUMNS = [
   'withdrawn_at',
   'added_at',
   'declared_at',
+  'occurred_at',
 ] as const;
 
 class PostgresUniversalListingTransaction implements UniversalListingTransaction {
@@ -703,5 +849,148 @@ class PostgresUniversalListingTransaction implements UniversalListingTransaction
     } catch (error) {
       throw normalizeDatabaseError(error, 'insertDeclaration');
     }
+  }
+
+  async findInventoryMovementById(movementId: string): Promise<InventoryMovement | null> {
+    const result = await this.#client.query<Record<string, unknown>>(
+      `SELECT ${INVENTORY_MOVEMENT_PROJECTION} FROM ${INVENTORY_MOVEMENT_TABLE} WHERE movement_id = $1;`,
+      [movementId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : toInventoryMovement(row);
+  }
+
+  async findInventoryMovementByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<InventoryMovement | null> {
+    const result = await this.#client.query<Record<string, unknown>>(
+      `SELECT ${INVENTORY_MOVEMENT_PROJECTION} FROM ${INVENTORY_MOVEMENT_TABLE} WHERE idempotency_key = $1;`,
+      [idempotencyKey],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : toInventoryMovement(row);
+  }
+
+  async findInventoryMovements(
+    listingId: string,
+    versionId: string,
+  ): Promise<readonly InventoryMovement[]> {
+    const result = await this.#client.query<Record<string, unknown>>(
+      `SELECT ${INVENTORY_MOVEMENT_PROJECTION} FROM ${INVENTORY_MOVEMENT_TABLE}
+       WHERE listing_id = $1 AND version_id = $2
+       ORDER BY occurred_at ASC, movement_id ASC;`,
+      [listingId, versionId],
+    );
+    return Object.freeze(result.rows.map(toInventoryMovement));
+  }
+
+  async insertInventoryMovement(movement: InventoryMovement): Promise<void> {
+    try {
+      await this.#client.query(
+        `INSERT INTO ${INVENTORY_MOVEMENT_TABLE} (${INVENTORY_MOVEMENT_COLUMNS.join(', ')})
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);`,
+        [
+          movement.movementId,
+          movement.listingId,
+          movement.versionId,
+          movement.kind,
+          movement.quantity,
+          movement.reservationId,
+          movement.reason,
+          movement.occurredAt,
+          movement.correlationId,
+          movement.idempotencyKey,
+        ],
+      );
+
+      const deltaOnHand =
+        movement.kind === 'receive' || movement.kind === 'adjust-up'
+          ? movement.quantity
+          : movement.kind === 'adjust-down' || movement.kind === 'commit'
+            ? -movement.quantity
+            : 0n;
+      const deltaReserved =
+        movement.kind === 'reserve'
+          ? movement.quantity
+          : movement.kind === 'release' || movement.kind === 'commit'
+            ? -movement.quantity
+            : 0n;
+      const deltaCommitted = movement.kind === 'commit' ? movement.quantity : 0n;
+
+      // The proposed row must itself satisfy the table's CHECK constraints, because PostgreSQL
+      // evaluates them on the tuple built from VALUES *before* it resolves the conflict and reaches
+      // DO UPDATE. So a delta-based upsert — `VALUES (0, 30, 0) ON CONFLICT DO UPDATE SET reserved
+      // = reserved + 30` — cannot work here: the proposed row claims 30 reserved against 0 on hand,
+      // and `reserved <= on_hand` refuses it before the update branch is ever considered. The whole
+      // point of that constraint is that it refuses exactly this shape, so the statement is what has
+      // to change.
+      //
+      // The deltas are therefore resolved to an **absolute** position in the SELECT, against the row
+      // already there, and DO UPDATE simply takes it. One statement, one snapshot read, and a
+      // proposed row that is valid whether it is inserted or merged.
+      await this.#client.query(
+        `INSERT INTO ${INVENTORY_SNAPSHOT_TABLE} (${INVENTORY_SNAPSHOT_COLUMNS.join(', ')})
+         SELECT $1, $2,
+                COALESCE(existing.on_hand, 0) + $3,
+                COALESCE(existing.reserved, 0) + $4,
+                COALESCE(existing.committed, 0) + $5,
+                $6, $7
+           FROM (SELECT 1) AS anchor
+           LEFT JOIN ${INVENTORY_SNAPSHOT_TABLE} AS existing
+             ON existing.listing_id = $1 AND existing.version_id = $2
+         ON CONFLICT (listing_id, version_id) DO UPDATE SET
+           on_hand = EXCLUDED.on_hand,
+           reserved = EXCLUDED.reserved,
+           committed = EXCLUDED.committed,
+           updated_at = EXCLUDED.updated_at,
+           correlation_id = EXCLUDED.correlation_id;`,
+        [
+          movement.listingId,
+          movement.versionId,
+          deltaOnHand,
+          deltaReserved,
+          deltaCommitted,
+          movement.occurredAt,
+          movement.correlationId,
+        ],
+      );
+    } catch (error) {
+      throw normalizeDatabaseError(error, 'insertInventoryMovement');
+    }
+  }
+
+  async findInventorySnapshot(
+    listingId: string,
+    versionId: string,
+  ): Promise<InventorySnapshot | null> {
+    const result = await this.#client.query<Record<string, unknown>>(
+      `SELECT ${INVENTORY_SNAPSHOT_PROJECTION} FROM ${INVENTORY_SNAPSHOT_TABLE}
+       WHERE listing_id = $1 AND version_id = $2;`,
+      [listingId, versionId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : toInventorySnapshot(row);
+  }
+
+  async upsertInventorySnapshot(snapshot: InventorySnapshot): Promise<void> {
+    await this.#client.query(
+      `INSERT INTO ${INVENTORY_SNAPSHOT_TABLE} (${INVENTORY_SNAPSHOT_COLUMNS.join(', ')})
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (listing_id, version_id) DO UPDATE SET
+         on_hand = $3,
+         reserved = $4,
+         committed = $5,
+         updated_at = $6,
+         correlation_id = $7;`,
+      [
+        snapshot.listingId,
+        snapshot.versionId,
+        snapshot.onHand,
+        snapshot.reserved,
+        snapshot.committed,
+        snapshot.updatedAt,
+        snapshot.correlationId,
+      ],
+    );
   }
 }

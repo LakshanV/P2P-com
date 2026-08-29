@@ -14,6 +14,16 @@
 import { InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
 
 import {
+  makeInventoryAdjustedAction,
+  makeInventoryAdjustedEvent,
+  makeInventoryCommittedAction,
+  makeInventoryCommittedEvent,
+  makeInventoryReceivedAction,
+  makeInventoryReceivedEvent,
+  makeInventoryReleasedAction,
+  makeInventoryReleasedEvent,
+  makeInventoryReservedAction,
+  makeInventoryReservedEvent,
   makeListingCreatedAction,
   makeListingCreatedEvent,
   makeListingPublishedAction,
@@ -26,6 +36,7 @@ import {
 import { FOREIGN_FIELDS, assertUniversalListingIdentifier } from './registry.ts';
 import type { UniversalListingRepository, UniversalListingTransaction } from './repository.ts';
 import {
+  sealInventoryMovement,
   sealListing,
   sealListingDeclaration,
   sealListingDeclarations,
@@ -36,6 +47,7 @@ import {
   sealListings,
 } from './immutable.ts';
 import {
+  validateInventoryMovement,
   validateListing,
   validateListingDeclaration,
   validateListingMedia,
@@ -43,6 +55,9 @@ import {
 } from './validate.ts';
 import {
   UniversalListingError,
+  type InventoryAvailability,
+  type InventoryMovement,
+  type InventorySnapshot,
   type Listing,
   type ListingDeclaration,
   type ListingMedia,
@@ -150,6 +165,95 @@ export interface WithdrawListingResult {
   readonly replayed: boolean;
 }
 
+export interface ReceiveInventoryRequest {
+  readonly movementId: string;
+  readonly listingId: string;
+  readonly versionId: string;
+  readonly quantity: bigint;
+  readonly reason: string;
+  readonly occurredAt: string;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+}
+
+export interface ReceiveInventoryResult {
+  readonly movement: InventoryMovement;
+  readonly availability: InventoryAvailability;
+  readonly replayed: boolean;
+}
+
+export interface AdjustInventoryRequest {
+  readonly movementId: string;
+  readonly listingId: string;
+  readonly versionId: string;
+  readonly kind: 'adjust-up' | 'adjust-down';
+  readonly quantity: bigint;
+  readonly reason: string;
+  readonly occurredAt: string;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+}
+
+export interface AdjustInventoryResult {
+  readonly movement: InventoryMovement;
+  readonly availability: InventoryAvailability;
+  readonly replayed: boolean;
+}
+
+export interface ReserveInventoryRequest {
+  readonly movementId: string;
+  readonly listingId: string;
+  readonly versionId: string;
+  readonly reservationId: string;
+  readonly quantity: bigint;
+  readonly reason: string;
+  readonly occurredAt: string;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+}
+
+export interface ReserveInventoryResult {
+  readonly movement: InventoryMovement;
+  readonly availability: InventoryAvailability;
+  readonly replayed: boolean;
+}
+
+export interface ReleaseInventoryRequest {
+  readonly movementId: string;
+  readonly listingId: string;
+  readonly versionId: string;
+  readonly reservationId: string;
+  readonly quantity: bigint;
+  readonly reason: string;
+  readonly occurredAt: string;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+}
+
+export interface ReleaseInventoryResult {
+  readonly movement: InventoryMovement;
+  readonly availability: InventoryAvailability;
+  readonly replayed: boolean;
+}
+
+export interface CommitInventoryRequest {
+  readonly movementId: string;
+  readonly listingId: string;
+  readonly versionId: string;
+  readonly reservationId: string;
+  readonly quantity: bigint;
+  readonly reason: string;
+  readonly occurredAt: string;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+}
+
+export interface CommitInventoryResult {
+  readonly movement: InventoryMovement;
+  readonly availability: InventoryAvailability;
+  readonly replayed: boolean;
+}
+
 const CREATE_LISTING_KEYS: readonly string[] = [
   'listingId',
   'accountId',
@@ -215,6 +319,65 @@ const WITHDRAW_LISTING_KEYS: readonly string[] = [
   'correlationId',
   'idempotencyKey',
   'recordId',
+];
+
+const RECEIVE_INVENTORY_KEYS: readonly string[] = [
+  'movementId',
+  'listingId',
+  'versionId',
+  'quantity',
+  'reason',
+  'occurredAt',
+  'correlationId',
+  'idempotencyKey',
+];
+
+const ADJUST_INVENTORY_KEYS: readonly string[] = [
+  'movementId',
+  'listingId',
+  'versionId',
+  'kind',
+  'quantity',
+  'reason',
+  'occurredAt',
+  'correlationId',
+  'idempotencyKey',
+];
+
+const RESERVE_INVENTORY_KEYS: readonly string[] = [
+  'movementId',
+  'listingId',
+  'versionId',
+  'reservationId',
+  'quantity',
+  'reason',
+  'occurredAt',
+  'correlationId',
+  'idempotencyKey',
+];
+
+const RELEASE_INVENTORY_KEYS: readonly string[] = [
+  'movementId',
+  'listingId',
+  'versionId',
+  'reservationId',
+  'quantity',
+  'reason',
+  'occurredAt',
+  'correlationId',
+  'idempotencyKey',
+];
+
+const COMMIT_INVENTORY_KEYS: readonly string[] = [
+  'movementId',
+  'listingId',
+  'versionId',
+  'reservationId',
+  'quantity',
+  'reason',
+  'occurredAt',
+  'correlationId',
+  'idempotencyKey',
 ];
 
 export class UniversalListingService {
@@ -776,6 +939,439 @@ export class UniversalListingService {
     return sealListings(listings);
   }
 
+  /**
+   * Add stock to a listing version.
+   *
+   * Appends a `receive` movement and updates the snapshot. Refuses `listing-not-found`,
+   * `version-not-found`, `version-not-current` and `listing-withdrawn`.
+   */
+  async receiveInventory(request: ReceiveInventoryRequest): Promise<ReceiveInventoryResult> {
+    assertNoForeignConcerns(request, RECEIVE_INVENTORY_KEYS, 'receiveInventory');
+    assertUniversalListingIdentifier(request.movementId, 'movementId');
+    assertUniversalListingIdentifier(request.listingId, 'listingId');
+    assertUniversalListingIdentifier(request.versionId, 'versionId');
+    const occurredAt = parseAndCheckInstant(request.occurredAt, 'occurredAt');
+
+    const movement = sealInventoryMovement(
+      validateInventoryMovement(
+        {
+          movementId: request.movementId,
+          listingId: request.listingId,
+          versionId: request.versionId,
+          kind: 'receive',
+          quantity: request.quantity,
+          reservationId: null,
+          reason: request.reason,
+          occurredAt,
+          correlationId: request.correlationId,
+          idempotencyKey: request.idempotencyKey,
+        },
+        'request',
+      ),
+    );
+
+    return this.#applyInventoryMovement(movement, (tx) => this.#emitReceived(movement, tx));
+  }
+
+  /**
+   * Correct inventory up or down.
+   *
+   * Refuses `insufficient-stock` when an `adjust-down` would take `onHand` below
+   * `reserved + committed`.
+   */
+  async adjustInventory(request: AdjustInventoryRequest): Promise<AdjustInventoryResult> {
+    assertNoForeignConcerns(request, ADJUST_INVENTORY_KEYS, 'adjustInventory');
+    assertUniversalListingIdentifier(request.movementId, 'movementId');
+    assertUniversalListingIdentifier(request.listingId, 'listingId');
+    assertUniversalListingIdentifier(request.versionId, 'versionId');
+    const occurredAt = parseAndCheckInstant(request.occurredAt, 'occurredAt');
+
+    const movement = sealInventoryMovement(
+      validateInventoryMovement(
+        {
+          movementId: request.movementId,
+          listingId: request.listingId,
+          versionId: request.versionId,
+          kind: request.kind,
+          quantity: request.quantity,
+          reservationId: null,
+          reason: request.reason,
+          occurredAt,
+          correlationId: request.correlationId,
+          idempotencyKey: request.idempotencyKey,
+        },
+        'request',
+      ),
+    );
+
+    return this.#applyInventoryMovement(movement, (tx) => this.#emitAdjusted(movement, tx));
+  }
+
+  /**
+   * Hold stock for a caller.
+   *
+   * Refuses `insufficient-stock` when the requested quantity exceeds availability.
+   * Idempotent by `reservationId`: reserving twice with the same id and quantity is one reservation.
+   */
+  async reserveInventory(request: ReserveInventoryRequest): Promise<ReserveInventoryResult> {
+    assertNoForeignConcerns(request, RESERVE_INVENTORY_KEYS, 'reserveInventory');
+    assertUniversalListingIdentifier(request.movementId, 'movementId');
+    assertUniversalListingIdentifier(request.listingId, 'listingId');
+    assertUniversalListingIdentifier(request.versionId, 'versionId');
+    assertUniversalListingIdentifier(request.reservationId, 'reservationId');
+    const occurredAt = parseAndCheckInstant(request.occurredAt, 'occurredAt');
+
+    const movement = sealInventoryMovement(
+      validateInventoryMovement(
+        {
+          movementId: request.movementId,
+          listingId: request.listingId,
+          versionId: request.versionId,
+          kind: 'reserve',
+          quantity: request.quantity,
+          reservationId: request.reservationId,
+          reason: request.reason,
+          occurredAt,
+          correlationId: request.correlationId,
+          idempotencyKey: request.idempotencyKey,
+        },
+        'request',
+      ),
+    );
+
+    return this.#applyInventoryMovement(movement, (tx) => this.#emitReserved(movement, tx));
+  }
+
+  /**
+   * Give held stock back.
+   *
+   * Refuses `reservation-not-found` and `reservation-not-open`.
+   */
+  async releaseInventory(request: ReleaseInventoryRequest): Promise<ReleaseInventoryResult> {
+    assertNoForeignConcerns(request, RELEASE_INVENTORY_KEYS, 'releaseInventory');
+    assertUniversalListingIdentifier(request.movementId, 'movementId');
+    assertUniversalListingIdentifier(request.listingId, 'listingId');
+    assertUniversalListingIdentifier(request.versionId, 'versionId');
+    assertUniversalListingIdentifier(request.reservationId, 'reservationId');
+    const occurredAt = parseAndCheckInstant(request.occurredAt, 'occurredAt');
+
+    const movement = sealInventoryMovement(
+      validateInventoryMovement(
+        {
+          movementId: request.movementId,
+          listingId: request.listingId,
+          versionId: request.versionId,
+          kind: 'release',
+          quantity: request.quantity,
+          reservationId: request.reservationId,
+          reason: request.reason,
+          occurredAt,
+          correlationId: request.correlationId,
+          idempotencyKey: request.idempotencyKey,
+        },
+        'request',
+      ),
+    );
+
+    return this.#applyInventoryMovement(movement, (tx) => this.#emitReleased(movement, tx));
+  }
+
+  /**
+   * Turn a reservation into a sale.
+   *
+   * Moves stock from `reserved` to `committed` and lowers `onHand`. Refuses
+   * `reservation-not-found` and `reservation-not-open`.
+   */
+  async commitInventory(request: CommitInventoryRequest): Promise<CommitInventoryResult> {
+    assertNoForeignConcerns(request, COMMIT_INVENTORY_KEYS, 'commitInventory');
+    assertUniversalListingIdentifier(request.movementId, 'movementId');
+    assertUniversalListingIdentifier(request.listingId, 'listingId');
+    assertUniversalListingIdentifier(request.versionId, 'versionId');
+    assertUniversalListingIdentifier(request.reservationId, 'reservationId');
+    const occurredAt = parseAndCheckInstant(request.occurredAt, 'occurredAt');
+
+    const movement = sealInventoryMovement(
+      validateInventoryMovement(
+        {
+          movementId: request.movementId,
+          listingId: request.listingId,
+          versionId: request.versionId,
+          kind: 'commit',
+          quantity: request.quantity,
+          reservationId: request.reservationId,
+          reason: request.reason,
+          occurredAt,
+          correlationId: request.correlationId,
+          idempotencyKey: request.idempotencyKey,
+        },
+        'request',
+      ),
+    );
+
+    return this.#applyInventoryMovement(movement, (tx) => this.#emitCommitted(movement, tx));
+  }
+
+  /**
+   * Return the derived availability for one listing version.
+   *
+   * A listing that has never received stock returns all zeroes.
+   */
+  async getAvailability(listingId: string, versionId: string): Promise<InventoryAvailability> {
+    assertUniversalListingIdentifier(listingId, 'listingId');
+    assertUniversalListingIdentifier(versionId, 'versionId');
+    return this.#repository.withTransaction(async (tx) => {
+      const snapshot = await tx.findInventorySnapshot(listingId, versionId);
+      return availabilityFromSnapshot(snapshot);
+    });
+  }
+
+  async #applyInventoryMovement(
+    movement: InventoryMovement,
+    emit: (tx: UniversalListingTransaction) => Promise<void>,
+  ): Promise<{
+    readonly movement: InventoryMovement;
+    readonly availability: InventoryAvailability;
+    readonly replayed: boolean;
+  }> {
+    try {
+      return await this.#repository.withTransaction(async (tx) => {
+        const existingKey = await tx.findInventoryMovementByIdempotencyKey(movement.idempotencyKey);
+        if (existingKey !== null) {
+          if (!inventoryMovementEquals(existingKey, movement)) {
+            throw new UniversalListingError(
+              'idempotency-key-reuse',
+              `idempotency key "${movement.idempotencyKey}" has already been used for a different movement`,
+            );
+          }
+          return {
+            movement: sealInventoryMovement(existingKey),
+            availability: await this.#availabilityInTx(tx, movement.listingId, movement.versionId),
+            replayed: true,
+          };
+        }
+
+        const existingId = await tx.findInventoryMovementById(movement.movementId);
+        if (existingId !== null) {
+          if (!inventoryMovementEquals(existingId, movement)) {
+            throw new UniversalListingError(
+              'duplicate-movement-id',
+              `movement ${movement.movementId} already exists with different content`,
+            );
+          }
+          return {
+            movement: sealInventoryMovement(existingId),
+            availability: await this.#availabilityInTx(tx, movement.listingId, movement.versionId),
+            replayed: true,
+          };
+        }
+
+        await this.#requireInventoryContext(tx, movement.listingId, movement.versionId);
+        await this.#enforceInventoryRules(tx, movement);
+
+        await tx.insertInventoryMovement(movement);
+        await emit(tx);
+        return {
+          movement,
+          availability: await this.#availabilityInTx(tx, movement.listingId, movement.versionId),
+          replayed: false,
+        };
+      });
+    } catch (error) {
+      const conflicted =
+        error instanceof UniversalListingError &&
+        (error.code === 'duplicate-movement-id' || error.code === 'idempotency-key-reuse');
+      if (!conflicted) throw error;
+
+      const winner = await this.#findInventoryMovement(
+        movement.movementId,
+        movement.idempotencyKey,
+      );
+      if (winner === null || !inventoryMovementEquals(winner, movement)) throw error;
+      return {
+        movement: sealInventoryMovement(winner),
+        availability: await this.#repository.withTransaction((tx) =>
+          this.#availabilityInTx(tx, movement.listingId, movement.versionId),
+        ),
+        replayed: true,
+      };
+    }
+  }
+
+  async #findInventoryMovement(
+    movementId: string,
+    idempotencyKey: string,
+  ): Promise<InventoryMovement | null> {
+    const byId = await this.#repository.withTransaction((tx) =>
+      tx.findInventoryMovementById(movementId),
+    );
+    if (byId !== null) return byId;
+    return this.#repository.withTransaction((tx) =>
+      tx.findInventoryMovementByIdempotencyKey(idempotencyKey),
+    );
+  }
+
+  async #requireInventoryContext(
+    tx: UniversalListingTransaction,
+    listingId: string,
+    versionId: string,
+  ): Promise<{ readonly listing: Listing; readonly version: ListingVersion }> {
+    const listing = await requireListing(tx, listingId);
+    requireNotWithdrawn(listing);
+    const version = await requireVersion(tx, versionId);
+    if (
+      version.versionNumber !== listing.currentVersion ||
+      version.listingId !== listing.listingId
+    ) {
+      throw new UniversalListingError(
+        'version-not-current',
+        `version ${versionId} is not the current version of listing ${listingId}`,
+      );
+    }
+    return { listing, version };
+  }
+
+  async #enforceInventoryRules(
+    tx: UniversalListingTransaction,
+    movement: InventoryMovement,
+  ): Promise<void> {
+    const snapshot = await tx.findInventorySnapshot(movement.listingId, movement.versionId);
+    const current = availabilityFromSnapshot(snapshot);
+
+    switch (movement.kind) {
+      case 'receive':
+      case 'adjust-up':
+        return;
+      case 'adjust-down': {
+        const newOnHand = current.onHand - movement.quantity;
+        const minimum = current.reserved + current.committed;
+        if (newOnHand < minimum) {
+          throw new UniversalListingError(
+            'insufficient-stock',
+            `adjust-down would take onHand to ${String(newOnHand)}, below reserved + committed ` +
+              `(${String(minimum)})`,
+          );
+        }
+        return;
+      }
+      case 'reserve': {
+        if (movement.quantity > current.available) {
+          throw new UniversalListingError(
+            'insufficient-stock',
+            `cannot reserve ${String(movement.quantity)} when only ${String(current.available)} ` +
+              'is available',
+          );
+        }
+        return;
+      }
+      case 'release':
+      case 'commit': {
+        const reservation = await this.#reservationState(
+          tx,
+          movement.listingId,
+          movement.versionId,
+          movement.reservationId as string,
+        );
+        if (reservation === null) {
+          throw new UniversalListingError(
+            'reservation-not-found',
+            `reservation ${movement.reservationId} does not exist`,
+          );
+        }
+        if (!reservation.isOpen) {
+          throw new UniversalListingError(
+            'reservation-not-open',
+            `reservation ${movement.reservationId} is not open`,
+          );
+        }
+        if (movement.kind === 'commit') {
+          if (movement.quantity > reservation.reservedQuantity) {
+            throw new UniversalListingError(
+              'insufficient-stock',
+              `cannot commit ${String(movement.quantity)} from reservation ${movement.reservationId} ` +
+                `when only ${String(reservation.reservedQuantity)} is reserved`,
+            );
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  async #reservationState(
+    tx: UniversalListingTransaction,
+    listingId: string,
+    versionId: string,
+    reservationId: string,
+  ): Promise<{ readonly isOpen: boolean; readonly reservedQuantity: bigint } | null> {
+    const movements = (await tx.findInventoryMovements(listingId, versionId)).filter(
+      (m) => m.reservationId === reservationId,
+    );
+    if (movements.length === 0) return null;
+
+    let reserved = 0n;
+    for (const movement of movements) {
+      switch (movement.kind) {
+        case 'reserve':
+          reserved += movement.quantity;
+          break;
+        case 'release':
+          reserved -= movement.quantity;
+          break;
+        case 'commit':
+          reserved -= movement.quantity;
+          break;
+      }
+    }
+    return { isOpen: reserved > 0n, reservedQuantity: reserved };
+  }
+
+  async #availabilityInTx(
+    tx: UniversalListingTransaction,
+    listingId: string,
+    versionId: string,
+  ): Promise<InventoryAvailability> {
+    const snapshot = await tx.findInventorySnapshot(listingId, versionId);
+    return availabilityFromSnapshot(snapshot);
+  }
+
+  async #emitReceived(movement: InventoryMovement, tx: UniversalListingTransaction): Promise<void> {
+    const correlationId = movement.correlationId;
+    const causationId: string | null = null;
+    await tx.insertOutbox(makeInventoryReceivedEvent(movement, correlationId, causationId));
+    await tx.insertOutbox(makeInventoryReceivedAction(movement, correlationId, causationId));
+  }
+
+  async #emitAdjusted(movement: InventoryMovement, tx: UniversalListingTransaction): Promise<void> {
+    const correlationId = movement.correlationId;
+    const causationId: string | null = null;
+    await tx.insertOutbox(makeInventoryAdjustedEvent(movement, correlationId, causationId));
+    await tx.insertOutbox(makeInventoryAdjustedAction(movement, correlationId, causationId));
+  }
+
+  async #emitReserved(movement: InventoryMovement, tx: UniversalListingTransaction): Promise<void> {
+    const correlationId = movement.correlationId;
+    const causationId: string | null = null;
+    await tx.insertOutbox(makeInventoryReservedEvent(movement, correlationId, causationId));
+    await tx.insertOutbox(makeInventoryReservedAction(movement, correlationId, causationId));
+  }
+
+  async #emitReleased(movement: InventoryMovement, tx: UniversalListingTransaction): Promise<void> {
+    const correlationId = movement.correlationId;
+    const causationId: string | null = null;
+    await tx.insertOutbox(makeInventoryReleasedEvent(movement, correlationId, causationId));
+    await tx.insertOutbox(makeInventoryReleasedAction(movement, correlationId, causationId));
+  }
+
+  async #emitCommitted(
+    movement: InventoryMovement,
+    tx: UniversalListingTransaction,
+  ): Promise<void> {
+    const correlationId = movement.correlationId;
+    const causationId: string | null = null;
+    await tx.insertOutbox(makeInventoryCommittedEvent(movement, correlationId, causationId));
+    await tx.insertOutbox(makeInventoryCommittedAction(movement, correlationId, causationId));
+  }
+
   async #emitCreated(
     listing: Listing,
     recordId: string,
@@ -1051,5 +1647,32 @@ function buildVersionFromStored(
     request.publishedAt,
     request.correlationId,
     request.idempotencyKey,
+  );
+}
+
+function availabilityFromSnapshot(snapshot: InventorySnapshot | null): InventoryAvailability {
+  if (snapshot === null) {
+    return { onHand: 0n, reserved: 0n, committed: 0n, available: 0n };
+  }
+  return {
+    onHand: snapshot.onHand,
+    reserved: snapshot.reserved,
+    committed: snapshot.committed,
+    available: snapshot.onHand - snapshot.reserved,
+  };
+}
+
+function inventoryMovementEquals(a: InventoryMovement, b: InventoryMovement): boolean {
+  return (
+    a.movementId === b.movementId &&
+    a.listingId === b.listingId &&
+    a.versionId === b.versionId &&
+    a.kind === b.kind &&
+    a.quantity === b.quantity &&
+    a.reservationId === b.reservationId &&
+    a.reason === b.reason &&
+    a.occurredAt === b.occurredAt &&
+    a.correlationId === b.correlationId &&
+    a.idempotencyKey === b.idempotencyKey
   );
 }

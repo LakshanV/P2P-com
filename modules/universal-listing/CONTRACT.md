@@ -1,16 +1,17 @@
 # M-04 Universal Listing — contract
 
-**Status:** foundation delivered, **listing half only**. **Not complete** — see §7.
+**Status:** foundation and inventory interface delivered. **Not complete** — see §7.
 **Owner:** M-04, `modules/universal-listing/`.
 **Layer:** L2. **Schema:** `module_universal_listing`, created by
-[`0026_create_module_universal_listing_schema.up.sql`](../../db/migrations/0026_create_module_universal_listing_schema.up.sql).
+[`0026_create_module_universal_listing_schema.up.sql`](../../db/migrations/0026_create_module_universal_listing_schema.up.sql)
+and extended by [`0027_create_module_universal_listing_inventory.up.sql`](../../db/migrations/0027_create_module_universal_listing_inventory.up.sql).
 **Depends on:** K-03 Accounts (the supplying account, by opaque id), K-11 Commerce Unit Registry
 (the unit type being offered, by opaque id), K-08 Event Infrastructure, K-09 Audit Foundation.
 
-M-04 is being built in two slices. **This contract covers slice A: the listing itself.** The
-inventory interface — `getAvailability`, `reserve`, `release`, `commit`, `receive`, `adjust` — is
-slice B, and it is the module's replaceability requirement; it gets its own migration, its own
-section here, and a contract-test suite any replacement must pass.
+M-04 is built in two slices. Slice A (the listing itself) is in §1–§6. Slice B (the inventory
+interface — `getAvailability`, `reserve`, `release`, `commit`, `receive`, `adjust`) is in §9; it is
+the module's replaceability requirement, with its own migration and a contract-test suite any
+replacement must pass, per `docs/JAYA_TEST_MATRIX.md` §1.3.
 
 ---
 
@@ -133,20 +134,74 @@ Through the module-owned outbox, in the same transaction as the state change:
 | A version was published | `listing.published` |
 | A listing was suspended | `listing.suspended` |
 | A listing was withdrawn | `listing.withdrawn` |
+| Stock was received | `inventory.received` |
+| Inventory was adjusted | `inventory.adjusted` |
+| Stock was reserved | `inventory.reserved` |
+| A reservation was released | `inventory.released` |
+| A reservation was committed to a sale | `inventory.committed` |
 
-Outbox ids derive from the append-only record a fact produced — the version id — or from the
-caller-supplied decision id, never from the listing id alone. A listing is published many times, and
-an id derived from the listing would collide with itself on the second publication; M-01 shipped
-that bug and `outbox_pkey` refused the write.
+Outbox ids derive from the append-only record a fact produced — the version id for a publication,
+the caller-supplied decision id for a lifecycle change, or the movement id for an inventory
+movement — never from the listing id alone. A listing is published many times, and an id derived
+from the listing would collide with itself on the second publication; M-01 shipped that bug and
+`outbox_pkey` refused the write.
+
+The module map names `InventoryReserved`, `InventoryReleased` and `InventoryCommitted`. The
+repository's event-type convention is `inventory.reserved`, `inventory.released` and
+`inventory.committed`; the same convention also gives `inventory.received` and `inventory.adjusted`
+for the two inventory facts the map did not name. Each event carries a matching audit record.
 
 ---
 
-## 7. What is not delivered
+## 7. Inventory interface — slice B
 
-- **The inventory interface is not built.** `getAvailability`, `reserve`, `release`, `commit`,
-  `receive` and `adjust` do not exist, and neither does `inventory_snapshot`. This is slice B, and
-  it carries the module's replaceability requirement: it will ship with a contract-test suite that
-  any replacement implementation must pass, per `docs/JAYA_TEST_MATRIX.md` §1.3.
+Availability is derived from an append-only movement log, never stored as a mutable counter. Two
+tables own the data:
+
+- `inventory_movement` — the truth. One row per fact (`receive`, `adjust-up`, `adjust-down`,
+  `reserve`, `release`, `commit`). `quantity` is always positive; the `kind` carries the direction.
+- `inventory_snapshot` — a cache of the movement sum, one row per `(listing_id, version_id)`,
+  written in the same transaction as the movement that changes it.
+
+The derived fields are:
+
+```
+onHand     = received - adjusted_down + adjusted_up - committed
+reserved   = open reservations
+committed  = sold and taken out of stock
+available  = onHand - reserved
+```
+
+The database enforces the invariant as a CHECK constraint: `reserved <= on_hand`. The service
+refuses `insufficient-stock` when a request would violate it, including an `adjust-down` that would
+take `onHand` below `reserved + committed`.
+
+Reservations are derived from movements: a `reserve` with no later `release` or `commit` for the
+same `reservation_id` is open. There is no separate reservation table.
+
+### Refusals
+
+| Code | When |
+|---|---|
+| `insufficient-stock` | receive/adjust-down/reserve/commit would violate the invariant |
+| `duplicate-movement-id` | the movement id already exists with different content |
+| `reservation-not-found` | release or commit names an unknown reservation |
+| `reservation-not-open` | release or commit targets a reservation already released or committed |
+| `unknown-movement-kind` | the kind is not one of the six recognised kinds |
+| `negative-movement` | the quantity is zero or negative |
+
+### Verification
+
+The replaceability requirement is enforced by `tests/contracts/inventory.contract.test.ts`, a suite
+parameterised over `InventoryUnderTest`. A replacement implementation plugs in by implementing the
+harness interface and calling `runInventoryContract(subject)`.
+
+---
+
+## 8. What is not delivered
+
+- **No integration beyond the contract surface.** The inventory interface is exposed through the
+  service and validated by the contract test, but no order, payment or quote module calls it yet.
 - **Nothing calls this module.** No API, no UI, no consumer of any of the four events.
 - **No verification gate.** M-04 does not ask M-02 whether the supplier is verified before letting
   them publish. It can — M-02 is a layer below — and it does not yet; the policy for which levels
@@ -157,19 +212,20 @@ that bug and `outbox_pkey` refused the write.
   in §1: no join across a unit boundary.
 - **No search integration.** K-15 exists and nothing indexes a listing into it.
 - **No pricing rules, no availability windows, no geographic scoping, no bulk import.**
-- **Nothing applied to a live server.** Migration 0026 runs in the integration suite against a live
-  PostgreSQL 16 and nowhere else.
+- **Nothing applied to a live server.** Migrations 0026 and 0027 run in the integration suite
+  against a live PostgreSQL 16 and nowhere else.
 
 ---
 
-## 8. Verification
+## 9. Verification
 
 ```
 npm run typecheck
 npm run lint
 npm run format:check
 npm run check:boundaries      # M-04 is L2: platform/, kernel/ and L1 modules only, never K-13
-npm run check:migrations      # 0026 is paired, transactional and module-owned
-npm test                      # tests/universal-listing*.test.ts
+npm run check:migrations      # 0026 and 0027 are paired, transactional and module-owned
+node --test tests/universal-listing.test.ts tests/universal-listing-repository.test.ts
+node --test tests/contracts/inventory.contract.test.ts
 npm run test:integration      # tests/integration/universal-listing.integration.ts
 ```

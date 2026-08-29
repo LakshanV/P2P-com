@@ -12,6 +12,9 @@ import { InMemoryOutboxStore } from '../../platform/outbox/repository.ts';
 import type { OutboxEntry, OutboxTransaction } from '../../platform/outbox/types.ts';
 
 import {
+  sealInventoryMovement,
+  sealInventoryMovements,
+  sealInventorySnapshot,
   sealListing,
   sealListingDeclaration,
   sealListingDeclarations,
@@ -23,6 +26,8 @@ import {
 } from './immutable.ts';
 import {
   UniversalListingError,
+  type InventoryMovement,
+  type InventorySnapshot,
   type Listing,
   type ListingDeclaration,
   type ListingMedia,
@@ -59,6 +64,19 @@ export interface UniversalListingTransaction extends OutboxTransaction {
   findDeclarationsByVersionId(versionId: string): Promise<readonly ListingDeclaration[]>;
   findDeclarationsByListingId(listingId: string): Promise<readonly ListingDeclaration[]>;
   insertDeclaration(declaration: ListingDeclaration): Promise<void>;
+
+  /** Inventory movement lookup and creation. */
+  findInventoryMovementById(movementId: string): Promise<InventoryMovement | null>;
+  findInventoryMovementByIdempotencyKey(idempotencyKey: string): Promise<InventoryMovement | null>;
+  findInventoryMovements(
+    listingId: string,
+    versionId: string,
+  ): Promise<readonly InventoryMovement[]>;
+  insertInventoryMovement(movement: InventoryMovement): Promise<void>;
+
+  /** Inventory snapshot lookup and creation. */
+  findInventorySnapshot(listingId: string, versionId: string): Promise<InventorySnapshot | null>;
+  upsertInventorySnapshot(snapshot: InventorySnapshot): Promise<void>;
 }
 
 export interface UniversalListingRepository {
@@ -82,6 +100,8 @@ export class InMemoryUniversalListingRepository implements UniversalListingRepos
   #versions: ListingVersion[] = [];
   #medias: ListingMedia[] = [];
   #declarations: ListingDeclaration[] = [];
+  #movements: InventoryMovement[] = [];
+  #snapshots: InventorySnapshot[] = [];
   readonly #outbox = new InMemoryOutboxStore('M-04', 'module_universal_listing');
   transactionsCommitted = 0;
   transactionsRolledBack = 0;
@@ -102,6 +122,14 @@ export class InMemoryUniversalListingRepository implements UniversalListingRepos
     return sealListingDeclarations(this.#declarations);
   }
 
+  movements(): readonly InventoryMovement[] {
+    return sealInventoryMovements(this.#movements);
+  }
+
+  snapshots(): readonly InventorySnapshot[] {
+    return Object.freeze(this.#snapshots.map(sealInventorySnapshot));
+  }
+
   outbox(): InMemoryOutboxStore {
     return this.#outbox;
   }
@@ -112,12 +140,16 @@ export class InMemoryUniversalListingRepository implements UniversalListingRepos
     readonly versions?: readonly ListingVersion[];
     readonly medias?: readonly ListingMedia[];
     readonly declarations?: readonly ListingDeclaration[];
+    readonly movements?: readonly InventoryMovement[];
+    readonly snapshots?: readonly InventorySnapshot[];
     readonly outbox?: readonly OutboxEntry[];
   }): void {
     this.#listings = (state.listings ?? []).map(sealListing);
     this.#versions = (state.versions ?? []).map(sealListingVersion);
     this.#medias = (state.medias ?? []).map(sealListingMedia);
     this.#declarations = (state.declarations ?? []).map(sealListingDeclaration);
+    this.#movements = (state.movements ?? []).map(sealInventoryMovement);
+    this.#snapshots = (state.snapshots ?? []).map(sealInventorySnapshot);
     this.#outbox.seed(state.outbox ?? []);
   }
 
@@ -127,6 +159,8 @@ export class InMemoryUniversalListingRepository implements UniversalListingRepos
       versions: this.#versions.map(sealListingVersion),
       medias: this.#medias.map(sealListingMedia),
       declarations: this.#declarations.map(sealListingDeclaration),
+      movements: this.#movements.map(sealInventoryMovement),
+      snapshots: this.#snapshots.map(sealInventorySnapshot),
     });
     const outboxWorking = new InMemoryOutboxStore(this.#outbox.name, this.#outbox.schema);
     outboxWorking.seed(this.#outbox.entries());
@@ -302,7 +336,133 @@ export class InMemoryUniversalListingRepository implements UniversalListingRepos
         .filter((d) => touched.declarations.has(d.declarationId))
         .map(sealListingDeclaration),
     ];
+
+    // Inventory movements are append-only. Recompute every touched snapshot from the store plus the
+    // working set so a race cannot violate the invariant.
+    for (const movement of working.movements) {
+      if (touched.movements.has(movement.movementId)) {
+        if (this.#movements.some((held) => held.movementId === movement.movementId)) {
+          throw new UniversalListingError(
+            'duplicate-movement-id',
+            `movement ${movement.movementId} was created by another transaction while ` +
+              'this one was open',
+          );
+        }
+      }
+      if (touched.movementKeys.has(movement.idempotencyKey)) {
+        const holder = this.#movements.find(
+          (held) => held.idempotencyKey === movement.idempotencyKey,
+        );
+        if (holder !== undefined) {
+          throw new UniversalListingError(
+            'idempotency-key-reuse',
+            `idempotency key "${movement.idempotencyKey}" was used by movement ${holder.movementId}, ` +
+              'created by another transaction while this one was open',
+          );
+        }
+      }
+    }
+
+    const recomputedSnapshots = new Map<string, InventorySnapshot>();
+    for (const key of touched.snapshotKeys) {
+      const [listingId, versionId] = key.split(':') as [string, string];
+      const allMovements = [
+        ...this.#movements.filter((m) => m.listingId === listingId && m.versionId === versionId),
+        ...working.movements.filter(
+          (m) =>
+            touched.movements.has(m.movementId) &&
+            m.listingId === listingId &&
+            m.versionId === versionId,
+        ),
+      ].sort(compareMovementOrder);
+      const snapshot = computeInventorySnapshot(listingId, versionId, allMovements);
+      if (snapshot.onHand < 0n || snapshot.reserved < 0n || snapshot.committed < 0n) {
+        throw new UniversalListingError(
+          'insufficient-stock',
+          `movement would take listing ${listingId} version ${versionId} negative`,
+        );
+      }
+      if (snapshot.reserved > snapshot.onHand) {
+        throw new UniversalListingError(
+          'insufficient-stock',
+          `movement would reserve more than is available for listing ${listingId} version ${versionId}`,
+        );
+      }
+      recomputedSnapshots.set(key, snapshot);
+    }
+
+    this.#movements = [
+      ...this.#movements,
+      ...working.movements
+        .filter((m) => touched.movements.has(m.movementId))
+        .map(sealInventoryMovement),
+    ];
+
+    for (const [key, snapshot] of recomputedSnapshots) {
+      const [listingId, versionId] = key.split(':') as [string, string];
+      const existingIndex = this.#snapshots.findIndex(
+        (s) => s.listingId === listingId && s.versionId === versionId,
+      );
+      if (existingIndex === -1) {
+        this.#snapshots.push(sealInventorySnapshot(snapshot));
+      } else {
+        this.#snapshots[existingIndex] = sealInventorySnapshot(snapshot);
+      }
+    }
   }
+}
+
+function compareMovementOrder(a: InventoryMovement, b: InventoryMovement): number {
+  return a.occurredAt.localeCompare(b.occurredAt) || a.movementId.localeCompare(b.movementId);
+}
+
+function computeInventorySnapshot(
+  listingId: string,
+  versionId: string,
+  movements: readonly InventoryMovement[],
+): InventorySnapshot {
+  let onHand = 0n;
+  let reserved = 0n;
+  let committed = 0n;
+  let updatedAt = '';
+  let correlationId = '';
+
+  for (const movement of movements) {
+    switch (movement.kind) {
+      case 'receive':
+        onHand += movement.quantity;
+        break;
+      case 'adjust-up':
+        onHand += movement.quantity;
+        break;
+      case 'adjust-down':
+        onHand -= movement.quantity;
+        break;
+      case 'reserve':
+        reserved += movement.quantity;
+        break;
+      case 'release':
+        reserved -= movement.quantity;
+        break;
+      case 'commit':
+        onHand -= movement.quantity;
+        reserved -= movement.quantity;
+        committed += movement.quantity;
+        break;
+    }
+    updatedAt = movement.occurredAt;
+    correlationId = movement.correlationId;
+  }
+
+  return {
+    listingId,
+    versionId,
+    onHand,
+    reserved,
+    committed,
+    updatedAt,
+    correlationId,
+  };
 }
 
 class WorkingSet {
@@ -310,17 +470,23 @@ class WorkingSet {
   versions: ListingVersion[];
   medias: ListingMedia[];
   declarations: ListingDeclaration[];
+  movements: InventoryMovement[];
+  snapshots: InventorySnapshot[];
 
   constructor(snapshot: {
     listings: Listing[];
     versions: ListingVersion[];
     medias: ListingMedia[];
     declarations: ListingDeclaration[];
+    movements: InventoryMovement[];
+    snapshots: InventorySnapshot[];
   }) {
     this.listings = snapshot.listings;
     this.versions = snapshot.versions;
     this.medias = snapshot.medias;
     this.declarations = snapshot.declarations;
+    this.movements = snapshot.movements;
+    this.snapshots = snapshot.snapshots;
   }
 }
 
@@ -336,6 +502,9 @@ class Touched {
   readonly mediaPositions = new Set<string>();
   readonly declarations = new Set<string>();
   readonly declarationKeys = new Set<string>();
+  readonly movements = new Set<string>();
+  readonly movementKeys = new Set<string>();
+  readonly snapshotKeys = new Set<string>();
 }
 
 class InMemoryUniversalListingTransaction implements UniversalListingTransaction {
@@ -586,6 +755,76 @@ class InMemoryUniversalListingTransaction implements UniversalListingTransaction
     this.#state.declarations.push(sealListingDeclaration(declaration));
     this.#touched.declarations.add(declaration.declarationId);
     this.#touched.declarationKeys.add(declaration.idempotencyKey);
+    return Promise.resolve();
+  }
+
+  findInventoryMovementById(movementId: string): Promise<InventoryMovement | null> {
+    const found = this.#state.movements.find((m) => m.movementId === movementId);
+    return Promise.resolve(found === undefined ? null : sealInventoryMovement(found));
+  }
+
+  findInventoryMovementByIdempotencyKey(idempotencyKey: string): Promise<InventoryMovement | null> {
+    const found = this.#state.movements.find((m) => m.idempotencyKey === idempotencyKey);
+    return Promise.resolve(found === undefined ? null : sealInventoryMovement(found));
+  }
+
+  findInventoryMovements(
+    listingId: string,
+    versionId: string,
+  ): Promise<readonly InventoryMovement[]> {
+    const found = this.#state.movements
+      .filter((m) => m.listingId === listingId && m.versionId === versionId)
+      .sort(compareMovementOrder);
+    return Promise.resolve(sealInventoryMovements(found));
+  }
+
+  insertInventoryMovement(movement: InventoryMovement): Promise<void> {
+    if (this.#state.movements.some((held) => held.movementId === movement.movementId)) {
+      return Promise.reject(
+        new UniversalListingError(
+          'duplicate-movement-id',
+          `movement ${movement.movementId} already exists. A movement is created once and ` +
+            'never rewritten',
+        ),
+      );
+    }
+    if (this.#state.movements.some((held) => held.idempotencyKey === movement.idempotencyKey)) {
+      return Promise.reject(
+        new UniversalListingError(
+          'idempotency-key-reuse',
+          `idempotency key "${movement.idempotencyKey}" has already been used`,
+        ),
+      );
+    }
+    this.#state.movements.push(sealInventoryMovement(movement));
+    this.#touched.movements.add(movement.movementId);
+    this.#touched.movementKeys.add(movement.idempotencyKey);
+    this.#touched.snapshotKeys.add(`${movement.listingId}:${movement.versionId}`);
+    return Promise.resolve();
+  }
+
+  findInventorySnapshot(listingId: string, versionId: string): Promise<InventorySnapshot | null> {
+    const movements = this.#state.movements
+      .filter((m) => m.listingId === listingId && m.versionId === versionId)
+      .sort(compareMovementOrder);
+    if (movements.length === 0) {
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(
+      sealInventorySnapshot(computeInventorySnapshot(listingId, versionId, movements)),
+    );
+  }
+
+  upsertInventorySnapshot(snapshot: InventorySnapshot): Promise<void> {
+    const index = this.#state.snapshots.findIndex(
+      (s) => s.listingId === snapshot.listingId && s.versionId === snapshot.versionId,
+    );
+    if (index === -1) {
+      this.#state.snapshots.push(sealInventorySnapshot(snapshot));
+    } else {
+      this.#state.snapshots[index] = sealInventorySnapshot(snapshot);
+    }
+    this.#touched.snapshotKeys.add(`${snapshot.listingId}:${snapshot.versionId}`);
     return Promise.resolve();
   }
 }
