@@ -16,9 +16,9 @@ Status: **PHASE 1 COMPLETE. M-01 delivered.** All 15 kernel components (K-01 thr
 
 ## CURRENT MODULE
 
-**M-04 Universal Listing — slice B, the inventory interface**
+**M-09 RFQ / M-10 Quotes, or M-11 Orders**
 
-L1 is complete and M-04's listing half is delivered: an offer is a stable identity whose terms change by version, never by edit. Slice B adds the inventory interface — the brief's replaceability requirement — with availability derived from an append-only movement log and a contract-test suite any replacement must pass.
+L1 is complete and M-04 is delivered in full — an offer whose terms change by version and never by edit, with an inventory interface whose availability is derived from an append-only movement log and whose replaceability is pinned by a parameterised contract test. The commerce spine now needs the demand side: a request, a quote against it, and an order that pins a listing version and reserves stock.
 
 ---
 
@@ -47,7 +47,7 @@ These modules have a contract and a working library foundation. They are **not**
 | K-15 | Search Foundation | `kernel/search-foundation/`, migration 0021, PostgreSQL full-text search, 50+ unit tests, 5 live PostgreSQL integration tests |
 | M-01 | Universal Account | `modules/universal-account/`, migration 0024, **the first module-owned schema**, 32 unit tests, 6 live PostgreSQL integration tests |
 | M-02 | Capability & Verification | `modules/capability-verification/`, migration 0025, ordered levels, evidence held as an opaque reference only, 42 unit tests, 7 live PostgreSQL integration tests |
-| M-04 | Universal Listing (listing half) | `modules/universal-listing/`, migration 0026, versioned offers that are never edited, bigint money, 40 unit tests, 7 live PostgreSQL integration tests. **Inventory interface not built** |
+| M-04 | Universal Listing | `modules/universal-listing/`, migrations 0026 and 0027, versioned offers that are never edited, bigint money, inventory availability derived from an append-only movement log with `CHECK (reserved <= on_hand)`, 52 unit tests (12 of them a parameterised contract suite), 14 live PostgreSQL integration tests |
 
 ---
 
@@ -55,7 +55,8 @@ These modules have a contract and a working library foundation. They are **not**
 
 | Priority | Module | Task |
 |---|---|---|
-| P0 | M-04 | Universal Listing / Inventory contract |
+| P0 | M-03 | Commerce Request (Need Engine) |
+| P0 | M-11 | Orders — pins a listing version and reserves stock |
 | P2 | M-36 | User Cockpit shell |
 
 ---
@@ -64,8 +65,8 @@ These modules have a contract and a working library foundation. They are **not**
 
 None.
 
-- Unit tests: 1,744 pass / 0 fail
-- Integration tests: 104 pass / 0 fail / 0 skipped (last completed run, live PostgreSQL 16)
+- Unit tests: 1,756 pass / 0 fail
+- Integration tests: 118 pass / 0 fail / 0 skipped (last completed run, live PostgreSQL 16)
 
 ---
 

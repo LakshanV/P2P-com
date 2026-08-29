@@ -10,12 +10,11 @@ K-13's authority controls — have since been closed by this same pass. Sections
 to describe what is now true, and section 12 records the work. One finding in revision 1 was
 overstated and is corrected: K-13 already carried an `AIDecision` record with a 0–4 `policyLevel`,
 so the gap was the absence of *enforcement*, not the absence of the concept.
-**Revision 3 (2026-08-29):** M-01, M-02 and the listing half of M-04 have since been built, so
+**Revision 3 (2026-08-29):** M-01, M-02 and M-04 have since been built, so
 section 0's statement that `modules/` holds no code is no longer true and layer L1 is complete.
-Sections 13, 14 and 15 record that work. Everything else in section 0 stands: 44 of 47 business
-modules are unbuilt, M-04's inventory interface — the replaceability requirement — is still
-outstanding, `apps/` and `design-system/` are still empty, and the schedule assessment in section 10
-is unchanged.
+Sections 13 to 16 record that work. Everything else in section 0 stands: 44 of 47 business
+modules are unbuilt, `apps/` and `design-system/` are still empty, and the schedule assessment in
+section 10 is unchanged.
 
 ---
 
@@ -363,10 +362,10 @@ passed. The K-04 finding below is the one item that becomes High the moment an A
 3. ~~**M-01 / M-02** — Universal Account and Capability & Verification.~~ **DONE** — migrations 0024
    and 0025, 74 unit tests and 13 live-PostgreSQL integration tests, sections 13 and 14. L1 is
    complete.
-4. **M-04 Universal Listing / Inventory contract** — the listing half is **DONE** (migration 0026,
-   40 unit tests, 7 live-PostgreSQL integration tests, section 15). The **inventory interface — the
-   replaceability requirement — is still outstanding**, and it is the item that carries the
-   mandatory contract-test suite.
+4. ~~**M-04 Universal Listing / Inventory contract**~~ **DONE** — migrations 0026 and 0027, 52 unit
+   tests and 14 live-PostgreSQL integration tests, sections 15 and 16. The replaceability
+   requirement is met: `tests/contracts/inventory.contract.test.ts` is parameterised over an
+   implementation.
 5. **M-11 / M-12 / M-13** — Orders, Payments (with a `PaymentProvider` port and mock adapter),
    Financial Ledger posting onto K-10.
 6. **Wire K-04 Permissions into every service entry point.**
@@ -566,3 +565,62 @@ The inventory interface does not exist — no `getAvailability`, `reserve`, `rel
 `receive` or `adjust`, and no `inventory_snapshot`. Nothing calls the module. There is no API, no UI,
 no consumer of any of the four events, no verification gate against M-02 before publishing, no K-11
 type check, no K-02 authentication, no K-04 authorisation, and no indexing into K-15.
+
+---
+
+## 16. Work completed after the audit — M-04 slice B, the inventory interface
+
+**Date:** 2026-08-29. Section 9's backlog item 4 is closed. The replaceability requirement the brief
+cites most often now has an executable definition.
+
+| # | Item | Evidence |
+|---|---|---|
+| 1 | Inventory domain, service operations, in-memory repository, PostgreSQL adapter | `modules/universal-listing/` |
+| 2 | Migration 0027 — `inventory_movement` (append-only) and `inventory_snapshot` | `db/migrations/0027_*` |
+| 3 | **Parameterised contract test** — 12 properties | `tests/contracts/inventory.contract.test.ts` |
+| 4 | 7 live-PostgreSQL integration tests | `tests/integration/universal-listing-inventory.integration.ts` |
+| 5 | **P0 defect: the PostgreSQL snapshot upsert could never reserve stock** | Found by the live suite; see below |
+| 6 | Contract test was coupled to M-04's error class | Fixed — refusal codes are read structurally |
+
+### The design, and why it is K-10's
+
+Availability is **derived from an append-only movement log**, never stored as a mutable counter.
+`inventory_snapshot` is a cache written in the same transaction as the movement that changes it, and
+`available = on_hand - reserved` is computed on read rather than stored, because a fourth number can
+disagree with the other three. Quantities are positive and the `kind` carries direction, exactly as
+K-10 carries it by debit/credit: a signed quantity makes a data error indistinguishable from a
+legitimate movement. `CHECK (reserved <= on_hand)` makes the invariant a database rule.
+
+### The defect the database found, and unit tests could not
+
+The adapter's snapshot upsert applied **deltas**:
+
+```sql
+VALUES (..., on_hand 0, reserved 30, ...)
+ON CONFLICT (listing_id, version_id) DO UPDATE SET reserved = ...reserved + 30
+```
+
+PostgreSQL evaluates a table's CHECK constraints against the row proposed by `VALUES` **before** it
+resolves the conflict and reaches `DO UPDATE`. The proposed row therefore claimed 30 reserved
+against 0 on hand, and `reserved <= on_hand` refused it before the update branch was ever considered.
+
+**Reserving any stock at all failed against a real database while all 1,756 unit tests passed.** The
+deltas are now resolved to an absolute position in a `SELECT` against the existing row, so the
+proposed row is valid whether it is inserted or merged.
+
+This is the clearest example so far of why §1's discipline — issue the offending statement rather
+than assert the service does not — is worth its cost. It is also a caution about delegated work
+reported as green: the slice arrived with `npm run verify` passing and the live suite unrun.
+
+### Why the contract test reads codes structurally
+
+As delivered it matched `error instanceof UniversalListingError`, which only M-04 can satisfy — a
+replaceability contract no replacement could pass. It now requires a refusal to carry a string
+`code`, which is the part a caller branches on and the part a replacement must honour.
+
+### What slice B does not do
+
+Nothing calls it. No reservation is made by a real buyer, no stock received from a real supplier, and
+no consumer reads any of the five inventory events. There is no expiry on a held reservation, no
+backorder, no multi-location stock, no transfer between listings, and no K-04 authorisation on any
+operation — anyone holding the repository can commit anyone's stock.
