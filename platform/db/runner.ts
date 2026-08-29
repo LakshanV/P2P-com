@@ -125,6 +125,11 @@ export interface RunnerOptions {
   readonly directory: string;
   /** Progress sink. Never receives credentials — the runner has none to give it. */
   readonly log?: (message: string) => void;
+  /**
+   * Apply migrations only up to and including this version. Useful for tests that need to roll back
+   * a specific migration without first having to roll back everything that came after it.
+   */
+  readonly target?: string;
 }
 
 interface DiscoveredMigration {
@@ -398,7 +403,7 @@ async function withLockedSession<T>(
   }
 }
 
-/** Apply every pending forward migration, in version order. */
+/** Apply every pending forward migration, in version order, optionally stopping at target. */
 export async function migrateUp(
   db: Database,
   options: RunnerOptions,
@@ -406,6 +411,16 @@ export async function migrateUp(
 ): Promise<RunReport> {
   const log = options.log ?? ((): void => {});
   const discovered = discover(options.directory);
+
+  if (options.target !== undefined) {
+    const target = discovered.find((migration) => migration.version === options.target);
+    if (target === undefined) {
+      throw new MigrationError(
+        'unknown-applied-version',
+        `target migration ${options.target} does not exist in ${options.directory}`,
+      );
+    }
+  }
 
   return withLockedSession(db, async (client) => {
     const bootstrapped = await ledgerExists(client);
@@ -422,6 +437,10 @@ export async function migrateUp(
 
     const results: AppliedMigration[] = [];
     for (const [index, migration] of pending.entries()) {
+      if (options.target !== undefined && migration.version.localeCompare(options.target) > 0) {
+        log(`stopping at ${options.target}; ${migration.upFile} remains pending`);
+        break;
+      }
       log(`applying ${migration.upFile}`);
       results.push(await applyOne(client, migration, now, !bootstrapped && index === 0));
     }

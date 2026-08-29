@@ -23,8 +23,9 @@
  */
 
 import { databaseErrorDetail } from '../../platform/db/client.ts';
-import { parseInstant } from './instant.ts';
 import type { Database, DatabaseClient } from '../../platform/db/client.ts';
+import type { OutboxEntry } from '../../platform/outbox/types.ts';
+import { parseInstant } from './instant.ts';
 import type { ConfigurationRepository, ConfigurationTransaction } from './repository.ts';
 import {
   ConfigurationError,
@@ -39,6 +40,7 @@ import {
 
 export const CONFIG_SCHEMA = 'kernel_configuration';
 export const CONFIG_TABLE = `${CONFIG_SCHEMA}.config_version`;
+export const OUTBOX_TABLE = `${CONFIG_SCHEMA}.outbox`;
 
 /** SQLSTATE 23505. The only driver code this adapter interprets. */
 const UNIQUE_VIOLATION = '23505';
@@ -303,11 +305,44 @@ export class PostgresConfigurationRepository implements ConfigurationRepository 
   }
 }
 
+const OUTBOX_COLUMN_NAMES = [
+  'outbox_id',
+  'idempotency_key',
+  'kind',
+  'payload',
+  'recorded_at',
+  'producer',
+  'correlation_id',
+  'processed_at',
+  'retry_count',
+  'last_error',
+] as const;
+const OUTBOX_COLUMNS = OUTBOX_COLUMN_NAMES.join(', ');
+
 class PostgresTransaction implements ConfigurationTransaction {
   readonly #client: DatabaseClient;
 
   constructor(client: DatabaseClient) {
     this.#client = client;
+  }
+
+  async insertOutbox(entry: OutboxEntry): Promise<void> {
+    await this.#client.query(
+      `INSERT INTO ${OUTBOX_TABLE} (${OUTBOX_COLUMNS})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);`,
+      [
+        entry.outboxId,
+        entry.idempotencyKey,
+        entry.kind,
+        JSON.stringify(entry.payload),
+        entry.recordedAt,
+        entry.producer,
+        entry.correlationId,
+        entry.processedAt,
+        entry.retryCount,
+        entry.lastError,
+      ],
+    );
   }
 
   /**

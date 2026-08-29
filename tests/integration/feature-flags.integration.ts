@@ -145,7 +145,7 @@ test('K-07 against a live PostgreSQL server', liveTestOptions, async (t) => {
 
   await withTestDatabase(async ({ database, directory }) => {
     await t.test('the schema is created, written to, and read back exactly', async () => {
-      await migrateUp(database, { directory });
+      await migrateUp(database, { directory, target: '0010' });
 
       const repository = new PostgresFeatureFlagRepository(database);
       await repository.withTransaction(async (tx) => {
@@ -322,9 +322,9 @@ test('K-07 against a live PostgreSQL server', liveTestOptions, async (t) => {
     await t.test('the schema rolls back independently of every other component', async () => {
       const report = await migrateDown(database, {
         directory,
-        version: '0010_create_kernel_feature_flags_schema',
+        version: '0010',
       });
-      assert.match(report.rolledBack, /0010_create_kernel_feature_flags_schema/);
+      assert.match(report.rolledBack, /0010/);
 
       const gone = await refuses(database, `SELECT 1 FROM ${VERSION_TABLE} LIMIT 1;`);
       assert.ok(gone !== null, 'kernel_feature_flags survived its own rollback');

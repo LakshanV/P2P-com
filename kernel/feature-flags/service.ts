@@ -69,6 +69,14 @@ import {
   type Scope,
 } from './types.ts';
 import { validateActivation, validateFlagVersion, validateLifecycleEvent } from './validate.ts';
+import {
+  makeFeatureFlagRetiredAction,
+  makeFeatureFlagRetiredEvent,
+  makeFeatureFlagVersionActivatedAction,
+  makeFeatureFlagVersionActivatedEvent,
+  makeFeatureFlagVersionPublishedAction,
+  makeFeatureFlagVersionPublishedEvent,
+} from './outbox.ts';
 
 export interface PublishVersionRequest {
   readonly flagVersionId: string;
@@ -219,6 +227,15 @@ export class FeatureFlagService {
 
         await this.#refuseTerminated(tx, flagKey, 'publish a version of');
         await tx.insertVersion(candidate);
+
+        const correlationId = candidate.flagVersionId;
+        await tx.insertOutbox(
+          makeFeatureFlagVersionPublishedEvent(candidate, { correlationId, causationId: null }),
+        );
+        await tx.insertOutbox(
+          makeFeatureFlagVersionPublishedAction(candidate, { correlationId, causationId: null }),
+        );
+
         return { version: sealFlagVersion(candidate), deduplicated: false };
       });
     } catch (error) {
@@ -298,6 +315,21 @@ export class FeatureFlagService {
         }
 
         await tx.insertActivation(candidate);
+
+        const correlationId = candidate.activationId;
+        await tx.insertOutbox(
+          makeFeatureFlagVersionActivatedEvent(target, candidate, {
+            correlationId,
+            causationId: null,
+          }),
+        );
+        await tx.insertOutbox(
+          makeFeatureFlagVersionActivatedAction(target, candidate, {
+            correlationId,
+            causationId: null,
+          }),
+        );
+
         return { activation: sealActivation(candidate), deduplicated: false };
       });
     } catch (error) {
@@ -454,6 +486,17 @@ export class FeatureFlagService {
 
         await this.#refuseTerminated(tx, flagKey, kind === 'kill' ? 'kill' : 'retire');
         await tx.insertLifecycleEvent(candidate);
+
+        if (kind === 'retire') {
+          const correlationId = candidate.eventId;
+          await tx.insertOutbox(
+            makeFeatureFlagRetiredEvent(candidate, { correlationId, causationId: null }),
+          );
+          await tx.insertOutbox(
+            makeFeatureFlagRetiredAction(candidate, { correlationId, causationId: null }),
+          );
+        }
+
         return { event: sealLifecycleEvent(candidate), deduplicated: false };
       });
     } catch (error) {

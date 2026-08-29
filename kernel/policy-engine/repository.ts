@@ -19,6 +19,9 @@
  * Owned by: K-06 Policy Engine.
  */
 
+import { InMemoryOutboxStore } from '../../platform/outbox/repository.ts';
+import type { OutboxEntry, OutboxTransaction } from '../../platform/outbox/types.ts';
+
 import {
   sealActivation,
   sealActivations,
@@ -38,7 +41,7 @@ import {
   type PolicyVersion,
 } from './types.ts';
 
-export interface PolicyTransaction {
+export interface PolicyTransaction extends OutboxTransaction {
   findDraftById(draftId: string): Promise<PolicyDraft | null>;
   findDraftByIdempotencyKey(idempotencyKey: string): Promise<PolicyDraft | null>;
   insertDraft(draft: PolicyDraft): Promise<void>;
@@ -78,6 +81,7 @@ export class InMemoryPolicyRepository implements PolicyRepository {
   #versions: PolicyVersion[] = [];
   #activations: PolicyActivation[] = [];
   #retirements: PolicyRetirement[] = [];
+  readonly #outbox = new InMemoryOutboxStore('K-06', 'kernel_policy_engine');
   transactionsCommitted = 0;
   transactionsRolledBack = 0;
 
@@ -95,6 +99,10 @@ export class InMemoryPolicyRepository implements PolicyRepository {
 
   retirements(): readonly PolicyRetirement[] {
     return sealRetirements(this.#retirements);
+  }
+
+  outbox(): InMemoryOutboxStore {
+    return this.#outbox;
   }
 
   seed(state: {
@@ -118,10 +126,13 @@ export class InMemoryPolicyRepository implements PolicyRepository {
       activations: this.#activations.map(sealActivation),
       retirements: this.#retirements.map(sealRetirement),
     });
+    const outboxWorking = new InMemoryOutboxStore(this.#outbox.name, this.#outbox.schema);
+    outboxWorking.seed(this.#outbox.entries());
 
     try {
-      const result = await body(new InMemoryPolicyTransaction(working));
+      const result = await body(new InMemoryPolicyTransaction(working, outboxWorking));
       this.#commit(working);
+      this.#outbox.seed(outboxWorking.entries());
       this.transactionsCommitted += 1;
       return result;
     } catch (error) {
@@ -273,9 +284,16 @@ const reject = (code: PolicyErrorCode, message: string): Promise<never> =>
 
 class InMemoryPolicyTransaction implements PolicyTransaction {
   readonly #state: WorkingSet;
+  readonly #outbox: InMemoryOutboxStore;
 
-  constructor(state: WorkingSet) {
+  constructor(state: WorkingSet, outbox: InMemoryOutboxStore) {
     this.#state = state;
+    this.#outbox = outbox;
+  }
+
+  insertOutbox(entry: OutboxEntry): Promise<void> {
+    this.#outbox.insert(entry);
+    return Promise.resolve();
   }
 
   findDraftById(draftId: string): Promise<PolicyDraft | null> {

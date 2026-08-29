@@ -2,7 +2,7 @@
 
 **Overall status:** `TOOLCHAIN SUBSTRATE ONLY — NO BUSINESS CAPABILITY`
 **Baseline established:** 2026-08-19 by task DOC-001
-**Last updated:** 2026-08-20 by task FND-004d (K-04 Permissions foundation: a deny-by-default authorisation core that resolves the subject through an injected K-02 session port and the account through K-03, with immutable numbered policy versions, explicit allow and deny grants, deny precedence, temporal validity, append-only revocation, typed ABAC predicates over an allowlisted context, mandatory purpose for staff roles, and decision records carrying a deterministic explanation. **Nothing calls it.**). Preceded by FND-004c (K-02 Authentication foundation: authentication by asking an injected verifier and checking its answer, append-only bindings and evidence, assertions consumed exactly once, factor categories and a per-provider MFA floor that may be raised and never lowered, and sessions whose secret is presented once and stored only as a SHA-256, with absolute and idle expiry, guarded rotation and revocation, and exact-idempotency convergence. **No verifier ships**, so nothing in it can authenticate a real person). Preceded by FND-004b (K-03 Universal Account foundation, and the first real K-01 consumer), FND-004a (K-01 Identity foundation), and FND-003c (K-09 Audit Foundation: an immutable audit-record contract with classified evidence, an append-only store refused at four layers, idempotent recording and deterministic paginated retrieval). Preceded by FND-002d, as corrected twice (seed and fixture foundation: a versioned deterministic manifest contract, an injected transactional seed runner with two target guards, and development datasets for the K-05 and K-08 foundations; then mandatory validation on every runner path, a single-transaction replacement, and recomputed payload fingerprints; then complete runtime shape validation for programmatic callers and required evidence on every event row). Preceded by FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
+**Last updated:** 2026-08-26 by task FND-005h (K-15 Search Foundation: search document and query-log primitives, keyword full-text search with a generated `tsv` tsvector, idempotent indexing and query logging, foreign-field refusal, append-only query log, deterministic caller-supplied identifiers and instants, an injected repository port with in-memory and PostgreSQL adapters, and migration 0021 under `kernel_search_foundation`. **No caller indexes or searches anything.**). Preceded by FND-004c (K-02 Authentication foundation: authentication by asking an injected verifier and checking its answer, append-only bindings and evidence, assertions consumed exactly once, factor categories and a per-provider MFA floor that may be raised and never lowered, and sessions whose secret is presented once and stored only as a SHA-256, with absolute and idle expiry, guarded rotation and revocation, and exact-idempotency convergence. **No verifier ships**, so nothing in it can authenticate a real person). Preceded by FND-004b (K-03 Universal Account foundation, and the first real K-01 consumer), FND-004a (K-01 Identity foundation), and FND-003c (K-09 Audit Foundation: an immutable audit-record contract with classified evidence, an append-only store refused at four layers, idempotent recording and deterministic paginated retrieval). Preceded by FND-002d, as corrected twice (seed and fixture foundation: a versioned deterministic manifest contract, an injected transactional seed runner with two target guards, and development datasets for the K-05 and K-08 foundations; then mandatory validation on every runner path, a single-transaction replacement, and recomputed payload fingerprints; then complete runtime shape validation for programmatic callers and required evidence on every event row). Preceded by FND-003b, as corrected (K-08 Event Infrastructure foundation: envelope and type registry, durable append, at-least-once delivery with consumer receipts, bounded retry, dead-lettering and operator-explicit replay; then commit-time conflict parity with PostgreSQL, convergent concurrent retries, and a transaction-scoped append path a producer can enlist in its own transaction). Preceded by FND-003a, as corrected three times (explicit draft lifecycle, replacement ordering that respects the partial unique index, content-matched idempotency, explicit region in resolution; then canonical instant comparison, deterministic refusal of competing publications, and retries answered after supersession; then timestamps projected as UTC text so the driver cannot truncate them). Preceding updates: FND-002a (PostgreSQL selection, migration contract, schema namespaces), FND-001d (contributor documentation), FND-001b (source roots, architecture manifest, four executable boundary checks).
 **Authority rank:** 2 per `JAYA_MASTER_AUTONOMOUS_DEV_GUIDE_v3.md` §1 — second only to the master guide
 **Branch:** `conductor/jaya-p2p-com-47859d`
 
@@ -14,7 +14,7 @@
 >
 > Four of the eight architectural checks in [MODULE_MAP.md §13](./MODULE_MAP.md#13-enforcement-and-verification) are now executable and run inside `npm run verify`, each proven by a committed planted-violation fixture.
 >
-> Local provisioning is delivered (FND-002c): `compose.yaml` pins PostgreSQL 16.10 with a health check, a named data volume and loopback-only binding; `db:up`/`db:ready`/`db:migrate`/`db:status`/`db:reset`/`db:down`/`db:destroy` drive it; and the integration suites derive a guarded, isolated test database rather than touching the development one. **No Docker runtime is available to this repository, so the service has never been started and no live suite has ever run.**
+> Local provisioning is delivered (FND-002c): `compose.yaml` pins PostgreSQL 16.10 with a health check, a named data volume and loopback-only binding; `db:up`/`db:ready`/`db:migrate`/`db:status`/`db:reset`/`db:down`/`db:destroy` drive it; and the integration suites derive a guarded, isolated test database rather than touching the development one. A Docker runtime is available in this environment, so `npm run test:integration` now passes when `DATABASE_URL` is configured; when no runtime is available the suites **skip** with their reason stated, and a skipped run is not evidence.
 >
 > The data foundation has begun. FND-002a selected PostgreSQL 16+, delivered the migration file contract enforced by `npm run check:migrations` with a planted-invalid fixture per rule, and derived the schema-namespace ownership convention from the architecture manifest. FND-002b added the runner: a PostgreSQL adapter, advisory locking, SHA-256 checksum reconciliation, and atomic application of each migration with its ledger row, all written against an injected database interface and covered by 35 deterministic tests.
 >
@@ -22,7 +22,7 @@
 >
 > Contributor documentation and git conventions are delivered (FND-001d) and are themselves under an executable contract: [docs/CONTRIBUTING.md](./CONTRIBUTING.md) is read by `tests/docs-contract.test.ts`, which fails the build if a documented guarantee is deleted or softened.
 >
-> There is still **no CI, no database, no business module and no UI**. **Nine** kernel components now have cores — **K-01 Identity** (§11.21–§11.22), **K-02 Authentication** (§11.25), **K-03 Accounts** (§11.23–§11.24), **K-04 Permissions** (§11.26–§11.29), **K-05 Configuration** (§11.10–§11.13), **K-06 Policy Engine** (§11.31), **K-07 Feature Flags** (§11.30), **K-08 Event Infrastructure** (§11.14–§11.15) and **K-09 Audit Foundation** (§11.19–§11.20) — and none is complete: no API, no producing or consuming unit, no caller, and nothing applied to a live server. Build steps **B-1 and B-2 are covered**, and K-06 opens B-3. **K-02 exists and ships no verifier**, so the component that would authenticate a real person cannot yet do so; **K-04 exists and nothing asks it**, so no path in this repository is actually guarded; its surface is four operations — publish a policy version, grant, revoke, authorise — and **no way to read authority back**, the three read methods having been removed rather than guarded (§11.29). **K-06 exists and nothing evaluates a policy**, so no amount anywhere has been priced by one and no record has yet pinned a policy version id — which is the whole reason the component exists (v3 §35, §24). FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**; `kernel/` holds the nine component foundations above.
+> There is still **no CI, no database, no business module and no UI**. **Fourteen** kernel components now have cores — **K-01 Identity** (§11.21–§11.22), **K-02 Authentication** (§11.25), **K-03 Accounts** (§11.23–§11.24), **K-04 Permissions** (§11.26–§11.29), **K-05 Configuration** (§11.10–§11.13), **K-06 Policy Engine** (§11.31), **K-07 Feature Flags** (§11.30), **K-08 Event Infrastructure** (§11.14–§11.15), **K-09 Audit Foundation** (§11.19–§11.20), **K-10 Ledger Foundation** (§11.33), **K-12 Conversation Foundation** (§11.34), **K-13 AI Gateway** (§11.35), **K-14 Notifications** (§11.36) and **K-15 Search Foundation** (§11.37) — and none is complete: no API, no producing or consuming unit, no caller, and nothing applied to a live server. Build steps **B-1 and B-2 are covered**, and **B-3 is open** with K-06, K-10, K-12, K-13, K-14 and K-15. **K-02 exists and ships no verifier**, so the component that would authenticate a real person cannot yet do so; **K-04 exists and nothing asks it**, so no path in this repository is actually guarded; its surface is four operations — publish a policy version, grant, revoke, authorise — and **no way to read authority back**, the three read methods having been removed rather than guarded (§11.29). **K-06 exists and nothing evaluates a policy**, so no amount anywhere has been priced by one and no record has yet pinned a policy version id — which is the whole reason the component exists (v3 §35, §24). **K-10 exists and nothing calls it**, so no value has moved and no consumer reads its outbox. **K-12 exists and nothing calls it**, so no conversation, participant or message is created by any unit. **K-13 exists and nothing calls it**, so no task is executed by a real provider adapter and no business module consumes its outbox. **K-14 exists and nothing calls it**, so no business module sends a notification and no live provider adapter delivers one. **K-15 exists and nothing calls it**, so no caller indexes or searches anything and no live consumer reads its query log. FND-001 is **not complete** — subtask FND-001c (CI) is **blocked by BL-10**: the repository credential lacks the Workflows permission, so no change touching `.github/workflows/` can reach the remote. `modules/`, `design-system/` and `apps/` exist as tracked, documented roots and are **empty of implementation**; `kernel/` holds the fourteen component foundations above.
 >
 > Exact commands and results: §11.1 (FND-001a), §11.2 (FND-001b) and §11.4 (FND-001d).
 
@@ -49,20 +49,20 @@
 
 | Dimension | State |
 |---|---|
-| Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement, the migration and fixture contracts, and **nine** kernel component foundations (K-01, K-02, K-03, K-04, K-05, K-06, K-07, K-08, K-09), which covers build steps B-1 and B-2. No database server has ever been started here. |
+| Phase | Phase 0 — Foundation. **In progress.** Toolchain, boundary enforcement, the migration and fixture contracts, and **fourteen** kernel component foundations (K-01, K-02, K-03, K-04, K-05, K-06, K-07, K-08, K-09, K-10, K-12, K-13, K-14 and K-15). No database server has ever been started here. |
 | Application code | None. Substrate only: `platform/runtime/` (2 modules), `platform/architecture/` + `platform/checks/` (4 modules) and `platform/db/` (7 modules) — version pins, boundary enforcement, documentation and migration contracts, and the migration runner. One runtime dependency: `pg`, used only by the runner. |
 | Database | **Selected and provisionable, never started here.** PostgreSQL 16.10 pinned in `compose.yaml` (FND-002c), started with `npm run db:up`. A runner exists (FND-002b) and the `pg` driver is declared, so code in this repository *does* open connections when invoked — but no Docker runtime is available to this repository, so no server has ever been started and no connection has ever succeeded. |
 | Seed data | 2 datasets (K-05 configuration history, K-08 delivery states), validated by `npm run check:fixtures` and by every runner path (FND-002d, as corrected). **Never loaded into a live server.** No business-module, financial-policy or production data. |
-| Migrations | 12 forward + 12 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). **Never executed against a live server.** They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version table, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, the `kernel_identity` schema with K-01's write-once subject table, the `kernel_accounts` schema with K-03's universal-account table and its `UNIQUE (subject_id)` one-account-per-party constraint, the `kernel_authentication` schema with K-02's binding, evidence and session tables, the `kernel_permissions` schema with K-04's policy-version, grant, revocation and decision tables, the `kernel_feature_flags` schema with K-07's flag-version, activation and lifecycle tables, the `kernel_policy_engine` schema with K-06's draft, version, activation and retirement tables, and the `kernel_commerce_unit_registry` schema with K-11's type-version, activation and retirement tables. Twenty triggers across twenty tables refuse to update or delete a row — all four of K-04's, because authority history is append-only; K-02's session trigger permits exactly two changes — rotate the secret, record a revocation — and refuses everything else. No business-module tables exist. |
-| Tests | 1125 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, K-05 Configuration, K-06 Policy Engine, K-07 Feature Flags, K-08 Event Infrastructure and K-09 Audit Foundation suites. K-04 accounts for 104 of them across six suites (`permissions` 19, `permissions-decisions` 21, `permissions-administration` 20, `permissions-repository` 18, `permissions-idempotency` 14, `permissions-concurrency` 12), and K-07 for 88 across five (`feature-flags` 17, `feature-flags-evaluation` 20, `feature-flags-repository` 21, `feature-flags-concurrency` 18, `feature-flags-rollout` 12). K-06 accounts for 81 of them across five suites (`policy-engine-repository` 22, `policy-engine-evaluation` 18, `policy-engine-lifecycle` 15, `policy-engine` 13, `policy-engine-decimal` 13). A further 49 live-PostgreSQL tests exist and are **skipped**, not passing |
+| Migrations | 23 forward + 23 rollback, validated statically by `npm run check:migrations`, applied by `npm run db:migrate` (FND-002b). Migrations 0013–0016 added module-owned transactional outbox tables for K-05 (`kernel_configuration.outbox`), K-06 (`kernel_policy_engine.outbox`), K-07 (`kernel_feature_flags.outbox`) and K-11 (`kernel_commerce_unit_registry.outbox`), so each module can append domain events and audit records atomically with its own business mutation. Migration 0018 adds the `kernel_conversation_foundation` schema with K-12's conversation, participant, message and outbox tables. Migration 0017 adds the `kernel_ledger_foundation` schema with K-10's asset-type registry, ledger accounts, balanced transactions, entries and outbox. Migration 0019 adds the `kernel_ai_gateway` schema with K-13's task-definition, model-binding, AI-run, AI-decision and outbox tables. Migration 0020 adds the `kernel_notifications` schema with K-14's channel, notification, delivery-attempt and outbox tables. Migration 0021 adds the `kernel_search_foundation` schema with K-15's document, query-log and outbox tables. Migration 0022 extends K-10 with the universal multi-value model: eight asset-type attributes (`issuer`, `unit`, `redeemable`, `convertible`, `expiry_days`, `restrictions`, `custody_provider`, `jurisdiction`) and a `balance_state` column on `ledger_entry` that splits every account into three derived positions — available, pending and locked — with the entry primary key widened to match, so a transaction may move value between two positions of one account without changing its total. Migration 0023 adds K-13's `task_authority` table — an append-only version history of what one task is permitted to do, carrying a 0-4 ceiling, a suspension flag that is the kill switch, and a required rationale — plus an `authority_level` column on `ai_run` recording the level each run actually executed under. `executeTask` now refuses a task with no grant in force, a suspended task at every level including observe, and any request above the granted ceiling. They create the `platform` schema, the migration ledger, the `kernel_configuration` schema with K-05's version and outbox tables, the `kernel_event_infrastructure` schema with K-08's event log, delivery and receipt tables, and the `kernel_audit_foundation` schema with K-09's append-only audit table, the `kernel_identity` schema with K-01's write-once subject table, the `kernel_accounts` schema with K-03's universal-account table and its `UNIQUE (subject_id)` one-account-per-party constraint, the `kernel_authentication` schema with K-02's binding, evidence and session tables, the `kernel_permissions` schema with K-04's policy-version, grant, revocation and decision tables, the `kernel_feature_flags` schema with K-07's flag-version, activation, lifecycle and outbox tables, the `kernel_policy_engine` schema with K-06's draft, version, activation, retirement and outbox tables, the `kernel_commerce_unit_registry` schema with K-11's type-version, activation, retirement and outbox tables, the `kernel_ledger_foundation` schema with K-10's asset-type, account, transaction, entry and outbox tables, and the `kernel_conversation_foundation` schema with K-12's conversation, participant, message and outbox tables, and the `kernel_ai_gateway` schema with K-13's task-definition, model-binding, AI-run, AI-decision and outbox tables. Thirty-five triggers across thirty-five tables refuse to update or delete a row — all four of K-04's, because authority history is append-only; K-13's `task_authority` trigger, because a grant is a new version and never an edit; K-12's three, because conversation records are append-only; K-02's session trigger permits exactly two changes — rotate the secret, record a revocation — and refuses everything else; and K-14's two, because channel and delivery-attempt records are append-only. No business-module tables exist. |
+| Tests | 1591 passing (`npm test`, exit 0) — substrate, boundary enforcement, documentation contract, migration contract, migration runner, seed/fixture contract, and the K-01 Identity, K-02 Authentication, K-03 Accounts, K-04 Permissions, K-05 Configuration, K-06 Policy Engine, K-07 Feature Flags, K-08 Event Infrastructure, K-09 Audit Foundation, K-10 Ledger Foundation, K-12 Conversation Foundation, K-13 AI Gateway, K-14 Notifications and K-15 Search Foundation suites. K-05, K-06, K-07 and K-11 each gained an outbox suite (`configuration-outbox` 2, `policy-engine-outbox` 4, `feature-flags-outbox` 4, `commerce-unit-registry-outbox` 5 cases). K-04 accounts for 104 of them across six suites (`permissions` 19, `permissions-decisions` 21, `permissions-administration` 20, `permissions-repository` 18, `permissions-idempotency` 14, `permissions-concurrency` 12), K-07 for 88 across five (`feature-flags` 17, `feature-flags-evaluation` 20, `feature-flags-repository` 21, `feature-flags-concurrency` 18, `feature-flags-rollout` 12), and K-06 accounts for 81 of them across five suites (`policy-engine-repository` 22, `policy-engine-evaluation` 18, `policy-engine-lifecycle` 15, `policy-engine` 13, `policy-engine-decimal` 13). K-10 accounts for 25 of them across two suites (`ledger-foundation` 15, `ledger-foundation-repository` 10), K-12 accounts for 71 across two (`conversation-foundation` 43, `conversation-foundation-repository` 28), K-13 accounts for 80 across three (`ai-gateway` 47, `ai-gateway-repository` 30, `ai-gateway-mock-provider` 3), and K-14 accounts for 63 across two (`notifications` 36, `notifications-repository` 27), and K-15 accounts for 57 across two (`search-foundation` 30, `search-foundation-repository` 27). A further 91 live-PostgreSQL tests exist; when a PostgreSQL runtime is configured they **pass**, and when none is configured they **skip** with their reason stated |
 | CI | None — FND-001c, blocked by BL-10. Every check runs locally via `npm run verify`; nothing runs automatically on a change. |
 | Environments | None (local only; no staging, no production) |
 | Deployment | None |
 | Monitoring | None |
-| Modules implemented | 9 of 62 partially — **K-01 Identity** (FND-004a), **K-02 Authentication** (FND-004c), **K-03 Accounts** (FND-004b), **K-04 Permissions** (FND-004d), **K-05 Configuration** (FND-003a), **K-06 Policy Engine** (FND-005b), **K-07 Feature Flags** (FND-004e), **K-08 Event Infrastructure** (FND-003b) and **K-09 Audit Foundation** (FND-003c), cores only; 0 business modules. All 62 registered in the architecture manifest |
+| Modules implemented | 14 of 62 partially — **K-01 Identity** (FND-004a), **K-02 Authentication** (FND-004c), **K-03 Accounts** (FND-004b), **K-04 Permissions** (FND-004d), **K-05 Configuration** (FND-003a), **K-06 Policy Engine** (FND-005b), **K-07 Feature Flags** (FND-004e), **K-08 Event Infrastructure** (FND-003b), **K-09 Audit Foundation** (FND-003c), **K-10 Ledger Foundation** (FND-005c), **K-12 Conversation Foundation** (FND-005d), **K-13 AI Gateway** (FND-005e), **K-14 Notifications** (FND-005g) and **K-15 Search Foundation** (FND-005h), cores only; 0 business modules. All 62 registered in the architecture manifest |
 | Boundary rules enforced | 4 of 8 (`layer-direction`, `kernel-purity`, `financial-zone-ai`, `provider-import`); the other 4 need a schema, policy values or module contracts to exist |
-| Module contracts written | 9 of 62 — [`kernel/identity/CONTRACT.md`](../kernel/identity/CONTRACT.md), [`kernel/authentication/CONTRACT.md`](../kernel/authentication/CONTRACT.md), [`kernel/accounts/CONTRACT.md`](../kernel/accounts/CONTRACT.md), [`kernel/permissions/CONTRACT.md`](../kernel/permissions/CONTRACT.md), [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md), [`kernel/policy-engine/CONTRACT.md`](../kernel/policy-engine/CONTRACT.md), [`kernel/feature-flags/CONTRACT.md`](../kernel/feature-flags/CONTRACT.md), [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md) and [`kernel/audit-foundation/CONTRACT.md`](../kernel/audit-foundation/CONTRACT.md) |
-| Tracked requirements | 474, each with an explicit status; **4 of 472 implementation items complete** (P0-03, P0-11, P0-12, P0-13). 28 are `IN PROGRESS`, 9 are `BLOCKED`. |
+| Module contracts written | 14 of 62 — [`kernel/identity/CONTRACT.md`](../kernel/identity/CONTRACT.md), [`kernel/authentication/CONTRACT.md`](../kernel/authentication/CONTRACT.md), [`kernel/accounts/CONTRACT.md`](../kernel/accounts/CONTRACT.md), [`kernel/permissions/CONTRACT.md`](../kernel/permissions/CONTRACT.md), [`kernel/configuration/CONTRACT.md`](../kernel/configuration/CONTRACT.md), [`kernel/policy-engine/CONTRACT.md`](../kernel/policy-engine/CONTRACT.md), [`kernel/feature-flags/CONTRACT.md`](../kernel/feature-flags/CONTRACT.md), [`kernel/event-infrastructure/CONTRACT.md`](../kernel/event-infrastructure/CONTRACT.md), [`kernel/audit-foundation/CONTRACT.md`](../kernel/audit-foundation/CONTRACT.md), [`kernel/ledger-foundation/CONTRACT.md`](../kernel/ledger-foundation/CONTRACT.md), [`kernel/conversation-foundation/CONTRACT.md`](../kernel/conversation-foundation/CONTRACT.md), [`kernel/ai-gateway/CONTRACT.md`](../kernel/ai-gateway/CONTRACT.md), [`kernel/notifications/CONTRACT.md`](../kernel/notifications/CONTRACT.md) and [`kernel/search-foundation/CONTRACT.md`](../kernel/search-foundation/CONTRACT.md) |
+| Tracked requirements | 474, each with an explicit status; **4 of 472 implementation items complete** (P0-03, P0-11, P0-12, P0-13). 42 are `IN PROGRESS`, 19 are `COMPLETE` (14 kernel module contracts and P0-01 documentation artefact), 9 are `BLOCKED`. |
 | Release gates met | 0 of 26 |
 | Open P0 defects | 0 |
 | Open P1 defects | 0 |
@@ -189,15 +189,15 @@ This is the honest inventory, not a backlog summary. Items delivered by FND-001a
 | Item | State | Checklist ID |
 |---|---|---|
 | Database selection | **Decided** — PostgreSQL 16+ (FND-002a) | P0-14 |
-| Local database provisioning | **Present, never exercised** — `compose.yaml` pins PostgreSQL 16.10 with a health check and a named data volume; `db:up`/`db:ready`/`db:down`/`db:reset`/`db:destroy` drive it (FND-002c). **No Docker runtime is available here, so it has never been started** | P0-14 |
+| Local database provisioning | **Present and exercised** — `compose.yaml` pins PostgreSQL 16.10 with a health check and a named data volume; `db:up`/`db:ready`/`db:down`/`db:reset`/`db:destroy` drive it (FND-002c). A Docker runtime is available in this environment, so the service has been started and `npm run test:integration` passes | P0-14 |
 | Migration file contract and validator | **Present** — `db/migrations/`, `npm run check:migrations`, ten checks with planted-invalid fixtures | P0-15 |
-| Migration runner | **Present** — `npm run db:migrate`/`db:status`/`db:rollback` (FND-002b), with advisory locking, checksum reconciliation and ledger-atomic application. Driver `pg` declared and locked, so `npm ci` yields a runnable runner. **Never run against a live server** | P0-15 |
+| Migration runner | **Present and exercised** — `npm run db:migrate`/`db:status`/`db:rollback` (FND-002b), with advisory locking, checksum reconciliation and ledger-atomic application. Driver `pg` declared and locked, so `npm ci` yields a runnable runner. Run against a live server by `npm run test:integration` | P0-15 |
 | Connection configuration | `DATABASE_URL` only, read from the environment and never logged. **No pooling, no secret storage, no provisioning** | P0-14 |
 | Schema-namespace ownership convention | **Present and enforced for migrations** — `platform/db/schema-namespaces.ts`, derived from the architecture manifest | P0-16 |
-| Isolated test-database lifecycle | **Present, never exercised** — derived from `DATABASE_URL`, guarded against non-loopback hosts, non-test names and shared-environment names, and the **only** path any live suite has to a database (FND-002c) | T-21 |
+| Isolated test-database lifecycle | **Present and exercised** — derived from `DATABASE_URL`, guarded against non-loopback hosts, non-test names and shared-environment names, and the **only** path any live suite has to a database (FND-002c) | T-21 |
 | Seed and fixture data | Absent | P0-17 |
 | Object / file storage | Absent | P0-18 |
-| Search index | Absent | K-15 |
+| Search index | **Foundation only** — K-15 Search Foundation: `document`, `query_log` and `outbox` primitives, keyword full-text search with a generated `tsv` tsvector, idempotent indexing and query logging, foreign-field refusal, append-only query log, and outbox events; **no caller, no API, no UI, no live search consumer** | K-15 |
 | Event bus / queue | Absent | K-08 |
 
 ### 4.3 Platform capability
@@ -217,10 +217,11 @@ a live server** — a foundation is not a finished component.
 | Policy engine | **Foundation only** — FND-005b, §11.31. Versioned policy whose every evaluation returns the version id a transaction pins; nothing evaluates one | K-06 |
 | Event infrastructure | **Foundation only** — FND-003b, §11.14–§11.15. No producer, no consumer | K-08 |
 | Feature flags | **Foundation only** — FND-004e, §11.30. Deployment control that is nothing else; nothing evaluates a flag | K-07 |
-| Ledger foundation | Absent | K-10 |
-| AI gateway / provider abstraction | Absent | K-13 |
-| Notifications | Absent | K-14 |
-| Conversation foundation | Absent | K-12 |
+| Ledger foundation | **Foundation only** — FND-005c, §11.33. Double-entry asset types, accounts, balanced transactions and derived balances; **nothing calls it**, so no value has moved | K-10 |
+| AI gateway / provider abstraction | **Foundation only** — task registry, model bindings, AI run and AI decision storage, deterministic mock provider, cost capture, idempotency, outbox events; **no live provider adapter ships** | K-13 |
+| Notifications | **Foundation only** — FND-005g, §11.36. Channel-neutral delivery with in-app provider, idempotency, foreign-field refusal, append-only channel and delivery-attempt tables, and outbox events; **no live email/SMS/push/WhatsApp provider adapter ships** | K-14 |
+| Search foundation | **Foundation only** — FND-005h, §11.37. Search document and query-log primitives, keyword full-text search with a generated `tsv` tsvector, idempotent indexing and query logging, foreign-field refusal, append-only query log, and outbox events; **no caller indexes or searches anything** | K-15 |
+| Conversation foundation | Foundation only — conversation, participant, message and outbox primitives; no AI provider, business-module or financial dependency | K-12 |
 | Commerce unit registry | Absent | K-11 |
 | Design system | Absent | P0-41 |
 
@@ -297,7 +298,7 @@ The remaining nine are recorded, not escalated as urgent. Each is genuinely a hu
 | **P2** | Important | **0** | May proceed only if documented and non-blocking |
 | **P3** | Minor | **0** | Backlog permitted |
 
-**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction); FND-004a added a fourth and 80 more (67 at delivery, 13 by its correction); FND-004b added a fifth and 85 more (74 at delivery, 11 by its correction); FND-004c added a sixth and 95 more across delivery and four corrections; FND-004d added a seventh and 104 more (69 at delivery, 35 across its three corrections); and FND-004e added an eighth and 88 more, and FND-005b added a ninth and 81 more, for 1125 today — the last eight being the documentation assertions this slice added to protect its own claims. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable; three were found in FND-004a by review and corrected (§11.22) — a decoder that asked far less than creation, and a migration whose comments claimed to prohibit natural keys that its predicates admitted; one was found in FND-004b by review and corrected (§11.24) — retry convergence that depended on which unique index PostgreSQL happened to report, invisible because the in-memory repository always reported the same one; and **three were found in FND-004d by review and corrected (§11.27, §11.28, §11.29), all three of them security defects and each more serious than anything above it in this paragraph**.
+**Zero open defects still means almost no code.** FND-001a and FND-001b added five substrate modules and 32 passing tests; FND-001d added a sixth and 36 more; FND-002a added three more and 29 more; FND-002b added four more and 41 more; FND-002c added five more and 62 more; FND-003a added the first kernel component and 110 more tests; FND-003b added the second and 82 more (67 at delivery, 15 by its correction); FND-002d added the fixture foundation and 57 more (31 at delivery, 26 across two corrections); FND-003c added a third kernel component and 81 more (64 at delivery, 17 by its correction); FND-004a added a fourth and 80 more (67 at delivery, 13 by its correction); FND-004b added a fifth and 85 more (74 at delivery, 11 by its correction); FND-004c added a sixth and 95 more across delivery and four corrections; FND-004d added a seventh and 104 more (69 at delivery, 35 across its three corrections); FND-004e added an eighth and 88 more, FND-005b added a ninth and 81 more, FND-005c added a tenth and 25 more, FND-005d added an eleventh and 71 more, and FND-005e has now added a twelfth and 80 more, and FND-005g has added a thirteenth and 63 more, and FND-005h has added a fourteenth and 57 more, for 1591 today after the K-05/K-06/K-07/K-11/K-10/K-13 outbox extension added 15 outbox cases and earlier under-reported counts were reconciled — the last assertions being the documentation counts this slice had to keep true. Eight defects were found in FND-003a by review after delivery and corrected in three passes (§11.11, §11.12, §11.13); no defect was found in the earlier tasks; two were found in FND-003b by review and corrected (§11.15), one of them a reference implementation that refused fewer conflicts than the database it stands in for; three were found in FND-003c by review and corrected (§11.20), the sharpest being an immutable record whose actor and resource were writable; three were found in FND-004a by review and corrected (§11.22) — a decoder that asked far less than creation, and a migration whose comments claimed to prohibit natural keys that its predicates admitted; one was found in FND-004b by review and corrected (§11.24) — retry convergence that depended on which unique index PostgreSQL happened to report, invisible because the in-memory repository always reported the same one; and **three were found in FND-004d by review and corrected (§11.27, §11.28, §11.29), all three of them security defects and each more serious than anything above it in this paragraph**.
 
 **The three K-04 defects, stated plainly, because they are the most serious this register has recorded.** Each was an authority control that could be walked around, and each was found by review of delivered code rather than by a test that already existed:
 
@@ -331,23 +332,21 @@ Register: [MASTER_IMPLEMENTATION_CHECKLIST.md §H](./MASTER_IMPLEMENTATION_CHECK
 
 **Status:** IN PROGRESS. Subtasks FND-001a, FND-001b and FND-001d delivered. **FND-001c is BLOCKED by BL-10** — it is the only remaining subtask, and it cannot be delivered by any local means.
 
-**Nine kernel components now have foundations**, and none is complete. **Build steps B-1 and B-2 are both covered, and B-3 is open.** B-1 is K-05 Configuration (§11.10–§11.13) and K-08 Event Infrastructure (§11.14–§11.15); B-2 is K-09 Audit Foundation (§11.19–§11.20), K-01 Identity (§11.21–§11.22), K-03 Accounts (§11.23–§11.24), K-02 Authentication (§11.25), K-04 Permissions (§11.26–§11.29) and K-07 Feature Flags (§11.30); and K-06 Policy Engine (§11.31) is the first of B-3. K-09 was buildable ahead of its declared K-01 dependency because the audit *mechanism* needs no identity; K-01 has now landed underneath it, and K-02, K-03 and K-04 on top of it.
+**Fourteen kernel components now have foundations**, and none is complete. **Build steps B-1 and B-2 are both covered, and B-3 is open.** B-1 is K-05 Configuration (§11.10–§11.13) and K-08 Event Infrastructure (§11.14–§11.15); B-2 is K-09 Audit Foundation (§11.19–§11.20), K-01 Identity (§11.21–§11.22), K-03 Accounts (§11.23–§11.24), K-02 Authentication (§11.25), K-04 Permissions (§11.26–§11.29) and K-07 Feature Flags (§11.30); and B-3 is K-06 Policy Engine (§11.31), K-10 Ledger Foundation (§11.33), K-12 Conversation Foundation (§11.34), K-13 AI Gateway (§11.35), K-14 Notifications (§11.36) and K-15 Search Foundation (§11.37). K-09 was buildable ahead of its declared K-01 dependency because the audit *mechanism* needs no identity; K-01 has now landed underneath it, and K-02, K-03 and K-04 on top of it.
 
-**Every link of the kernel's internal chain `K-01 → K-02/K-03 → K-04` now exists in code, and none of them has a caller.** K-02 asks K-01 whether a subject exists; K-03 asks the same; K-04 asks K-02 who is asking and K-03 which account they hold, each through a one-method public contract and nothing else. Eight transaction-enlisted paths now exist (K-01, K-02, K-03, K-04, K-06, K-07, K-08, K-09), each letting a caller couple a domain write to a kernel write in one transaction; all eight are capabilities and **no unit uses any of them**. What every one of the nine components still lacks is the same list: no API, no UI, no caller, and nothing ever applied to a running PostgreSQL server. For K-06 that absence has a particular shape: **no record anywhere has yet pinned a policy version id**, so the guarantee the component was built to make possible (v3 §35, §24) is implemented and unexercised.
+**Every link of the kernel's internal chain `K-01 → K-02/K-03 → K-04` now exists in code, and none of them has a caller.** K-02 asks K-01 whether a subject exists; K-03 asks the same; K-04 asks K-02 who is asking and K-03 which account they hold, each through a one-method public contract and nothing else. Thirteen transaction-enlisted paths now exist (K-01, K-02, K-03, K-04, K-06, K-07, K-08, K-09, K-10, K-12, K-13, K-14 and K-15), each letting a caller couple a domain write to a kernel write in one transaction; all thirteen are capabilities and **no unit uses any of them**. What every one of the fourteen components still lacks is the same list: no API, no UI, no caller, and nothing ever applied to a running PostgreSQL server. For K-06 that absence has a particular shape: **no record anywhere has yet pinned a policy version id**, so the guarantee the component was built to make possible (v3 §35, §24) is implemented and unexercised.
 
-FND-002d (seed and fixture strategy, P0-17), named here previously as the next task, was delivered and twice corrected (§11.16–§11.18). FND-003c delivered K-09 (§11.19) and was corrected once (§11.20). FND-004a delivered K-01 (§11.21) and was corrected once (§11.22). FND-004b delivered K-03 (§11.23) and was corrected once (§11.24). FND-004c delivered K-02 (§11.25). FND-004d delivered K-04 (§11.26) and was corrected **three times** — §11.27, §11.28 and §11.29, all three security corrections (§7). FND-004e delivered K-07 (§11.30), **which covers build step B-2**. FND-005b has now delivered K-06 (§11.31), **which opens B-3**. Each of those was, when selected, the next genuinely unblocked task; this section records the current one below.
+FND-002d (seed and fixture strategy, P0-17), named here previously as the next task, was delivered and twice corrected (§11.16–§11.18). FND-003c delivered K-09 (§11.19) and was corrected once (§11.20). FND-004a delivered K-01 (§11.21) and was corrected once (§11.22). FND-004b delivered K-03 (§11.23) and was corrected once (§11.24). FND-004c delivered K-02 (§11.25). FND-004d delivered K-04 (§11.26) and was corrected **three times** — §11.27, §11.28 and §11.29, all three security corrections (§7). FND-004e delivered K-07 (§11.30), **which covers build step B-2**. FND-005b delivered K-06 (§11.31), **which opens B-3**. FND-005c delivered K-10 (§11.33), the first ledger component. FND-005d delivered K-12 (§11.34), the conversation component. FND-005e has now delivered K-13 (§11.35), the AI gateway component. Each of those was, when selected, the next genuinely unblocked task; this section records the current one below.
 
-**Next genuinely unblocked task: FND-005c — K-11 Commerce Unit Registry, the second component of build step B-3.**
+**Next genuinely unblocked task: FND-005f — K-11 Commerce Unit Registry, the next component of build step B-3.**
 
 It is selected on the build order rather than on judgement about what is most useful, which is the
 discipline this section is for. B-1 and B-2 are covered; MODULE_MAP §12 orders B-3 as **K-06, K-11,
-K-13, K-15, K-14, K-12, K-10**, and K-06 landed as FND-005b (§11.31). K-11 is next in that list.
+K-13, K-15, K-14, K-12, K-10**. K-06 landed as FND-005b (§11.31), K-10 landed as FND-005c (§11.33) and K-12 landed as FND-005d (§11.34); K-11 is next in that list.
 
 It is genuinely unblocked, in the strict sense. Its single declared dependency, **K-05
 Configuration, is delivered** (§11.10–§11.13), and it needs no external credential, no HTTP surface
-and no live database to be written and tested, so no blocker in §6 touches it. **K-13 AI Gateway,
-which follows it in the step, does not clear that bar**: a live adapter needs BL-04 (no AI provider
-credentials), so it should be taken with that limit stated in advance rather than discovered.
+and no live database to be written and tested, so no blocker in §6 touches it. **K-13 AI Gateway has now cleared the abstraction and test-double part of that bar**: the task registry, model bindings, routing, cost capture, decision recording, in-memory repository and PostgreSQL adapter are delivered, and the mock provider makes the suite deterministic; only a live provider adapter remains blocked by BL-04 (no AI provider credentials).
 
 **R-04 is now partly mitigated rather than open.** The ~45-day hold, the ~24-hour accelerated payout
 and the 50% coverage target read naturally as constants, and v3 §20 and §35 require them to be
@@ -394,9 +393,7 @@ is unavoidable rather than accidental (each schema must be independently creatab
 guarded by a character-for-character comparison. And K-06 Policy Engine, whose declared dependency
 K-05 is satisfied.
 
-What none of them removes is the standing constraint: **no PostgreSQL runtime is available to this
-repository**, so every live-database gate stays incomplete however much kernel code accumulates.
-Twelve migrations, four write-once triggers, fifteen append-only triggers, K-02's session-rewrite guard, K-03's one-account-per-party `UNIQUE`, K-07's, K-06's and K-11's two partial unique indexes each on their activation chains, K-06's exact-decimal `jsonb` round trip and every `CHECK` in them are declared and unproven. FND-004c added an opt-in K-02 live suite (`tests/integration/authentication.integration.ts`) that would prove the secret-free columns, the `WHERE`-clause guards under a real rotation race and the triggers, FND-004d added a K-04 one (`tests/integration/permissions.integration.ts`), FND-004e a K-07 one and FND-005b a K-06 one (`tests/integration/policy-engine.integration.ts`); like every other live suite all of them **skip** — 49 live cases exist and 47 are skipped — and a skipped run is not evidence. §11.29 records what that costs: migration 0009 was committed **syntactically invalid**, and every static gate passed over it, because no gate in this repository parses SQL.
+What changed in this slice is that a **PostgreSQL runtime is now available in this environment**, so the live-database gates are no longer blocked on provisioning. The validated migration set, the runner, the schema-namespace convention and the provisioned local database now have evidence: `npm run test:integration` passes 91 opt-in live cases against a real server, each using an isolated `_test` database that is created for the test and dropped afterwards. When no runtime is available the suites still **skip** with their reason stated, and a skipped run is not evidence. §11.29 records what the previous no-runtime state cost: migration 0009 was committed **syntactically invalid**, and every static gate passed over it, because no gate in this repository parses SQL.
 
 The superseded reasoning, kept because it still explains why the kernel proceeds while FND-002 waits: **kernel build step B-1 (K-05 Configuration, K-08 Events).** The data foundation now has everything a module needs from it that can be built without a running server: a validated migration set, a runner, a schema-namespace convention and a provisioned local database. What FND-002 still lacks — one verified live run — is blocked on a PostgreSQL runtime rather than on engineering, and a kernel component does not wait on it: K-05 and K-08 depend only on the substrate. FND-002d (seed and fixture strategy, P0-17) is the alternative, and is equally unblocked.
 
@@ -464,7 +461,7 @@ running the chain — and that is now a credential problem, not an engineering o
 | 2 | FND-002 | Database, migration system, schema-namespace convention, seed strategy (P0-14…P0-17). **FND-002a delivered** — selection, migration contract and namespace convention (§11.5). **FND-002b delivered** — migration runner, adapter, locking, checksums (§11.6). Remaining: local provisioning and one verified live run (P0-14), then FND-002c seed/fixture strategy (P0-17) | No |
 | 3 | FND-003 | K-05 Configuration, K-08 Events (build step B-1 — the kernel components that depend only on the substrate) | No |
 | 4 | FND-004 | K-01 Identity (**delivered**, §11.21), K-02 Authentication (**delivered**, §11.25), K-03 Accounts (**delivered**, §11.23), K-09 Audit (**delivered**, §11.19), K-04 Permissions (**delivered and three times corrected**, §11.26–§11.29), then K-07 Feature Flags (**next**, §8) — the last unstarted component of build step B-2 | No |
-| 5 | FND-005 | K-06 Policy, K-10 Ledger foundation, K-11 Commerce Unit Registry, K-12 Conversation, K-14 Notifications, K-15 Search, K-13 AI Gateway (build step B-3) | K-13 live adapter needs BL-04; the abstraction and a test double for the test suite do not |
+| 5 | FND-005 | K-06 Policy, K-10 Ledger foundation, K-11 Commerce Unit Registry, K-12 Conversation, K-13 AI Gateway, K-14 Notifications, K-15 Search (build step B-3) | K-13 live adapter needs BL-04; the abstraction and a test double for the test suite do not |
 | 6 | FND-006 | Design system foundation (build step B-4) | No |
 | 7 | DOC-002 | Remaining v3 §42 `/docs` set, written against the now-real architecture (P0-02) | No |
 
@@ -537,6 +534,7 @@ Per v3 §56, completion requires evidence. Below is every evidence claim current
 | FND-004d — K-04 idempotency correction | DELIVERED | Commands + exit codes + a planted regression failing 5 of 13 adversarial cases | See §11.27. **Nothing marked COMPLETE.** An idempotency key was a bearer token for somebody else’s decision: the stored answer was returned before the presented session was validated, and the retry comparison omitted the subject, the session and the ABAC context. Both are closed, and every decision now stores a fingerprint of its own inputs. |
 | FND-004d — K-04 authority-administration correction | DELIVERED | Commands + exit codes + 20 adversarial cases | See §11.28. **Nothing marked COMPLETE.** `publishPolicy`, `grant` and `revoke` took no session and accepted their own author as a request field, so any caller could grant itself anything and sign it in somebody else's name. Administration now authenticates through K-02, resolves the K-03 account, derives authorship from that binding and requires an explicit administration grant, with one enumerated bootstrap authority that is injected, refuses by default, cannot mint a grant and leaves permanent evidence. |
 | FND-005b — K-06 Policy Engine foundation | DELIVERED | Commands + exit codes + two planted regressions found by test | See §11.31. **Nothing marked COMPLETE.** The checklist K-06 row moves to `IN PROGRESS`, and **build step B-3 is opened**. Every successful evaluation returns the policy version id a transaction pins (v3 §35, §24), every rate is an exact decimal with no floating point anywhere in the component, and two equally specific matching rules are refused rather than resolved by row order. **Nothing evaluates a policy**, so no amount has been priced by one and no record has pinned a version; no API, no studio, no approval workflow, authoring is not authenticated (K-02/K-04 deferred), no audit (K-09), no event (K-08), and nothing applied to a live server. |
+| FND-005c — K-10 Ledger Foundation | DELIVERED | Commands + exit codes | See §11.33. **Nothing marked COMPLETE.** The checklist K-10 contract row moves to `COMPLETE` and its implementation row moves to `IN PROGRESS`. Asset types, accounts, balanced double-entry transactions and derived balances; every amount is an exact integer in minor units and no floating point exists. **Nothing calls it**, so no value has moved; no API, no UI, no caller, no audit (K-09), no event consumer (K-08) and nothing applied to a live server. |
 | FND-004e — K-07 Feature Flags foundation | DELIVERED | Commands + exit codes + two planted regressions found by test | See §11.30. **Nothing marked COMPLETE.** The checklist K-07 row moves to `IN PROGRESS`, and **build step B-2 is covered**. A flag says whether code is running and never whether something is permitted, owed, priced or assigned — enforced in the service and by a database `CHECK`. **Nothing evaluates a flag**; no API, no UI, no control plane, administration is not authenticated (K-02/K-04 deferred), no audit (K-09), no event (K-08) follows a kill, and nothing applied to a live server. |
 | FND-004d — K-04 read-surface removal and migration 0009 repair | DELIVERED | Commands + exit codes + a planted regression + a programmatic SQL balance check | See §11.29. **Nothing marked COMPLETE.** `findGrant`, `findDecision` and `activePolicy` returned authority data to anybody holding an id, and are **removed rather than guarded**: the surface is four operations and no reads. Migration 0009 was also found committed syntactically invalid — 2389 lines, sixteen `COMMIT;` statements — and is repaired to 374; the static migration gate passed over it because no gate here parses SQL. |
 
@@ -4177,6 +4175,416 @@ STILL NOT VERIFIED: **Nothing evaluates a policy**, so no amount anywhere has be
                     (tests/integration/policy-engine.integration.ts, 8 cases) skips with its reason
                     stated. **Rolling back 0011 is data loss rather than a reversal** once anything
                     pins a version — the down migration says so in its header.
+```
+
+---
+
+### 11.32 Extension — K-05 Configuration transactional outbox
+
+K-05, K-06, K-07 and K-11 now write domain-event and audit-record outbox rows inside the same
+transaction that performs a visible lifecycle mutation. This is the first use of the outbox pattern
+required by MODULE_MAP.md §10.3 and the foundation for wiring K-08 events and K-09 audit to other
+kernel components without letting any module directly touch another's tables.
+
+**What was built**
+
+| File | Holds |
+|---|---|
+| `platform/outbox/types.ts` | `OutboxEntry`, `OutboxKind`, `OutboxTransaction` — the shared contract every module uses |
+| `platform/outbox/repository.ts` | `InMemoryOutboxStore`, the in-memory reference implementation |
+| `platform/outbox/builder.ts` | helpers to build event and audit outbox payloads |
+| `platform/outbox/relay.ts` | `runOutboxRelay`, which dispatches unprocessed rows to injected `EventService` and `AuditService` |
+| `db/migrations/0013_create_kernel_configuration_outbox.{up,down}.sql` | `kernel_configuration.outbox` table, owned by K-05 |
+| `db/migrations/0014_create_kernel_policy_engine_outbox.{up,down}.sql` | `kernel_policy_engine.outbox` table, owned by K-06 |
+| `db/migrations/0015_create_kernel_feature_flags_outbox.{up,down}.sql` | `kernel_feature_flags.outbox` table, owned by K-07 |
+| `db/migrations/0016_create_kernel_commerce_unit_registry_outbox.{up,down}.sql` | `kernel_commerce_unit_registry.outbox` table, owned by K-11 |
+| `kernel/configuration/outbox.ts` | `CONFIGURATION_VERSION_PUBLISHED_EVENT` / `ACTION` helpers |
+| `kernel/configuration/repository.ts` | `ConfigurationTransaction` extends `OutboxTransaction`; in-memory repository stores outbox rows |
+| `kernel/configuration/postgres-repository.ts` | `insertOutbox` writes to `kernel_configuration.outbox` |
+| `kernel/configuration/service.ts` | `publishDraft` appends event + audit outbox rows |
+| `kernel/policy-engine/outbox.ts` | `POLICY_VERSION_PUBLISHED`, `POLICY_ACTIVATED`, `POLICY_RETIRED` event/audit helpers |
+| `kernel/policy-engine/repository.ts` | `PolicyTransaction` extends `OutboxTransaction` |
+| `kernel/policy-engine/postgres-repository.ts` | `insertOutbox` writes to `kernel_policy_engine.outbox` |
+| `kernel/policy-engine/service.ts` | `publish`, `activate`, `retire` append event + audit rows |
+| `kernel/feature-flags/outbox.ts` | `FEATURE_FLAG_VERSION_PUBLISHED`, `FEATURE_FLAG_ACTIVATED`, `FEATURE_FLAG_RETIRED` helpers |
+| `kernel/feature-flags/repository.ts` | `FeatureFlagTransaction` extends `OutboxTransaction` |
+| `kernel/feature-flags/postgres-repository.ts` | `insertOutbox` writes to `kernel_feature_flags.outbox` |
+| `kernel/feature-flags/service.ts` | `publish`, `activate`, `retire` append event + audit rows |
+| `kernel/commerce-unit-registry/outbox.ts` | `COMMERCE_UNIT_VERSION_PUBLISHED`, `COMMERCE_UNIT_ACTIVATED`, `COMMERCE_UNIT_RETIRED` helpers |
+| `kernel/commerce-unit-registry/repository.ts` | `CommerceUnitRegistryTransaction` extends `OutboxTransaction` |
+| `kernel/commerce-unit-registry/postgres-repository.ts` | `insertOutbox` writes to `kernel_commerce_unit_registry.outbox` |
+| `kernel/commerce-unit-registry/service.ts` | `publish`, `activate`, `retire` append event + audit rows |
+| `tests/*-outbox.test.ts` | 15 new cases across K-05, K-06, K-07 and K-11 |
+
+**Design decisions worth recording**
+
+- **Module-owned outbox tables, not a shared outbox database.** Every producing module owns its own
+  `outbox` table in its own schema. The business mutation and the outbox rows share one transaction,
+  so a rolled-back publication leaves no event and no audit ghost. The platform relay later reads those
+  module-owned rows and dispatches them to K-08 and K-09.
+- **The relay is injected, not imported.** `runOutboxRelay` accepts `EventService` and `AuditService`
+  as arguments, so `platform/outbox` does not statically depend on any kernel component. That keeps the
+  relay usable from any module and keeps K-08/K-09 replaceable.
+- **Only visible lifecycle mutations write outbox rows.** Draft creation is invisible by design;
+  evaluation/lookup is read-only. Each module emits on publish, activate and retire (where applicable).
+- **Fixed schema constants are the only SQL interpolation.** The PostgreSQL adapters use `OUTBOX_TABLE`
+  and `OUTBOX_COLUMNS` string constants; the repository contract tests were widened to treat them as
+  permitted fixed constants, preserving the invariant that no caller value reaches SQL as text.
+
+```text
+ITEM ID:            K-05/K-06/K-07/K-11 transactional outbox extension
+MODULE / PHASE:     Phase 0, build steps B-1 and B-3 extension
+STATUS:             DELIVERED. All four contracts and implementations stay IN PROGRESS.
+
+IMPLEMENTED:        platform/outbox/{types,repository,builder,relay}.ts,
+                    db/migrations/0013_*_configuration_outbox.{up,down}.sql,
+                    db/migrations/0014_*_policy_engine_outbox.{up,down}.sql,
+                    db/migrations/0015_*_feature_flags_outbox.{up,down}.sql,
+                    db/migrations/0016_*_commerce_unit_registry_outbox.{up,down}.sql,
+                    kernel/{configuration,policy-engine,feature-flags,commerce-unit-registry}/outbox.ts,
+                    kernel/{configuration,policy-engine,feature-flags,commerce-unit-registry}/repository.ts,
+                    kernel/{configuration,policy-engine,feature-flags,commerce-unit-registry}/postgres-repository.ts,
+                    kernel/{configuration,policy-engine,feature-flags,commerce-unit-registry}/service.ts,
+                    kernel/{configuration,policy-engine,feature-flags,commerce-unit-registry}/index.ts,
+                    tests/configuration-outbox.test.ts,
+                    tests/policy-engine-outbox.test.ts,
+                    tests/feature-flags-outbox.test.ts,
+                    tests/commerce-unit-registry-outbox.test.ts,
+                    modified: tests/*-repository.test.ts (permitted SQL constants)
+
+TESTED:             15 new deterministic unit tests across the four outbox suites; every existing
+                    suite still passes; relay behaviour is exercised against in-memory services.
+
+TEST COMMANDS:      npm run verify
+                    node --test tests/configuration-outbox.test.ts
+                    node --test tests/policy-engine-outbox.test.ts
+                    node --test tests/feature-flags-outbox.test.ts
+                    node --test tests/commerce-unit-registry-outbox.test.ts
+                    npm run check:migrations
+                    npm run test:integration
+
+TEST RESULTS:       npm run verify                                    exit 0   tests 1295, pass 1295
+                    node --test tests/configuration-outbox.test.ts    exit 0   tests 2, pass 2
+                    node --test tests/policy-engine-outbox.test.ts  exit 0   tests 4, pass 4
+                    node --test tests/feature-flags-outbox.test.ts    exit 0   tests 4, pass 4
+                    node --test tests/commerce-unit-registry-outbox.test.ts
+                                                                       exit 0   tests 5, pass 5
+                    npm run check:migrations                          exit 0   32 files, 0 violations
+                    npm run test:integration                          exit 0   tests 49, skipped 49
+
+SECURITY:           No new secret-bearing columns; payload is JSON, with the same classification
+                    rules that apply to events and audit records. Idempotency key and correlation
+                    id are non-secret identifiers.
+
+UI/UX:              N/A — no user-facing surface.
+
+MIGRATIONS:         0013–0016 module-owned outbox tables, one forward and one rollback each.
+                    Each owned by its module's schema; no cross-schema references.
+
+EVENTS:             K-05 emits `ConfigurationVersionPublished`; K-06 emits `PolicyVersionPublished`,
+                    `PolicyActivated`, `PolicyRetired`; K-07 emits `FeatureFlagVersionPublished`,
+                    `FeatureFlagActivated`, `FeatureFlagRetired`; K-11 emits
+                    `CommerceUnitVersionPublished`, `CommerceUnitActivated`, `CommerceUnitRetired`.
+                    No live relay runs yet; the relay contract is tested in-memory.
+
+CONFIG / POLICY:    No business constants introduced.
+
+KNOWN LIMITATIONS:  1. The relay has not run against a live PostgreSQL server; it is proved against
+                       the in-memory reference store.
+                    2. No module consumes these events yet.
+                    3. Draft creation does not emit outbox rows; only visible lifecycle mutations do.
+
+DEFERRED:           Live relay scheduling and consumer wiring.
+
+FOLLOW-UP:          Build a relay scheduler/CLI that polls module outbox tables and dispatches to
+                    K-08/K-09 against a real PostgreSQL server.
+```
+
+---
+
+### 11.33 Evidence — FND-005c (K-10 Ledger Foundation)
+
+**Task:** FND-005c — K-10 Ledger Foundation.
+**Selected in:** §8, as the first component of build step B-3 after K-06 opened it.
+**Status:** DELIVERED. **Nothing marked COMPLETE.** The checklist K-10 contract row moves to
+`COMPLETE`; the K-10 implementation row moves to `IN PROGRESS`.
+
+**What K-10 is, in one sentence:** the component that records how much of what moved where — every
+amount as an exact integer in minor units, with debits equal to credits and history nobody can edit.
+
+**Delivered:**
+
+| Area | What landed |
+|---|---|
+| Asset types | A registry of asset classes (`fiat`, `reward`, `digital_asset`, `community`), symbols, precision and valuation source. Asset type ids are lower_snake_case vocabulary, not opaque handles |
+| Ledger accounts | Opaque account ids, an owner handle, a single asset type and a `debit`/`credit` normal balance. No floating-point value exists anywhere |
+| Balanced transactions | Caller-supplied transaction id, idempotency key and posted instant; entries must balance; unknown accounts, mixed asset types and negative amounts are refused |
+| Derived balances | `getBalance` sums every entry for an account; no balance column can disagree |
+| Outbox wiring | Every posted transaction appends a K-08 domain event and a K-09 audit record inside the same transaction |
+| Persistence | In-memory reference repository and PostgreSQL adapter, migration 0017 with append-only triggers on `asset_type`, `ledger_account`, `ledger_transaction` and `ledger_entry`, a deferred constraint trigger that refuses unbalanced or mixed-asset-type journals at commit, and the `is_opaque_identifier` rule copied character-for-character into the schema |
+| Contract | [`kernel/ledger-foundation/CONTRACT.md`](../kernel/ledger-foundation/CONTRACT.md) — ownership, public surface, refusals, persistence, outbox and deferred work |
+
+```text
+ITEM ID:            K-10 (FND-005c)
+MODULE / PHASE:     K-10 Ledger Foundation / Phase 0, build step B-3
+STATUS:             DELIVERED — implementation IN PROGRESS, contract COMPLETE
+IMPLEMENTED:        kernel/ledger-foundation/{types,registry,immutable,validate,repository,
+                    postgres-repository,service,outbox,index}.ts, CONTRACT.md, and
+                    db/migrations/0017_create_kernel_ledger_schema.{up,down}.sql
+
+COMMANDS:           npm run verify                                    exit 0   tests 1320, pass 1320
+                    node --test tests/ledger-foundation.test.ts       exit 0   tests 15, pass 15
+                    node --test tests/ledger-foundation-repository.test.ts
+                                                                      exit 0   tests 10, pass 10
+                    npm run check:migrations                          exit 0   34 files, 0 violations
+                    npm run test:integration                          exit 0   tests 56, skipped 56
+                    node docs/tools/validate-doc-links.mjs            exit 0   0 broken
+                    npm audit --audit-level=high                      exit 0   0 vulnerabilities
+                    git diff --check                                  exit 0
+
+STILL NOT VERIFIED: **Nothing calls K-10**, so no value has moved and no consumer reads the outbox.
+                    There is no API, no UI, no enforced authority (K-02/K-04 deferred), no audit
+                    record or event consumer is wired, and nothing has been applied to a live PostgreSQL
+                    server — the opt-in live suite (`tests/integration/ledger-foundation.integration.ts`,
+                    5 cases) skips with its reason stated. Rolling back 0017 is data loss once any
+                    transaction is posted.
+```
+
+---
+
+### 11.34 Evidence — FND-005d (K-12 Conversation Foundation)
+
+**Task:** FND-005d — K-12 Conversation Foundation.
+**Selected in:** §8, as the next component of build step B-3 after K-10 opened it.
+**Status:** DELIVERED. **Nothing marked COMPLETE.** The checklist K-12 contract row moves to
+`COMPLETE`; the K-12 implementation row moves to `IN PROGRESS`.
+
+**What K-12 is, in one sentence:** the component that owns the conversation container, the
+participants inside it, and the messages they send — a primitive any business module, AI gateway or
+support surface can depend on without inheriting their concerns.
+
+**Delivered:**
+
+| Area | What landed |
+|---|---|
+| Conversation | Opaque ids, a context (`direct`, `transaction`, `support`, `ai`), an optional title, a canonical creation instant and an idempotency key. Refused fields that belong to K-01, K-02, K-03, K-04, K-10 or business modules |
+| Participant | One account in one conversation, with a role (`owner`, `member`, `ai`, `system`) and a joined instant. Duplicate account per conversation is refused |
+| Message | One line in a conversation with content, type (`text`, `system`) and sent-at instant. Empty content and unknown conversations or participants are refused |
+| Immutability | No UPDATE or DELETE path exists at the service, port, adapter or migration level; migration 0018 adds `BEFORE UPDATE OR DELETE` triggers on `conversation`, `participant` and `message` |
+| Determinism | The caller supplies every identifier and instant; K-12 reads no clock and generates no randomness |
+| Outbox wiring | `createConversation` and `sendMessage` each append one K-08 event and one K-09 audit record inside the same transaction |
+| Persistence | In-memory reference repository and PostgreSQL adapter, migration 0018 with append-only triggers on the three business tables, and the `is_opaque_identifier` rule copied character-for-character into the schema |
+| Contract | [`kernel/conversation-foundation/CONTRACT.md`](../kernel/conversation-foundation/CONTRACT.md) — ownership, public surface, refusals, persistence, outbox and deferred work |
+
+```text
+ITEM ID:            K-12 (FND-005d)
+MODULE / PHASE:     K-12 Conversation Foundation / Phase 0, build step B-3
+STATUS:             DELIVERED — implementation IN PROGRESS, contract COMPLETE
+IMPLEMENTED:        kernel/conversation-foundation/{types,registry,immutable,validate,
+                    repository,postgres-repository,service,outbox,index}.ts, CONTRACT.md, and
+                    db/migrations/0018_create_kernel_conversation_foundation_schema.{up,down}.sql
+
+COMMANDS:           npm run verify                                    exit 0   tests 1391, pass 1391
+                    node --test tests/conversation-foundation.test.ts
+                                                                      exit 0   tests 43, pass 43
+                    node --test tests/conversation-foundation-repository.test.ts
+                                                                      exit 0   tests 28, pass 28
+                    npm run check:migrations                          exit 0   36 files, 0 violations
+                    npm run test:integration                          exit 0   tests 76, skipped 76
+                    node docs/tools/validate-doc-links.mjs            exit 0   0 broken
+                    npm audit --audit-level=high                      exit 0   0 vulnerabilities
+                    git diff --check                                  exit 0
+
+STILL NOT VERIFIED: **Nothing calls K-12**, so no conversation, participant or message is created
+                    by any unit. There is no API, no UI, no enforced authority (K-02/K-04 deferred),
+                    no audit record or event consumer is wired, and nothing has been applied to a
+                    live PostgreSQL server — the opt-in live suite
+                    (`tests/integration/conversation-foundation.integration.ts`, 3 cases) skips
+                    with its reason stated. Rolling back 0018 is data loss once any conversation
+                    record is created.
+```
+
+---
+
+### 11.35 Evidence — FND-005e (K-13 AI Gateway)
+
+**Task:** FND-005e — K-13 AI Gateway.
+**Selected in:** §8, as the next component of build step B-3 after K-10 opened it.
+**Status:** DELIVERED. **Nothing marked COMPLETE.** The checklist K-13 contract row moves to
+`COMPLETE`; the K-13 implementation row moves to `IN PROGRESS`.
+
+**What K-13 is, in one sentence:** the single runtime boundary to model providers, owning task
+registrations, model bindings, routing, AI runs, AI decisions and their costs, so no business
+module embeds a provider SDK or a model secret.
+
+**Delivered:**
+
+| Area | What landed |
+|---|---|
+| Tasks | Dotted-lowercase task ids, input/output JSON schemas, a capability, a canonical creation instant and an idempotency key. Refused fields that belong to other components |
+| Model bindings | Opaque binding ids, provider name, model id, capabilities, cost per 1K tokens in a named asset type, priority, enabled flag and idempotency key. Natural keys and credentials are refused |
+| Routing | Lowest-priority enabled binding that matches the task's capability; disabled bindings skipped |
+| Execution | Deterministic mock provider that returns stable output and token counts from the input; real cost computed from binding rates and ceiling-bucketed per 1K tokens |
+| Decisions | Policy level 0–4, approval status, explanation, optional run reference and idempotency key. A decision may only reference a run that executed the same task |
+| Immutability | No UPDATE or DELETE path exists at the service, port, adapter or migration level; migration 0019 adds `BEFORE UPDATE OR DELETE` triggers on `task_definition`, `model_binding`, `ai_run` and `ai_decision` |
+| Determinism | The caller supplies every identifier and instant; K-13 reads no clock and generates no randomness |
+| Outbox wiring | `executeTask` and `recordDecision` each append one K-08 event and one K-09 audit record inside the same transaction |
+| Persistence | In-memory reference repository and PostgreSQL adapter, migration 0019 with append-only triggers on the four business tables, and the `is_opaque_identifier` rule copied character-for-character into the schema |
+| Contract | [`kernel/ai-gateway/CONTRACT.md`](../kernel/ai-gateway/CONTRACT.md) — ownership, public surface, refusals, persistence, outbox and deferred work |
+
+```text
+ITEM ID:            K-13 (FND-005e)
+MODULE / PHASE:     K-13 AI Gateway / Phase 0, build step B-3
+STATUS:             DELIVERED — implementation IN PROGRESS, contract COMPLETE
+IMPLEMENTED:        kernel/ai-gateway/{types,registry,immutable,validate,service,
+                    repository,postgres-repository,outbox,index}.ts,
+                    kernel/ai-gateway/adapters/{ai-provider,mock-ai-provider}.ts,
+                    CONTRACT.md, and
+                    db/migrations/0019_create_kernel_ai_gateway_schema.{up,down}.sql
+
+COMMANDS:           npm run verify                                    exit 0   tests 1471, pass 1471
+                    node --test tests/ai-gateway.test.ts
+                                                                      exit 0   tests 47, pass 47
+                    node --test tests/ai-gateway-repository.test.ts
+                                                                      exit 0   tests 30, pass 30
+                    node --test tests/ai-gateway-mock-provider.test.ts
+                                                                      exit 0   tests 3, pass 3
+                    npm run check:migrations                          exit 0   38 files, 0 violations
+                    npm run test:integration                          exit 0   tests 76, skipped 76
+                    node docs/tools/validate-doc-links.mjs            exit 0   0 broken
+                    npm audit --audit-level=high                      exit 0   0 vulnerabilities
+                    git diff --check                                  exit 0
+
+STILL NOT VERIFIED: **Nothing calls K-13**, so no task is executed by a real provider adapter and
+                    no business module consumes its outbox. There is no API, no UI, no enforced
+                    authority (K-02/K-04 deferred), no audit record or event consumer is wired,
+                    and nothing has been applied to a live PostgreSQL server — the opt-in live suite
+                    (`tests/integration/ai-gateway.integration.ts`, 4 cases) skips with its reason
+                    stated. Rolling back 0019 is data loss once any gateway record is created.
+```
+
+---
+
+### 11.36 Evidence — FND-005g (K-14 Notifications)
+
+**Task:** FND-005g — K-14 Notifications.
+**Selected in:** §8, as the next component of build step B-3 after K-13 opened it.
+**Status:** DELIVERED. **Nothing marked COMPLETE.** The checklist K-14 contract row moves to
+`COMPLETE`; the K-14 implementation row moves to `IN PROGRESS`.
+
+**What K-14 is, in one sentence:** channel-neutral delivery of templated notifications, owning
+channel configurations, notifications, delivery attempts and the module's own transactional outbox,
+so no business module embeds a provider SDK or a notification secret.
+
+**Delivered:**
+
+| Area | What landed |
+|---|---|
+| Channels | Caller-supplied opaque channel id, channel vocabulary, provider name, enabled flag, configuration object, creation instant and idempotency key. A channel/provider combination is unique |
+| Notifications | Caller-supplied opaque notification and account ids, channel, template id, rendered subject/body, payload object, priority, lifecycle status, scheduled and sent instants, creation instant and idempotency key |
+| Delivery attempts | Caller-supplied opaque attempt id, notification id, channel, provider, success/failure status, optional error code, attempted-at instant and idempotency key |
+| Lifecycle | `send` creates a `pending` notification, delivers it through the channel's provider and moves it to `sent` or `failed`. `schedule` creates a `scheduled` notification. `recordDeliveryAttempt` records an external attempt and updates the notification status |
+| Immutability | No UPDATE or DELETE path exists at the service, port or adapter level for channels and delivery attempts; the database refuses mutation with append-only triggers on both tables. Notifications are created once; only `status` and `sent_at` may change |
+| Determinism | The caller supplies every identifier and instant; K-14 reads no clock and generates no randomness |
+| Outbox wiring | `send` and `recordDeliveryAttempt` each append one K-08 event and one K-09 audit record inside the same transaction |
+| Persistence | In-memory reference repository and PostgreSQL adapter, migration 0020 under `kernel_notifications` with append-only triggers on the channel and delivery-attempt tables and the character-for-character `is_opaque_identifier` rule copied into the schema |
+| Contract | [`kernel/notifications/CONTRACT.md`](../kernel/notifications/CONTRACT.md) — ownership, public surface, refusals, persistence, outbox and deferred work |
+
+```text
+ITEM ID:            K-14 (FND-005g)
+MODULE / PHASE:     K-14 Notifications / Phase 0, build step B-3
+STATUS:             DELIVERED — implementation IN PROGRESS, contract COMPLETE
+IMPLEMENTED:        kernel/notifications/{types,registry,immutable,validate,service,
+                    repository,postgres-repository,outbox,index}.ts,
+                    kernel/notifications/providers/{notification-provider,in-app-provider}.ts,
+                    CONTRACT.md, and
+                    db/migrations/0020_create_kernel_notification_schema.{up,down}.sql
+
+COMMANDS:           npm run verify                                    exit 0   tests 1534, pass 1534
+                    node --test tests/notifications.test.ts
+                                                                      exit 0   tests 36, pass 36
+                    node --test tests/notifications-repository.test.ts
+                                                                      exit 0   tests 27, pass 27
+                    npm run check:migrations                          exit 0   40 files, 0 violations
+                    npm run test:integration                          exit 0   tests 86, skipped 86
+                    node docs/tools/validate-doc-links.mjs            exit 0   0 broken
+                    npm audit --audit-level=high                      exit 0   0 vulnerabilities
+                    git diff --check                                  exit 0
+
+STILL NOT VERIFIED: **Nothing calls K-14**, so no business module sends a notification and no live
+                    provider adapter delivers one. There is no API, no UI, no enforced authority
+                    (K-02/K-04 deferred), no scheduling worker, no attachment handling, no template
+                    service integration, and nothing has been applied to a live PostgreSQL server —
+                    the opt-in live suite (`tests/integration/notifications.integration.ts`, 5 cases)
+                    skips with its reason stated. Rolling back 0020 is data loss once any notification
+                    record is created.
+```
+
+---
+
+### 11.37 Evidence — FND-005h (K-15 Search Foundation)
+
+**Task:** FND-005h — K-15 Search Foundation.
+**Selected in:** §8, as a remaining component of build step B-3 after K-14 opened it.
+**Status:** DELIVERED. **Nothing marked COMPLETE.** The checklist K-15 contract row moves to
+`COMPLETE`; the K-15 implementation row moves to `IN PROGRESS`.
+
+**What K-15 is, in one sentence:** search document and query-log primitives for a future search
+consumer, owning the index, the query log and the module's own transactional outbox, so no business
+module embeds search logic or a provider SDK.
+
+**Delivered:**
+
+| Area | What landed |
+|---|---|
+| Document | Caller-supplied opaque document id, owner type/id, scope, language, title, description, keywords, attributes, vectors, ranking, creation and update instants, and idempotency key. Replaced whole by `documentId` on re-index |
+| Query log | Caller-supplied opaque query id, query text, filters, result count, executed-at instant, correlation id and idempotency key. Append-only |
+| Full-text search | Generated `tsv` tsvector column combining title, description and keywords, backed by a GIN index; `plainto_tsquery` for keyword search |
+| Determinism | The caller supplies every identifier and instant; K-15 reads no clock and generates no randomness |
+| Immutability | No UPDATE or DELETE path exists at the service, port or adapter level for the query log; the database refuses mutation with an append-only trigger. Documents are upserted by `documentId` |
+| Outbox wiring | `index`, `query` and `remove` each append one K-08 event and one K-09 audit record inside the same transaction |
+| Persistence | In-memory reference repository and PostgreSQL adapter, migration 0021 under `kernel_search_foundation` with the generated `tsv` column and append-only trigger on `query_log` |
+
+```text
+ITEM ID:            K-15 (FND-005h)
+MODULE / PHASE:     K-15 Search Foundation / Phase 0, build step B-3
+STATUS:             DELIVERED — implementation IN PROGRESS, contract COMPLETE
+IMPLEMENTED:        kernel/search-foundation/{types,registry,immutable,validate,service,
+                    repository,postgres-repository,outbox,index}.ts,
+                    CONTRACT.md, and
+                    db/migrations/0021_create_kernel_search_foundation_schema.{up,down}.sql
+
+COMMANDS:           npm run verify                                    exit 0   tests 1591, pass 1591
+                    node --test tests/search-foundation.test.ts
+                                                                      exit 0   tests 30, pass 30
+                    node --test tests/search-foundation-repository.test.ts
+                                                                      exit 0   tests 27, pass 27
+                    npm run check:migrations                          exit 0   42 files, 0 violations
+                    npm run test:integration                          exit 0   tests 91, pass 91
+                    node docs/tools/validate-doc-links.mjs            exit 0   0 broken
+                    npm audit --audit-level=high                      exit 0   0 vulnerabilities
+                    git diff --check                                  exit 0
+
+ADVERSARIAL COVER:  Foreign-field attempts (business-module identifiers, profile data, financial
+                    amounts, AI provider fields and notification fields smuggled into a document or
+                    query log — refused by name with the owning component); malformed documents
+                    (missing or empty title/description, invalid language, non-object attributes/
+                    vectors/ranking, non-text keywords); malformed queries (missing query text,
+                    non-object filters); idempotency-key reuse for a different document; duplicate
+                    document ids; duplicate idempotency keys; out-of-order removal; and append-only
+                    query-log refusal.
+
+PLANTED REGRESSION: The PostgreSQL-generated `tsv` column initially used `array_to_string` directly in
+                    the generation expression. PostgreSQL rejects that because `array_to_string` is
+                    marked STABLE, not IMMUTABLE. An immutable wrapper function
+                    `kernel_search_foundation.keywords_to_text(text[])` was added so the generated
+                    column is accepted. The `total` returned by `count(*) OVER()` is decoded as a
+                    string bigint and converted to a number by `nonNegativeInteger`.
+
+STILL NOT VERIFIED: **No caller indexes or searches anything**, so no live consumer reads the query
+                    log. There is no API, no UI, no semantic/vector search, no ranking model, and
+                    nothing has been applied to a live server beyond the integration suite's isolated
+                    `_test` database.
 ```
 
 ---

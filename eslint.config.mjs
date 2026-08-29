@@ -36,6 +36,14 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-floating-promises': 'off' },
   },
   {
+    // Kernel modules keep their internal unit tests beside the source so the tests can reach
+    // package-private exports. They are not in the tsconfig project, so type-checked linting is
+    // disabled for them; ordinary syntax and recommended rules still apply.
+    files: ['kernel/**/*.test.ts'],
+    extends: [tseslint.configs.disableTypeChecked],
+    rules: { '@typescript-eslint/no-floating-promises': 'off' },
+  },
+  {
     // Documentation tooling: plain ESM JavaScript, no type information available.
     files: ['**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],

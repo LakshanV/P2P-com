@@ -25,7 +25,7 @@
     "db:status": "node platform/db/migrate-cli.ts status",
     "db:migrate": "node platform/db/migrate-cli.ts up",
     "db:rollback": "node platform/db/migrate-cli.ts rollback",
-    "test:integration": "node --test \"tests/integration/**/*.integration.ts\"",
+    "test:integration": "node --test-concurrency=1 --test \"tests/integration/**/*.integration.ts\"",
     "db:up": "node platform/db/provision-cli.ts up",
     "db:ready": "node platform/db/provision-cli.ts ready",
     "db:down": "node platform/db/provision-cli.ts down",

@@ -19,6 +19,9 @@
  * Owned by: K-11 Commerce Unit Registry.
  */
 
+import { InMemoryOutboxStore } from '../../platform/outbox/repository.ts';
+import type { OutboxEntry, OutboxTransaction } from '../../platform/outbox/types.ts';
+
 import {
   sealActivation,
   sealActivations,
@@ -35,7 +38,7 @@ import {
   type UnitTypeVersion,
 } from './types.ts';
 
-export interface CommerceUnitTransaction {
+export interface CommerceUnitTransaction extends OutboxTransaction {
   findVersionById(typeVersionId: string): Promise<UnitTypeVersion | null>;
   findVersionByIdempotencyKey(idempotencyKey: string): Promise<UnitTypeVersion | null>;
   /** The highest version number published for this type key, or 0 when there is none. */
@@ -79,6 +82,7 @@ export class InMemoryCommerceUnitRepository implements CommerceUnitRepository {
   #versions: UnitTypeVersion[] = [];
   #activations: UnitTypeActivation[] = [];
   #retirements: UnitTypeRetirement[] = [];
+  readonly #outbox = new InMemoryOutboxStore('K-11', 'kernel_commerce_unit_registry');
   transactionsCommitted = 0;
   transactionsRolledBack = 0;
 
@@ -92,6 +96,10 @@ export class InMemoryCommerceUnitRepository implements CommerceUnitRepository {
 
   retirements(): readonly UnitTypeRetirement[] {
     return sealRetirements(this.#retirements);
+  }
+
+  outbox(): InMemoryOutboxStore {
+    return this.#outbox;
   }
 
   seed(state: {
@@ -112,10 +120,13 @@ export class InMemoryCommerceUnitRepository implements CommerceUnitRepository {
       activations: this.#activations.map(sealActivation),
       retirements: this.#retirements.map(sealRetirement),
     });
+    const outboxWorking = new InMemoryOutboxStore(this.#outbox.name, this.#outbox.schema);
+    outboxWorking.seed(this.#outbox.entries());
 
     try {
-      const result = await body(new InMemoryCommerceUnitTransaction(working));
+      const result = await body(new InMemoryCommerceUnitTransaction(working, outboxWorking));
       this.#commit(working);
+      this.#outbox.seed(outboxWorking.entries());
       this.transactionsCommitted += 1;
       return result;
     } catch (error) {
@@ -250,9 +261,16 @@ const reject = (code: CommerceUnitErrorCode, message: string): Promise<never> =>
 
 class InMemoryCommerceUnitTransaction implements CommerceUnitTransaction {
   readonly #state: WorkingSet;
+  readonly #outbox: InMemoryOutboxStore;
 
-  constructor(state: WorkingSet) {
+  constructor(state: WorkingSet, outbox: InMemoryOutboxStore) {
     this.#state = state;
+    this.#outbox = outbox;
+  }
+
+  insertOutbox(entry: OutboxEntry): Promise<void> {
+    this.#outbox.insert(entry);
+    return Promise.resolve();
   }
 
   findVersionById(typeVersionId: string): Promise<UnitTypeVersion | null> {

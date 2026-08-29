@@ -183,7 +183,8 @@ five separations), `immutable.ts` (the sealing boundary), `validate.ts` (one val
 for requests and stored rows), `rollout.ts` (deterministic bucketing), `fingerprint.ts` (canonical
 forms and SHA-256), `decide.ts` (the pure evaluator), `ports.ts` (the three injected ports),
 `repository.ts` (the port and its in-memory reference), `postgres-repository.ts` (the adapter and
-the enlisted composition), `service.ts` (the five operations), `index.ts` (the public surface).
+the enlisted composition), `service.ts` (the five operations), `outbox.ts` (event and audit
+definitions for the transactional outbox), `index.ts` (the public surface).
 
 ---
 

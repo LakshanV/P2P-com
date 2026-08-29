@@ -40,6 +40,14 @@ import {
   fingerprintTransitionRequest,
   type DraftRequestFacts,
 } from './fingerprint.ts';
+import {
+  makePolicyActivatedAction,
+  makePolicyActivatedEvent,
+  makePolicyRetiredAction,
+  makePolicyRetiredEvent,
+  makePolicyVersionPublishedAction,
+  makePolicyVersionPublishedEvent,
+} from './outbox.ts';
 import { sealActivation, sealDraft, sealRetirement, sealVersion } from './immutable.ts';
 import {
   NO_AUTHORITY,
@@ -325,6 +333,9 @@ export class PolicyService {
         }
         await this.#refuseRetired(tx, candidate.policyKey, 'publish a version of');
         await tx.insertVersion(candidate);
+        const correlationId = candidate.policyVersionId;
+        await tx.insertOutbox(makePolicyVersionPublishedEvent(candidate, correlationId, null));
+        await tx.insertOutbox(makePolicyVersionPublishedAction(candidate, correlationId, null));
         return { version: sealVersion(candidate), deduplicated: false };
       },
       () =>
@@ -401,6 +412,9 @@ export class PolicyService {
         }
         await this.#refuseRetired(tx, target.policyKey, 'activate a version of');
         await tx.insertActivation(candidate);
+        const correlationId = candidate.activationId;
+        await tx.insertOutbox(makePolicyActivatedEvent(target, candidate, correlationId, null));
+        await tx.insertOutbox(makePolicyActivatedAction(target, candidate, correlationId, null));
         return { activation: sealActivation(candidate), deduplicated: false };
       },
       () =>
@@ -462,6 +476,9 @@ export class PolicyService {
         }
         await this.#refuseRetired(tx, policyKey, 'retire');
         await tx.insertRetirement(candidate);
+        const correlationId = candidate.retirementId;
+        await tx.insertOutbox(makePolicyRetiredEvent(candidate, correlationId, null));
+        await tx.insertOutbox(makePolicyRetiredAction(candidate, correlationId, null));
         return { retirement: sealRetirement(candidate), deduplicated: false };
       },
       () =>

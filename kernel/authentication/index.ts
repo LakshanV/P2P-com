@@ -104,3 +104,6 @@ export {
   toEvidence,
   toSession,
 } from './postgres-repository.ts';
+
+export { MockVerifier } from './verifiers/index.ts';
+export type { ClockSupplier, MockVerifierOptions, ProofPredicate } from './verifiers/index.ts';

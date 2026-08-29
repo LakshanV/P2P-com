@@ -106,6 +106,7 @@ class TamperingRepository implements CommerceUnitRepository {
       findRetirement: (key) => tx.findRetirement(key),
       findRetirementByIdempotencyKey: (key) => tx.findRetirementByIdempotencyKey(key),
       insertRetirement: (retirement) => tx.insertRetirement(retirement),
+      insertOutbox: (entry) => tx.insertOutbox(entry),
       listInForce: () =>
         answer === HONEST
           ? tx.listInForce()

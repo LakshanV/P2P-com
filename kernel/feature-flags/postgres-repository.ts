@@ -23,6 +23,7 @@
  */
 
 import type { Database, DatabaseClient } from '../../platform/db/client.ts';
+import type { OutboxEntry } from '../../platform/outbox/types.ts';
 import { InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
 
 import { sealActivation, sealFlagVersion, sealLifecycleEvent } from './immutable.ts';
@@ -45,6 +46,7 @@ export const FEATURE_FLAGS_SCHEMA = 'kernel_feature_flags';
 export const VERSION_TABLE = `${FEATURE_FLAGS_SCHEMA}.feature_flag_version`;
 export const ACTIVATION_TABLE = `${FEATURE_FLAGS_SCHEMA}.feature_flag_activation`;
 export const LIFECYCLE_TABLE = `${FEATURE_FLAGS_SCHEMA}.feature_flag_lifecycle`;
+export const OUTBOX_TABLE = `${FEATURE_FLAGS_SCHEMA}.outbox`;
 
 const UNIQUE_VIOLATION = '23505';
 
@@ -165,6 +167,20 @@ const LIFECYCLE_COLUMNS = [
   'idempotency_key',
   'request_fingerprint',
 ] as const;
+
+const OUTBOX_COLUMN_NAMES = [
+  'outbox_id',
+  'idempotency_key',
+  'kind',
+  'payload',
+  'recorded_at',
+  'producer',
+  'correlation_id',
+  'processed_at',
+  'retry_count',
+  'last_error',
+] as const;
+export const OUTBOX_COLUMNS = OUTBOX_COLUMN_NAMES.join(', ');
 
 /** Every `timestamptz` in this schema. All are projected as text; nothing parses one as a Date. */
 export const TIMESTAMP_COLUMNS = [
@@ -397,6 +413,25 @@ class PostgresFeatureFlagTransaction implements FeatureFlagTransaction {
 
   constructor(client: DatabaseClient) {
     this.#client = client;
+  }
+
+  async insertOutbox(entry: OutboxEntry): Promise<void> {
+    await this.#client.query(
+      `INSERT INTO ${OUTBOX_TABLE} (${OUTBOX_COLUMNS})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);`,
+      [
+        entry.outboxId,
+        entry.idempotencyKey,
+        entry.kind,
+        JSON.stringify(entry.payload),
+        entry.recordedAt,
+        entry.producer,
+        entry.correlationId,
+        entry.processedAt,
+        entry.retryCount,
+        entry.lastError,
+      ],
+    );
   }
 
   async #one<T>(

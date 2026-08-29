@@ -32,6 +32,7 @@ import {
   FeatureFlagError,
   InMemoryFeatureFlagRepository,
   LIFECYCLE_TABLE,
+  OUTBOX_TABLE,
   PostgresFeatureFlagRepository,
   TIMESTAMP_COLUMNS,
   VERSION_TABLE,
@@ -267,6 +268,42 @@ test('an enlisted repository shares the caller’s transaction', async () => {
   assert.deepEqual(control, [], 'the enlisted path opened or closed a transaction of its own');
 });
 
+test('the adapter parameterises every value it writes', () => {
+  // Scan the SQL the adapter actually sends, not the whole file: an error message may legitimately
+  // interpolate a variable, a query may not. Anything but the fixed table and column lists would
+  // mean caller data reaching SQL as text.
+  const statements = [
+    ...ADAPTER_SOURCE.matchAll(/client\.query(?:<[^>]*>)?\(\s*`([\s\S]*?)`/g),
+  ].map((match) => String(match[1]));
+
+  const permitted = new Set([
+    'FEATURE_FLAGS_SCHEMA',
+    'VERSION_TABLE',
+    'ACTIVATION_TABLE',
+    'LIFECYCLE_TABLE',
+    'OUTBOX_TABLE',
+    'VERSION_COLUMNS',
+    'ACTIVATION_COLUMNS',
+    'LIFECYCLE_COLUMNS',
+    'OUTBOX_COLUMNS',
+    'VERSION_PROJECTION',
+    'ACTIVATION_PROJECTION',
+    'LIFECYCLE_PROJECTION',
+    'TIMESTAMP_COLUMNS',
+    'utcText',
+  ]);
+  for (const sql of statements) {
+    for (const match of sql.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
+      const name = String(match[1]);
+      assert.ok(permitted.has(name), `SQL interpolates ${name}, which is not a fixed constant`);
+    }
+  }
+  assert.ok(
+    statements.some((sql) => sql.includes('$1')),
+    'the adapter must bind parameters rather than interpolate values',
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Fail-closed decoding
 // ---------------------------------------------------------------------------
@@ -388,7 +425,7 @@ test('K-07 owns exactly one schema, derived from the manifest', () => {
   assert.equal(FEATURE_FLAGS_SCHEMA, `${KERNEL_SCHEMA_PREFIX}${component.dir.replace(/-/g, '_')}`);
   assert.ok(knownSchemas().includes(FEATURE_FLAGS_SCHEMA), 'the schema resolves to no owner');
 
-  for (const table of [VERSION_TABLE, ACTIVATION_TABLE, LIFECYCLE_TABLE]) {
+  for (const table of [VERSION_TABLE, ACTIVATION_TABLE, LIFECYCLE_TABLE, OUTBOX_TABLE]) {
     assert.ok(table.startsWith(`${FEATURE_FLAGS_SCHEMA}.`), `${table} is outside K-07's schema`);
   }
 });

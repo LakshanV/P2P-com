@@ -24,10 +24,13 @@
  * Owned by: K-05 Configuration.
  */
 
+import { InMemoryOutboxStore } from '../../platform/outbox/repository.ts';
+import type { OutboxEntry, OutboxTransaction } from '../../platform/outbox/types.ts';
+
 import { compareInstants } from './instant.ts';
 import { ConfigurationError, type ConfigurationVersion, type Scope, scopeKey } from './types.ts';
 
-export interface ConfigurationTransaction {
+export interface ConfigurationTransaction extends OutboxTransaction {
   /** The exact version, whatever its status. Historical decisions resolve through this. */
   findVersionById(versionId: string): Promise<ConfigurationVersion | null>;
 
@@ -85,11 +88,16 @@ export interface ConfigurationRepository {
  */
 export class InMemoryConfigurationRepository implements ConfigurationRepository {
   #versions: ConfigurationVersion[] = [];
+  readonly #outbox = new InMemoryOutboxStore('K-05', 'kernel_configuration');
   transactionsCommitted = 0;
   transactionsRolledBack = 0;
 
   snapshot(): readonly ConfigurationVersion[] {
     return this.#versions.map((version) => ({ ...version }));
+  }
+
+  outbox(): InMemoryOutboxStore {
+    return this.#outbox;
   }
 
   /** Seed state directly, for tests that need a starting point without going through the service. */
@@ -100,10 +108,13 @@ export class InMemoryConfigurationRepository implements ConfigurationRepository 
   async withTransaction<T>(body: (tx: ConfigurationTransaction) => Promise<T>): Promise<T> {
     const base = this.#versions.map((version) => ({ ...version }));
     const working = base.map((version) => ({ ...version }));
-    const tx = new InMemoryTransaction(working);
+    const outboxWorking = new InMemoryOutboxStore(this.#outbox.name, this.#outbox.schema);
+    outboxWorking.seed(this.#outbox.entries());
+    const tx = new InMemoryTransaction(working, outboxWorking);
     try {
       const result = await body(tx);
       this.#versions = this.#merge(base, working, tx.touched);
+      this.#outbox.seed(outboxWorking.entries());
       this.transactionsCommitted += 1;
       return result;
     } catch (error) {
@@ -211,11 +222,18 @@ function assertAtMostOneActivePerScope(versions: readonly ConfigurationVersion[]
 
 class InMemoryTransaction implements ConfigurationTransaction {
   readonly #versions: ConfigurationVersion[];
+  readonly #outbox: InMemoryOutboxStore;
   /** Every version this transaction wrote, so the commit applies those rows and only those. */
   readonly touched = new Set<string>();
 
-  constructor(versions: ConfigurationVersion[]) {
+  constructor(versions: ConfigurationVersion[], outbox: InMemoryOutboxStore) {
     this.#versions = versions;
+    this.#outbox = outbox;
+  }
+
+  insertOutbox(entry: OutboxEntry): Promise<void> {
+    this.#outbox.insert(entry);
+    return Promise.resolve();
   }
 
   findVersionById(versionId: string): Promise<ConfigurationVersion | null> {

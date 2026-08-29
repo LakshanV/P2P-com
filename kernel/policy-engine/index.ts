@@ -154,6 +154,8 @@ export {
   ACTIVATION_TABLE,
   DRAFT_TABLE,
   EnlistedPolicyRepository,
+  OUTBOX_COLUMNS,
+  OUTBOX_TABLE,
   POLICY_SCHEMA,
   PostgresPolicyRepository,
   RETIREMENT_TABLE,
@@ -165,3 +167,18 @@ export {
   toPolicyRetirement,
   toPolicyVersion,
 } from './postgres-repository.ts';
+
+export {
+  POLICY_ACTIVATED_ACTION,
+  POLICY_ACTIVATED_EVENT,
+  POLICY_RETIRED_ACTION,
+  POLICY_RETIRED_EVENT,
+  POLICY_VERSION_PUBLISHED_ACTION,
+  POLICY_VERSION_PUBLISHED_EVENT,
+  makePolicyActivatedAction,
+  makePolicyActivatedEvent,
+  makePolicyRetiredAction,
+  makePolicyRetiredEvent,
+  makePolicyVersionPublishedAction,
+  makePolicyVersionPublishedEvent,
+} from './outbox.ts';

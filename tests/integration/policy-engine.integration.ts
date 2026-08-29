@@ -176,7 +176,7 @@ test('K-06 against a live PostgreSQL server', liveTestOptions, async (t) => {
 
   await withTestDatabase(async ({ database, directory }) => {
     await t.test('an exact decimal survives the round trip with every digit', async () => {
-      await migrateUp(database, { directory });
+      await migrateUp(database, { directory, target: '0011' });
 
       const repository = new PostgresPolicyRepository(database);
       await repository.withTransaction(async (tx) => {
@@ -355,9 +355,9 @@ test('K-06 against a live PostgreSQL server', liveTestOptions, async (t) => {
     await t.test('the schema rolls back independently of every other component', async () => {
       const report = await migrateDown(database, {
         directory,
-        version: '0011_create_kernel_policy_engine_schema',
+        version: '0011',
       });
-      assert.match(report.rolledBack, /0011_create_kernel_policy_engine_schema/);
+      assert.match(report.rolledBack, /0011/);
 
       const gone = await refuses(database, `SELECT 1 FROM ${VERSION_TABLE} LIMIT 1;`);
       assert.ok(gone !== null, 'kernel_policy_engine survived its own rollback');

@@ -45,6 +45,14 @@ import {
   type RegistrarAuthority,
 } from './ports.ts';
 import {
+  makeCommerceUnitActivatedAction,
+  makeCommerceUnitActivatedEvent,
+  makeCommerceUnitRetiredAction,
+  makeCommerceUnitRetiredEvent,
+  makeCommerceUnitVersionPublishedAction,
+  makeCommerceUnitVersionPublishedEvent,
+} from './outbox.ts';
+import {
   assertKnownFields,
   assertNoAssertedOutcome,
   assertNoPinnedVersion,
@@ -77,6 +85,10 @@ export interface PublishTypeRequest {
   readonly effectiveFrom?: string | null;
   readonly effectiveUntil?: string | null;
   readonly idempotencyKey: string;
+  /** Ties this change to a causal chain. Defaults to the type version id. */
+  readonly correlationId?: string;
+  /** The event or record that caused this one, or null when it starts the chain. */
+  readonly causationId?: string | null;
 }
 
 export interface ActivateTypeRequest {
@@ -90,6 +102,10 @@ export interface ActivateTypeRequest {
    */
   readonly supersedesVersionId: string | null;
   readonly idempotencyKey: string;
+  /** Ties this change to a causal chain. Defaults to the activation id. */
+  readonly correlationId?: string;
+  /** The event or record that caused this one, or null when it starts the chain. */
+  readonly causationId?: string | null;
 }
 
 export interface RetireTypeRequest {
@@ -97,6 +113,10 @@ export interface RetireTypeRequest {
   readonly typeKey: string;
   readonly reason: string;
   readonly idempotencyKey: string;
+  /** Ties this change to a causal chain. Defaults to the retirement id. */
+  readonly correlationId?: string;
+  /** The event or record that caused this one, or null when it starts the chain. */
+  readonly causationId?: string | null;
 }
 
 /** What a caller may ask. Note what is not here: the lineage, and the answer. */
@@ -131,6 +151,8 @@ const PUBLISH_KEYS: readonly string[] = [
   'effectiveFrom',
   'effectiveUntil',
   'idempotencyKey',
+  'correlationId',
+  'causationId',
 ];
 
 const ACTIVATE_KEYS: readonly string[] = [
@@ -138,9 +160,18 @@ const ACTIVATE_KEYS: readonly string[] = [
   'typeVersionId',
   'supersedesVersionId',
   'idempotencyKey',
+  'correlationId',
+  'causationId',
 ];
 
-const RETIRE_KEYS: readonly string[] = ['retirementId', 'typeKey', 'reason', 'idempotencyKey'];
+const RETIRE_KEYS: readonly string[] = [
+  'retirementId',
+  'typeKey',
+  'reason',
+  'idempotencyKey',
+  'correlationId',
+  'causationId',
+];
 
 const RESOLVE_KEYS: readonly string[] = ['typeKey', 'at'];
 
@@ -230,6 +261,16 @@ export class CommerceUnitRegistryService {
           requestFingerprint: fingerprint,
         });
         await tx.insertVersion(version);
+
+        const correlationId = request.correlationId ?? version.typeVersionId;
+        const causationId = request.causationId ?? null;
+        await tx.insertOutbox(
+          makeCommerceUnitVersionPublishedEvent(version, correlationId, causationId),
+        );
+        await tx.insertOutbox(
+          makeCommerceUnitVersionPublishedAction(version, correlationId, causationId),
+        );
+
         return { version, deduplicated: false };
       },
       () =>
@@ -315,6 +356,16 @@ export class CommerceUnitRegistryService {
           'request',
         );
         await tx.insertActivation(candidate);
+
+        const correlationId = request.correlationId ?? candidate.activationId;
+        const causationId = request.causationId ?? null;
+        await tx.insertOutbox(
+          makeCommerceUnitActivatedEvent(candidate, correlationId, causationId),
+        );
+        await tx.insertOutbox(
+          makeCommerceUnitActivatedAction(candidate, correlationId, causationId),
+        );
+
         return { activation: sealActivation(candidate), deduplicated: false };
       },
       () =>
@@ -384,6 +435,12 @@ export class CommerceUnitRegistryService {
         }
 
         await tx.insertRetirement(candidate);
+
+        const correlationId = request.correlationId ?? candidate.retirementId;
+        const causationId = request.causationId ?? null;
+        await tx.insertOutbox(makeCommerceUnitRetiredEvent(candidate, correlationId, causationId));
+        await tx.insertOutbox(makeCommerceUnitRetiredAction(candidate, correlationId, causationId));
+
         return { retirement: sealRetirement(candidate), deduplicated: false };
       },
       () =>

@@ -120,6 +120,7 @@ export {
   ACTIVATION_TABLE,
   COMMERCE_UNIT_SCHEMA,
   EnlistedCommerceUnitRepository,
+  OUTBOX_TABLE,
   PostgresCommerceUnitRepository,
   RETIREMENT_TABLE,
   TIMESTAMP_COLUMNS,
@@ -129,3 +130,18 @@ export {
   toUnitTypeRetirement,
   toUnitTypeVersion,
 } from './postgres-repository.ts';
+
+export {
+  COMMERCE_UNIT_ACTIVATED_ACTION,
+  COMMERCE_UNIT_ACTIVATED_EVENT,
+  COMMERCE_UNIT_RETIRED_ACTION,
+  COMMERCE_UNIT_RETIRED_EVENT,
+  COMMERCE_UNIT_VERSION_PUBLISHED_ACTION,
+  COMMERCE_UNIT_VERSION_PUBLISHED_EVENT,
+  makeCommerceUnitActivatedAction,
+  makeCommerceUnitActivatedEvent,
+  makeCommerceUnitRetiredAction,
+  makeCommerceUnitRetiredEvent,
+  makeCommerceUnitVersionPublishedAction,
+  makeCommerceUnitVersionPublishedEvent,
+} from './outbox.ts';

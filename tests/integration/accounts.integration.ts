@@ -91,9 +91,7 @@ async function refuses(database: Database, sql: string): Promise<string | null> 
 /** A K-01 subject and the K-03 service wired to the real K-01 service, both on this database. */
 async function wire(database: Database, subjectId: string): Promise<AccountService> {
   const identity = new IdentityService(new PostgresIdentityRepository(database));
-  await identity.create(
-    createRequest({ subjectId, idempotencyKey: `idem_${subjectId.slice(-10)}` }),
-  );
+  await identity.create(createRequest({ subjectId, idempotencyKey: `idem-authn-${subjectId}` }));
   return new AccountService(new PostgresAccountRepository(database), identity);
 }
 
@@ -316,7 +314,7 @@ test('kernel_accounts rolls back without touching kernel_identity', liveTestOpti
   // a cross-schema FK, rolling K-03 back would be entangled with K-01 — and rolling K-01 back would
   // fail at its RESTRICT for a reason no K-01 migration mentions.
   await withTestDatabase(async ({ database, directory }) => {
-    await migrateUp(database, { directory });
+    await migrateUp(database, { directory, target: '0007' });
     const service = await wire(database, 'sub_01HQZXROLLBACK');
     await service.open(
       openRequest({

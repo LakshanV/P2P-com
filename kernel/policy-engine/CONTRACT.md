@@ -167,7 +167,9 @@ merely recorded, and `evaluate({ at })` is how a caller replays one.
 
 Schema `kernel_policy_engine`, created by
 `db/migrations/0011_create_kernel_policy_engine_schema.up.sql` and reversed by
-`db/migrations/0011_create_kernel_policy_engine_schema.down.sql`. The schema name is derived from
+`db/migrations/0011_create_kernel_policy_engine_schema.down.sql`. The outbox table is added by
+`db/migrations/0014_create_kernel_policy_engine_outbox.up.sql` and reversed by
+`db/migrations/0014_create_kernel_policy_engine_outbox.down.sql`. The schema name is derived from
 the architecture manifest, not remembered.
 
 | Table | Holds |
@@ -176,6 +178,7 @@ the architecture manifest, not remembered.
 | `policy_version` | Immutable numbered versions — what a transaction pins |
 | `policy_activation` | The append-only activation **chain**; the version in force is the row nothing supersedes |
 | `policy_retirement` | The end of a policy key, at most one per key |
+| `outbox` | Transactional outbox for policy lifecycle events and audit records, dispatched by a relay |
 
 Four triggers refuse `UPDATE` and `DELETE` on all four tables. Every instant is projected as UTC
 text through `to_char`; nothing parses a driver `Date` (K-05 lost microseconds that way, §11.13).
@@ -194,7 +197,8 @@ sealing boundary), `validate.ts` (one validator per record, for requests and sto
 `fingerprint.ts` (canonical forms and SHA-256), `decide.ts` (the pure evaluator), `ports.ts` (the
 three injected ports), `repository.ts` (the port and its in-memory reference),
 `postgres-repository.ts` (the adapter and the enlisted composition), `service.ts` (the five
-operations), `index.ts` (the public surface).
+operations), `outbox.ts` (event and audit definitions for the transactional outbox), `index.ts`
+(the public surface).
 
 ---
 
@@ -233,10 +237,14 @@ caller stores its `policyVersionId` in the record the decision was *for*.
 - **No approval workflow.** v3 §32's "approval as required" for production changes is not modelled:
   a draft can be published by whoever can draft it. A second pair of eyes is exactly what the studio
   and the K-04 wiring are for.
-- **No audit trail (K-09).** Drafting, publishing, activating and retiring are precisely the actions
-  v3 §53 lists as auditable, and **none is recorded to K-09**. K-09 exists; wiring is separate work.
-- **No events (K-08).** Activating a new commission rate publishes nothing, so no cache is
-  invalidated and nobody is told.
+- **Transactional outbox rows are written, but no consumers are wired.** Publish, activate and
+  retire each append an event and an audit row to K-06's own outbox table inside the same transaction.
+  A relay can dispatch those rows to K-08 Event Infrastructure and K-09 Audit Foundation, but no
+  subscriber or reader depends on them yet.
+- **No direct audit trail (K-09).** While audit rows are written to the outbox, nothing consumes them
+  into K-09 yet.
+- **No direct events (K-08).** While event rows are written to the outbox, nothing subscribes to them
+  yet.
 - **No simulation or diff.** There is no "what would this draft have charged last quarter" path,
   which is the single most useful thing a policy studio offers and the reason `evaluate({ at })`
   takes an instant.
@@ -260,6 +268,7 @@ node --test tests/policy-engine.test.ts               # the boundary, version pi
 node --test tests/policy-engine-evaluation.test.ts    # precedence, ambiguity, temporal, K-05
 node --test tests/policy-engine-decimal.test.ts       # exact decimals and threshold boundaries
 node --test tests/policy-engine-lifecycle.test.ts     # draft→publish→activate→retire, races
+node --test tests/policy-engine-outbox.test.ts        # outbox append and relay dispatch
 node --test tests/policy-engine-repository.test.ts    # port conformance, adapter, migration, this contract
 npm run test:integration                              # live PostgreSQL; skips without a database
 ```

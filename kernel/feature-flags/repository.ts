@@ -19,6 +19,9 @@
  * Owned by: K-07 Feature Flags.
  */
 
+import { InMemoryOutboxStore } from '../../platform/outbox/repository.ts';
+import type { OutboxEntry, OutboxTransaction } from '../../platform/outbox/types.ts';
+
 import {
   sealActivation,
   sealActivations,
@@ -36,7 +39,7 @@ import {
   type LifecycleKind,
 } from './types.ts';
 
-export interface FeatureFlagTransaction {
+export interface FeatureFlagTransaction extends OutboxTransaction {
   findVersionById(flagVersionId: string): Promise<FlagVersion | null>;
   findVersionByIdempotencyKey(idempotencyKey: string): Promise<FlagVersion | null>;
   /** The highest version number published for this flag key, or 0 when there is none. */
@@ -72,6 +75,7 @@ export class InMemoryFeatureFlagRepository implements FeatureFlagRepository {
   #versions: FlagVersion[] = [];
   #activations: Activation[] = [];
   #lifecycle: LifecycleEvent[] = [];
+  readonly #outbox = new InMemoryOutboxStore('K-07', 'kernel_feature_flags');
   transactionsCommitted = 0;
   transactionsRolledBack = 0;
 
@@ -85,6 +89,10 @@ export class InMemoryFeatureFlagRepository implements FeatureFlagRepository {
 
   lifecycleEvents(): readonly LifecycleEvent[] {
     return sealLifecycleEvents(this.#lifecycle);
+  }
+
+  outbox(): InMemoryOutboxStore {
+    return this.#outbox;
   }
 
   seed(state: {
@@ -105,10 +113,13 @@ export class InMemoryFeatureFlagRepository implements FeatureFlagRepository {
       activations: this.#activations.map(sealActivation),
       lifecycle: this.#lifecycle.map(sealLifecycleEvent),
     });
+    const outboxWorking = new InMemoryOutboxStore(this.#outbox.name, this.#outbox.schema);
+    outboxWorking.seed(this.#outbox.entries());
 
     try {
-      const result = await body(new InMemoryFeatureFlagTransaction(working));
+      const result = await body(new InMemoryFeatureFlagTransaction(working, outboxWorking));
       this.#commit(working);
+      this.#outbox.seed(outboxWorking.entries());
       this.transactionsCommitted += 1;
       return result;
     } catch (error) {
@@ -247,9 +258,16 @@ function reject(code: FeatureFlagErrorCode, message: string): Promise<never> {
 
 class InMemoryFeatureFlagTransaction implements FeatureFlagTransaction {
   readonly #state: WorkingSet;
+  readonly #outbox: InMemoryOutboxStore;
 
-  constructor(state: WorkingSet) {
+  constructor(state: WorkingSet, outbox: InMemoryOutboxStore) {
     this.#state = state;
+    this.#outbox = outbox;
+  }
+
+  insertOutbox(entry: OutboxEntry): Promise<void> {
+    this.#outbox.insert(entry);
+    return Promise.resolve();
   }
 
   findVersionById(flagVersionId: string): Promise<FlagVersion | null> {

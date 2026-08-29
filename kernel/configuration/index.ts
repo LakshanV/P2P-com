@@ -77,8 +77,14 @@ export type { ConfigurationRepository, ConfigurationTransaction } from './reposi
 export {
   CONFIG_SCHEMA,
   CONFIG_TABLE,
+  OUTBOX_TABLE,
   PostgresConfigurationRepository,
   TIMESTAMP_COLUMNS,
   decodeValue,
   encodeValue,
 } from './postgres-repository.ts';
+
+export {
+  CONFIGURATION_VERSION_PUBLISHED_ACTION,
+  CONFIGURATION_VERSION_PUBLISHED_EVENT,
+} from './outbox.ts';

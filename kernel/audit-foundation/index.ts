@@ -73,3 +73,5 @@ export {
   enlistedClient,
   toRecord,
 } from './postgres-repository.ts';
+
+export { AuditServiceRecorder } from './outbox-recorder.ts';

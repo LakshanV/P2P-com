@@ -31,10 +31,16 @@
  * Deterministic by construction: the caller supplies `now`, the version id and the idempotency
  * key. Nothing here reads a clock or generates randomness.
  *
- * Owned by: K-05 Configuration. No API, no UI, no events — see CONTRACT.md for why.
+ * Owned by: K-05 Configuration. No API, no UI — events and audit records are emitted through the
+ * transactional outbox (FND-003d) rather than published directly.
  */
 
+import type { OutboxEntry } from '../../platform/outbox/types.ts';
 import { assertInstant, compareInstants, instantsEqual } from './instant.ts';
+import {
+  CONFIGURATION_VERSION_PUBLISHED_ACTION,
+  CONFIGURATION_VERSION_PUBLISHED_EVENT,
+} from './outbox.ts';
 import type { ConfigurationRepository, ConfigurationTransaction } from './repository.ts';
 import { assertScopePermitted, assertValidValue } from './registry.ts';
 import type { ConfigurationRegistry } from './registry.ts';
@@ -74,6 +80,10 @@ export interface CreateDraftRequest {
    */
   readonly authorityLevel: ScopeLevel;
   readonly now: string;
+  /** Ties this change to a causal chain. Defaults to the version id. */
+  readonly correlationId?: string;
+  /** The event or record that caused this one, or null when it starts the chain. */
+  readonly causationId?: string | null;
 }
 
 export interface CreateDraftResult {
@@ -87,6 +97,8 @@ export interface PublishDraftRequest {
   /** The version the caller believes is active at this scope, or null if it believes none is. */
   readonly expectedActiveVersionId: string | null;
   readonly now: string;
+  readonly correlationId?: string;
+  readonly causationId?: string | null;
 }
 
 export interface PublishResult {
@@ -291,6 +303,16 @@ export class ConfigurationService {
       if (activated === null) {
         throw new ConfigurationError('draft-not-found', `version ${draft.versionId} vanished`);
       }
+
+      const correlationId = request.correlationId ?? draft.versionId;
+      const causationId = request.causationId ?? null;
+      await tx.insertOutbox(
+        this.#publishedEvent(activated, current?.versionId ?? null, correlationId, causationId),
+      );
+      await tx.insertOutbox(
+        this.#publishedAudit(activated, current?.versionId ?? null, correlationId, causationId),
+      );
+
       return {
         version: activated,
         deduplicated: false,
@@ -319,6 +341,8 @@ export class ConfigurationService {
       draftId: draft.versionId,
       expectedActiveVersionId: request.expectedActiveVersionId,
       now: request.now,
+      ...(request.correlationId !== undefined ? { correlationId: request.correlationId } : {}),
+      ...(request.causationId !== undefined ? { causationId: request.causationId } : {}),
     });
     return { ...result, deduplicated: deduplicated || result.deduplicated };
   }
@@ -394,6 +418,100 @@ export class ConfigurationService {
     return this.#repository.withTransaction((tx: ConfigurationTransaction) =>
       tx.findVersions(key, [scope]),
     );
+  }
+
+  #publishedEvent(
+    version: ConfigurationVersion,
+    supersededVersionId: string | null,
+    correlationId: string,
+    causationId: string | null,
+  ): OutboxEntry {
+    const eventId = `${version.versionId}:published`;
+    return {
+      outboxId: `K-05:${eventId}`,
+      idempotencyKey: `K-05:${eventId}`,
+      kind: 'event',
+      producer: 'K-05',
+      recordedAt: version.publishedAt ?? version.createdAt,
+      correlationId,
+      causationId,
+      processedAt: null,
+      retryCount: 0,
+      lastError: null,
+      payload: {
+        eventId,
+        type: CONFIGURATION_VERSION_PUBLISHED_EVENT.type,
+        schemaVersion: CONFIGURATION_VERSION_PUBLISHED_EVENT.schemaVersion,
+        occurredAt: version.publishedAt ?? version.createdAt,
+        recordedAt: version.publishedAt ?? version.createdAt,
+        producer: 'K-05',
+        correlationId,
+        causationId,
+        origin: 'system',
+        actor: { kind: 'system', id: 'K-05' },
+        idempotencyKey: `K-05:${eventId}`,
+        now: version.publishedAt ?? version.createdAt,
+        payload: {
+          version_id: version.versionId,
+          config_key: version.key,
+          scope_level: version.scope.level,
+          scope_id: version.scope.id,
+          effective_from: version.effectiveFrom,
+          superseded_version_id: supersededVersionId,
+        },
+      },
+    };
+  }
+
+  #publishedAudit(
+    version: ConfigurationVersion,
+    supersededVersionId: string | null,
+    correlationId: string,
+    causationId: string | null,
+  ): OutboxEntry {
+    const recordId = `${version.versionId}:published`;
+    const outboxId = `K-05:audit:${recordId}`;
+    return {
+      outboxId,
+      idempotencyKey: outboxId,
+      kind: 'audit',
+      producer: 'K-05',
+      recordedAt: version.publishedAt ?? version.createdAt,
+      correlationId,
+      causationId,
+      processedAt: null,
+      retryCount: 0,
+      lastError: null,
+      payload: {
+        recordId,
+        action: CONFIGURATION_VERSION_PUBLISHED_ACTION.action,
+        recordedAt: version.publishedAt ?? version.createdAt,
+        actor: {
+          kind: 'system',
+          id: 'K-05',
+          authentication: 'unauthenticated',
+          sessionId: null,
+        },
+        resource: {
+          owner: 'K-05',
+          type: 'configuration_version',
+          id: version.versionId,
+        },
+        outcome: 'succeeded',
+        reason: `configuration version ${version.versionId} published for ${version.key} at ${version.scope.level}:${version.scope.id}`,
+        correlationId,
+        causationId,
+        idempotencyKey: outboxId,
+        evidence: {
+          version_id: version.versionId,
+          config_key: version.key,
+          scope_level: version.scope.level,
+          scope_id: version.scope.id,
+          effective_from: version.effectiveFrom,
+          superseded_version_id: supersededVersionId,
+        },
+      },
+    };
   }
 }
 

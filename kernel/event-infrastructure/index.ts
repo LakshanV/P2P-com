@@ -72,6 +72,8 @@ export type {
 export { InMemoryEventRepository } from './repository.ts';
 export type { ClaimRequest, EventRepository, EventTransaction } from './repository.ts';
 
+export { EventServicePublisher } from './outbox-publisher.ts';
+
 export {
   DELIVERY_TABLE,
   EnlistedEventRepository,

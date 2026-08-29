@@ -89,9 +89,7 @@ interface Wiring {
 /** A real K-01 subject, and K-02 wired to the real K-01 service, both on this database. */
 async function wire(database: Database, subjectId: string): Promise<Wiring> {
   const identity = new IdentityService(new PostgresIdentityRepository(database));
-  await identity.create(
-    createRequest({ subjectId, idempotencyKey: `idem_${subjectId.slice(-10)}` }),
-  );
+  await identity.create(createRequest({ subjectId, idempotencyKey: `idem-authn-${subjectId}` }));
 
   const clock = new FixedClock(NOW);
   const entropy = new SequenceEntropy();

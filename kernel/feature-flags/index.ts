@@ -122,6 +122,8 @@ export {
   EnlistedFeatureFlagRepository,
   FEATURE_FLAGS_SCHEMA,
   LIFECYCLE_TABLE,
+  OUTBOX_COLUMNS,
+  OUTBOX_TABLE,
   PostgresFeatureFlagRepository,
   TIMESTAMP_COLUMNS,
   VERSION_TABLE,
@@ -130,3 +132,18 @@ export {
   toFlagVersion,
   toLifecycleEvent,
 } from './postgres-repository.ts';
+
+export {
+  FEATURE_FLAG_RETIRED_ACTION,
+  FEATURE_FLAG_RETIRED_EVENT,
+  FEATURE_FLAG_VERSION_ACTIVATED_ACTION,
+  FEATURE_FLAG_VERSION_ACTIVATED_EVENT,
+  FEATURE_FLAG_VERSION_PUBLISHED_ACTION,
+  FEATURE_FLAG_VERSION_PUBLISHED_EVENT,
+  makeFeatureFlagRetiredAction,
+  makeFeatureFlagRetiredEvent,
+  makeFeatureFlagVersionActivatedAction,
+  makeFeatureFlagVersionActivatedEvent,
+  makeFeatureFlagVersionPublishedAction,
+  makeFeatureFlagVersionPublishedEvent,
+} from './outbox.ts';

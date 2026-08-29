@@ -408,7 +408,7 @@ test('an enlisted write commits and rolls back with the caller', liveTestOptions
 test('kernel_permissions rolls back without touching K-01 or K-03', liveTestOptions, async () => {
   // What the refused foreign keys were traded for, and the only place it is observable.
   await withTestDatabase(async ({ database, directory }) => {
-    await migrateUp(database, { directory });
+    await migrateUp(database, { directory, target: '0009' });
     await new PostgresPermissionRepository(database).withTransaction(async (tx) => {
       await tx.insertPolicyVersion(policyFor(1, '01'));
       await tx.insertGrant(grantFor('01'));
