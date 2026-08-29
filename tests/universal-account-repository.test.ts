@@ -19,11 +19,7 @@ import {
   UniversalAccountError,
 } from '../modules/universal-account/index.ts';
 
-import {
-  ACCOUNT,
-  capabilityRecord,
-  stateRecord,
-} from './helpers/universal-account-fixtures.ts';
+import { ACCOUNT, capabilityRecord, stateRecord } from './helpers/universal-account-fixtures.ts';
 
 /** The refusal code, or a rethrow when it is not one of M-01's. */
 const codeOf = async (body: () => Promise<unknown>): Promise<string> => {

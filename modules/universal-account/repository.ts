@@ -133,9 +133,7 @@ export class InMemoryUniversalAccountRepository implements UniversalAccountRepos
     for (const capability of working.capabilities) {
       if (touched.capabilityUpdates.has(capability.capabilityId)) {
         this.#capabilities = this.#capabilities.map((held) =>
-          held.capabilityId === capability.capabilityId
-            ? sealAccountCapability(capability)
-            : held,
+          held.capabilityId === capability.capabilityId ? sealAccountCapability(capability) : held,
         );
       }
     }
@@ -236,7 +234,9 @@ class InMemoryUniversalAccountTransaction implements UniversalAccountTransaction
         ),
       );
     }
-    if (this.#state.capabilities.some((held) => held.idempotencyKey === capability.idempotencyKey)) {
+    if (
+      this.#state.capabilities.some((held) => held.idempotencyKey === capability.idempotencyKey)
+    ) {
       return Promise.reject(
         new UniversalAccountError(
           'idempotency-key-reuse',

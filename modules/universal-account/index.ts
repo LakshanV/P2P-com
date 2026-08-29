@@ -39,10 +39,7 @@ export {
   sealCapabilityStates,
 } from './immutable.ts';
 
-export {
-  validateAccountCapability,
-  validateCapabilityState,
-} from './validate.ts';
+export { validateAccountCapability, validateCapabilityState } from './validate.ts';
 export type { RecordSource } from './validate.ts';
 
 export { UniversalAccountService } from './service.ts';
@@ -54,10 +51,20 @@ export type {
 } from './service.ts';
 
 export { InMemoryUniversalAccountRepository } from './repository.ts';
-export type {
-  UniversalAccountRepository,
-  UniversalAccountTransaction,
-} from './repository.ts';
+export type { UniversalAccountRepository, UniversalAccountTransaction } from './repository.ts';
+
+export {
+  ACCOUNT_CAPABILITY_TABLE,
+  CAPABILITY_STATE_TABLE,
+  EnlistedUniversalAccountRepository,
+  OUTBOX_TABLE,
+  PostgresUniversalAccountRepository,
+  TIMESTAMP_COLUMNS,
+  UNIVERSAL_ACCOUNT_SCHEMA,
+  enlistedClient,
+  toAccountCapability,
+  toCapabilityState,
+} from './postgres-repository.ts';
 
 export {
   CAPABILITY_ACTIVATED_ACTION,

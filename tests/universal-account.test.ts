@@ -331,9 +331,7 @@ test('every field belonging to another unit is refused, by name, with its owner'
     // `deactivatedAt` is M-01's own field on a deactivation request; it is foreign only on
     // activation, which is the operation tested here.
     const request = { ...activateRequest(), [field]: 'anything' };
-    const code = await codeOf(() =>
-      service.activateCapability(request as ReturnType<typeof activateRequest>),
-    );
+    const code = await codeOf(() => service.activateCapability(request));
     assert.equal(code, 'foreign-concern', `${field} was not refused as a foreign concern`);
     assert.match(
       owner,

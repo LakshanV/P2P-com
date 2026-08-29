@@ -72,9 +72,7 @@ export function deactivateRequest(
   };
 }
 
-export function capabilityRecord(
-  overrides: Partial<AccountCapability> = {},
-): AccountCapability {
+export function capabilityRecord(overrides: Partial<AccountCapability> = {}): AccountCapability {
   const n = seq();
   return {
     capabilityId: `cap_01HQZUR${n}`,
