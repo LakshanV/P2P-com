@@ -9,15 +9,12 @@
 
 import { formatInstant, InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
 
-import {
-  assertCapability,
-  assertStatus,
-  assertUniversalAccountIdentifier,
-} from './registry.ts';
+import { assertCapability, assertStatus, assertUniversalAccountIdentifier } from './registry.ts';
 import {
   UniversalAccountError,
   type AccountCapability,
   type CapabilityState,
+  type CapabilityStatus,
 } from './types.ts';
 
 /** Where the record came from. Only affects the wording of a refusal. */
@@ -53,10 +50,7 @@ const ACCOUNT_CAPABILITY_FIELDS: readonly string[] = [
   'idempotencyKey',
 ];
 
-function checkAccountCapability(
-  candidate: unknown,
-  source: RecordSource,
-): AccountCapability {
+function checkAccountCapability(candidate: unknown, source: RecordSource): AccountCapability {
   if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
     throw new UniversalAccountError(
       'malformed-record',
@@ -86,17 +80,11 @@ function checkAccountCapability(
     createdAt: checkInstant(fields.createdAt, 'createdAt', source),
     updatedAt: checkInstant(fields.updatedAt, 'updatedAt', source),
     correlationId: assertUniversalAccountIdentifier(fields.correlationId, 'correlationId'),
-    idempotencyKey: assertUniversalAccountIdentifier(
-      fields.idempotencyKey,
-      'idempotencyKey',
-    ),
+    idempotencyKey: assertUniversalAccountIdentifier(fields.idempotencyKey, 'idempotencyKey'),
   };
 }
 
-export function validateCapabilityState(
-  candidate: unknown,
-  source: RecordSource,
-): CapabilityState {
+export function validateCapabilityState(candidate: unknown, source: RecordSource): CapabilityState {
   try {
     return checkCapabilityState(candidate, source);
   } catch (error) {
@@ -149,18 +137,12 @@ function checkCapabilityState(candidate: unknown, source: RecordSource): Capabil
   };
 }
 
-function assertOptionalStatus(
-  value: unknown,
-  field: string,
-): CapabilityStatus | null {
+function assertOptionalStatus(value: unknown, field: string): CapabilityStatus | null {
   if (value === null || value === undefined) return null;
   return assertStatus(value, field);
 }
 
-function assertJsonObject(
-  value: unknown,
-  field: string,
-): Readonly<Record<string, unknown>> {
+function assertJsonObject(value: unknown, field: string): Readonly<Record<string, unknown>> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new UniversalAccountError(
       'malformed-record',
@@ -177,10 +159,15 @@ function assertReason(value: unknown, field: string): string {
       `${field} is ${value === null ? 'null' : typeof value}; expected text`,
     );
   }
-  if (value === '' || value.length > 500) {
+  // The migration's CHECK is `length(btrim(reason)) > 0 AND length(reason) <= 500`. Trimming here
+  // rather than only testing for the empty string is what keeps the two in step: a reason of three
+  // spaces satisfied this function and was then refused by PostgreSQL, which is the worst place to
+  // discover a validation rule.
+  if (value.trim() === '' || value.length > 500) {
     throw new UniversalAccountError(
       'malformed-reason',
-      `${field} is ${value.length} characters; expected 1-500 characters`,
+      `${field} is ${value.length} characters, ${value.trim().length} of them not whitespace; ` +
+        'expected 1-500 characters with at least one that is not whitespace',
     );
   }
   return value;
@@ -231,11 +218,7 @@ function checkInstant(value: unknown, field: string, source: RecordSource): stri
   }
 }
 
-function assertOptionalInstant(
-  value: unknown,
-  field: string,
-  source: RecordSource,
-): string | null {
+function assertOptionalInstant(value: unknown, field: string, source: RecordSource): string | null {
   if (value === null || value === undefined) return null;
   return checkInstant(value, field, source);
 }

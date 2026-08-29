@@ -8,10 +8,16 @@
  * Owned by: M-01 Universal Account.
  */
 
-import type { AuditActionDefinition, EvidenceField } from '../../kernel/audit-foundation/registry.ts';
+import type {
+  AuditActionDefinition,
+  EvidenceField,
+} from '../../kernel/audit-foundation/registry.ts';
 import { auditOutboxEntry, eventOutboxEntry } from '../../platform/outbox/builder.ts';
 import type { OutboxEntry } from '../../platform/outbox/types.ts';
-import type { EventTypeDefinition, PayloadField } from '../../kernel/event-infrastructure/registry.ts';
+import type {
+  EventTypeDefinition,
+  PayloadField,
+} from '../../kernel/event-infrastructure/registry.ts';
 
 import type { AccountCapability, CapabilityState } from './types.ts';
 
@@ -209,12 +215,21 @@ export const CAPABILITY_DEACTIVATED_ACTION: AuditActionDefinition = {
   ] satisfies EvidenceField[],
 };
 
+/**
+ * The event reporting one activation.
+ *
+ * The outbox id is derived from the **transition**, not from the capability. A capability may be
+ * activated, deactivated and activated again, and each of those is a separate fact the relay must
+ * deliver; an id derived from the capability id alone collides with itself on the second
+ * activation, and `outbox_pkey` refuses the write.
+ */
 export function makeCapabilityActivatedEvent(
   capability: AccountCapability,
+  state: CapabilityState,
   correlationId: string,
   causationId: string | null,
 ): OutboxEntry {
-  const eventId = `${capability.capabilityId}:activated`;
+  const eventId = `${state.stateId}:activated`;
   const recordedAt = capability.activatedAt;
 
   return eventOutboxEntry({
@@ -256,7 +271,7 @@ export function makeCapabilityDeactivatedEvent(
   correlationId: string,
   causationId: string | null,
 ): OutboxEntry {
-  const eventId = `${capability.capabilityId}:deactivated`;
+  const eventId = `${state.stateId}:deactivated`;
   const recordedAt = capability.deactivatedAt ?? state.occurredAt;
 
   return eventOutboxEntry({
@@ -292,12 +307,14 @@ export function makeCapabilityDeactivatedEvent(
   });
 }
 
+/** The audit record for one activation, keyed by the transition for the reason given above. */
 export function makeCapabilityActivatedAction(
   capability: AccountCapability,
+  state: CapabilityState,
   correlationId: string,
   causationId: string | null,
 ): OutboxEntry {
-  const recordId = `${capability.capabilityId}:activated`;
+  const recordId = `${state.stateId}:activated`;
   const outboxId = `M-01:audit:${recordId}`;
   const recordedAt = capability.activatedAt;
 
@@ -337,7 +354,7 @@ export function makeCapabilityDeactivatedAction(
   correlationId: string,
   causationId: string | null,
 ): OutboxEntry {
-  const recordId = `${capability.capabilityId}:deactivated`;
+  const recordId = `${state.stateId}:deactivated`;
   const outboxId = `M-01:audit:${recordId}`;
   const recordedAt = capability.deactivatedAt ?? state.occurredAt;
 

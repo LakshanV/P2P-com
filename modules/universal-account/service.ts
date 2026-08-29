@@ -25,10 +25,7 @@ import {
   makeCapabilityDeactivatedEvent,
 } from './outbox.ts';
 import { FOREIGN_FIELDS, assertUniversalAccountIdentifier } from './registry.ts';
-import type {
-  UniversalAccountRepository,
-  UniversalAccountTransaction,
-} from './repository.ts';
+import type { UniversalAccountRepository, UniversalAccountTransaction } from './repository.ts';
 import {
   sealAccountCapability,
   sealAccountCapabilities,
@@ -120,9 +117,7 @@ export class UniversalAccountService {
    * capability with the same id is reactivated. Each successful activation appends a state row and
    * emits both an event and an audit record in the same transaction.
    */
-  async activateCapability(
-    request: ActivateCapabilityRequest,
-  ): Promise<ActivateCapabilityResult> {
+  async activateCapability(request: ActivateCapabilityRequest): Promise<ActivateCapabilityResult> {
     assertNoForeignConcerns(request, ACTIVATE_CAPABILITY_KEYS, 'activateCapability');
     const capability = sealAccountCapability(
       validateAccountCapability(
@@ -216,7 +211,7 @@ export class UniversalAccountService {
 
         await tx.updateCapability(updated);
         await tx.insertState(state);
-        await this.#emitActivated(updated, tx);
+        await this.#emitActivated(updated, state, tx);
         return { capability: updated, state, replayed: false };
       }
 
@@ -251,7 +246,7 @@ export class UniversalAccountService {
 
       await tx.insertCapability(capability);
       await tx.insertState(state);
-      await this.#emitActivated(capability, tx);
+      await this.#emitActivated(capability, state, tx);
       return { capability, state, replayed: false };
     });
   }
@@ -351,7 +346,11 @@ export class UniversalAccountService {
             `capability ${existingStateId.capabilityId} does not exist`,
           );
         }
-        return { capability: sealAccountCapability(capability), state: existingStateId, replayed: true };
+        return {
+          capability: sealAccountCapability(capability),
+          state: existingStateId,
+          replayed: true,
+        };
       }
 
       const existingKey = await tx.findStateByIdempotencyKey(idempotencyKey);
@@ -379,7 +378,11 @@ export class UniversalAccountService {
             `capability ${existingKey.capabilityId} does not exist`,
           );
         }
-        return { capability: sealAccountCapability(capability), state: existingKey, replayed: true };
+        return {
+          capability: sealAccountCapability(capability),
+          state: existingKey,
+          replayed: true,
+        };
       }
 
       const existing = await tx.findCapabilityById(capabilityId);
@@ -459,19 +462,22 @@ export class UniversalAccountService {
     capability: string,
   ): Promise<AccountCapability | null> {
     const capabilities = await tx.findCapabilitiesByAccountId(accountId);
-    return (
-      capabilities.find((c) => c.capability === capability && c.status === 'active') ?? null
-    );
+    return capabilities.find((c) => c.capability === capability && c.status === 'active') ?? null;
   }
 
   async #emitActivated(
     capability: AccountCapability,
+    state: CapabilityState,
     tx: UniversalAccountTransaction,
   ): Promise<void> {
-    const correlationId = capability.correlationId;
+    const correlationId = state.correlationId;
     const causationId: string | null = null;
-    await tx.insertOutbox(makeCapabilityActivatedEvent(capability, correlationId, causationId));
-    await tx.insertOutbox(makeCapabilityActivatedAction(capability, correlationId, causationId));
+    await tx.insertOutbox(
+      makeCapabilityActivatedEvent(capability, state, correlationId, causationId),
+    );
+    await tx.insertOutbox(
+      makeCapabilityActivatedAction(capability, state, correlationId, causationId),
+    );
   }
 
   async #emitDeactivated(
@@ -481,8 +487,12 @@ export class UniversalAccountService {
   ): Promise<void> {
     const correlationId = state.correlationId;
     const causationId: string | null = null;
-    await tx.insertOutbox(makeCapabilityDeactivatedEvent(capability, state, correlationId, causationId));
-    await tx.insertOutbox(makeCapabilityDeactivatedAction(capability, state, correlationId, causationId));
+    await tx.insertOutbox(
+      makeCapabilityDeactivatedEvent(capability, state, correlationId, causationId),
+    );
+    await tx.insertOutbox(
+      makeCapabilityDeactivatedAction(capability, state, correlationId, causationId),
+    );
   }
 }
 
