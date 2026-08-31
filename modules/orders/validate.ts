@@ -16,8 +16,10 @@ import {
   assertOrderStatus,
 } from './registry.ts';
 import {
+  FULFILMENT_ROLES,
   OrderError,
   type CancellationReason,
+  type FulfilmentRole,
   type Order,
   type OrderEvent,
   type OrderItem,
@@ -46,6 +48,8 @@ const ORDER_FIELDS: readonly string[] = [
   'buyerAccountId',
   'sellerAccountId',
   'status',
+  'parentOrderId',
+  'fulfilmentRole',
   'currency',
   'subtotalMinor',
   'totalMinor',
@@ -80,11 +84,38 @@ function checkOrder(candidate: unknown, source: RecordSource): Order {
   }
 
   const fields = candidate as Record<string, unknown>;
+
+  const orderId = assertOrderIdentifier(fields.orderId, 'orderId');
+  const fulfilmentRole = assertFulfilmentRole(fields.fulfilmentRole, 'fulfilmentRole');
+  const parentOrderId =
+    fields.parentOrderId === null || fields.parentOrderId === undefined
+      ? null
+      : assertOrderIdentifier(fields.parentOrderId, 'parentOrderId');
+
+  // A child has a parent, and only a child has one. The database says the same thing in
+  // `order_header_child_has_parent`; saying it here too means the caller learns which of the two
+  // fields is wrong, rather than being handed a constraint name.
+  if ((fulfilmentRole === 'child') !== (parentOrderId !== null)) {
+    throw new OrderError(
+      'malformed-record',
+      `fulfilmentRole is "${fulfilmentRole}" but parentOrderId is ` +
+        `${parentOrderId === null ? 'null' : `"${parentOrderId}"`}; a child has a parent and only ` +
+        'a child has one',
+    );
+  }
+
+  // An order that is its own parent makes the fulfilment summary infinitely recursive.
+  if (parentOrderId !== null && parentOrderId === orderId) {
+    throw new OrderError('malformed-record', `order ${orderId} is its own parent`);
+  }
+
   return {
-    orderId: assertOrderIdentifier(fields.orderId, 'orderId'),
+    orderId,
     buyerAccountId: assertOrderIdentifier(fields.buyerAccountId, 'buyerAccountId'),
     sellerAccountId: assertOrderIdentifier(fields.sellerAccountId, 'sellerAccountId'),
     status: assertOrderStatus(fields.status, 'status'),
+    parentOrderId,
+    fulfilmentRole,
     currency: assertCurrency(fields.currency, 'currency'),
     subtotalMinor: assertNonNegativeBigint(fields.subtotalMinor, 'subtotalMinor'),
     totalMinor: assertNonNegativeBigint(fields.totalMinor, 'totalMinor'),
@@ -404,6 +435,18 @@ function assertOptionalIdentifier(value: unknown, field: string): string | null 
 function assertOptionalStatus(value: unknown, field: string): OrderStatus | null {
   if (value === null || value === undefined) return null;
   return assertOrderStatus(value, field);
+}
+
+/** The fulfilment role, refused by name when it is not one of the three M-11 recognises. */
+function assertFulfilmentRole(value: unknown, field: string): FulfilmentRole {
+  if (typeof value !== 'string' || !FULFILMENT_ROLES.includes(value as FulfilmentRole)) {
+    throw new OrderError(
+      'unknown-fulfilment-role',
+      `${field} is ${value === undefined ? 'undefined' : `"${String(value)}"`}; expected one of ` +
+        FULFILMENT_ROLES.join(', '),
+    );
+  }
+  return value as FulfilmentRole;
 }
 
 function assertOptionalCancellationReason(

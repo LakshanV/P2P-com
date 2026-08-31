@@ -33,6 +33,21 @@ export const ORDER_EVENT_KINDS = [
 ] as const;
 export type OrderEventKind = (typeof ORDER_EVENT_KINDS)[number];
 
+/**
+ * What part an order plays in split supplier fulfilment.
+ *
+ * A buyer orders twenty tonnes and no single supplier holds twenty tonnes, so the order becomes a
+ * `parent` with one `child` per supplier. A child is a real order with its own seller and its own
+ * lifecycle, which is what lets one supplier fail without the others noticing and without the rest
+ * of the platform having to learn a second kind of thing.
+ *
+ * Two levels only. A child may not itself be split; that limit is enforced in the service, because
+ * expressing "the parent of this row has no parent of its own" needs a subquery and a database
+ * CHECK cannot execute one.
+ */
+export const FULFILMENT_ROLES = ['standalone', 'parent', 'child'] as const;
+export type FulfilmentRole = (typeof FULFILMENT_ROLES)[number];
+
 /** Reasons an order may be cancelled. */
 export const CANCELLATION_REASONS = [
   'buyer-withdrew',
@@ -71,6 +86,16 @@ export interface Order {
   readonly sellerAccountId: string;
   /** Current lifecycle status. */
   readonly status: OrderStatus;
+  /**
+   * The parent this order fulfils part of, or null when it has none.
+   *
+   * An opaque id within this schema rather than a foreign key, for the same reason every other
+   * reference here is: the service owns the invariant, and a self-referencing key would make the
+   * table's own rollback order depend on its contents.
+   */
+  readonly parentOrderId: string | null;
+  /** What part this order plays in split fulfilment. An order is born `standalone`. */
+  readonly fulfilmentRole: FulfilmentRole;
   /** ISO-4217 currency code, three uppercase letters. */
   readonly currency: string;
   /** Sum of the line totals in integer minor units. */
@@ -232,6 +257,24 @@ export type OrderErrorCode =
   | 'order-empty'
   /** The order is in a terminal state and refuses further transition. */
   | 'order-terminal'
+  /** The order is not `placed`, and only a placed order may be split. */
+  | 'order-not-placed'
+  /** The order already has children. */
+  | 'already-split'
+  /** The order is itself a child; split fulfilment is two levels only. */
+  | 'nested-split'
+  /** No allocations were supplied, or an allocation carried no items. */
+  | 'empty-allocation'
+  /** The allocated quantities do not sum to the parent's ordered quantity. */
+  | 'allocation-mismatch'
+  /** An allocated line's currency does not match the parent's. */
+  | 'allocation-currency-mismatch'
+  /** A parent cannot complete while a child is still in flight. */
+  | 'children-outstanding'
+  /** Every child was cancelled, so there is nothing to complete. */
+  | 'nothing-fulfilled'
+  /** The fulfilment role is not one M-11 recognises. */
+  | 'unknown-fulfilment-role'
   /** The requested transition is not in the state machine. */
   | 'illegal-transition'
   /** A line's currency does not match the order's currency. */
@@ -244,6 +287,45 @@ export type OrderErrorCode =
   | 'snapshot-exists';
 
 /** A refusal the caller must act on. */
+/**
+ * What a parent order's children add up to.
+ *
+ * **Every number here is derived by summing child rows; nothing stores a ratio.** That is the
+ * module's central decision about split fulfilment, and it is the same discipline M-04 applies to
+ * inventory availability and K-10 to balances: a stored "percent fulfilled" is a second source of
+ * truth that drifts the first time a child moves and nobody recomputes it.
+ *
+ * For a standalone order with no children, the allocated, fulfilled and cancelled quantities are
+ * zero and `orderedQuantity` is its own line total — so a caller need not branch on whether an
+ * order was ever split.
+ */
+export interface FulfilmentSummary {
+  /** The parent's own ordered quantity, summed across its lines. */
+  readonly orderedQuantity: bigint;
+  /** How much of it has been allocated to children. */
+  readonly allocatedQuantity: bigint;
+  /** How much arrived: the quantity of children that reached `completed`. */
+  readonly fulfilledQuantity: bigint;
+  /** How much will not arrive: the quantity of children that reached `cancelled`. */
+  readonly cancelledQuantity: bigint;
+  /** Still in flight: allocated minus fulfilled minus cancelled. */
+  readonly pendingQuantity: bigint;
+  /** One row per child, ordered by order id so two readers cannot disagree. */
+  readonly children: readonly FulfilmentChild[];
+  /** Whether the allocation covers the whole ordered quantity. */
+  readonly fullyAllocated: boolean;
+  /** Whether every allocated unit actually arrived. */
+  readonly fullyFulfilled: boolean;
+}
+
+/** One child's contribution to its parent's fulfilment. */
+export interface FulfilmentChild {
+  readonly orderId: string;
+  readonly sellerAccountId: string;
+  readonly quantity: bigint;
+  readonly status: OrderStatus;
+}
+
 export class OrderError extends Error {
   readonly code: OrderErrorCode;
 

@@ -288,6 +288,10 @@ export class OrderService {
           buyerAccountId: request.buyerAccountId,
           sellerAccountId: request.sellerAccountId,
           status: 'draft',
+          // Every order is born standalone. It becomes a parent only by being split and a child
+          // only by being created as part of one, so neither is something a caller may assert.
+          parentOrderId: null,
+          fulfilmentRole: 'standalone',
           currency: request.currency,
           subtotalMinor: 0n,
           totalMinor: 0n,
