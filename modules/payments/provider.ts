@@ -6,7 +6,7 @@
  * code that knows a gateway exists is the adapter behind it.
  *
  * **A provider is told what to move, never who is moving it.** Every request below carries an
- * amount, a currency, an opaque token and an idempotency key — and nothing else. Not the payer, not
+ * amount, an asset, a rail, an opaque token and an idempotency key — and nothing else. Not the payer, not
  * the payee, not the order, not a name, not an address. A gateway does not need to know who its
  * counterparty's customers are in order to move money, and telling it anyway is a disclosure with
  * no purpose. It also means an adapter cannot leak what it was never given.
@@ -17,7 +17,7 @@
  * Owned by: M-12 Payments.
  */
 
-import type { FailureCode } from './types.ts';
+import type { FailureCode, PaymentRail } from './types.ts';
 
 /** What every provider call carries, and the ceiling on what any provider is told. */
 export interface ProviderRequest {
@@ -25,8 +25,12 @@ export interface ProviderRequest {
   readonly instrumentToken: string;
   /** The amount to move, in integer minor units. */
   readonly amountMinor: bigint;
-  /** ISO-4217 currency code. */
-  readonly currency: string;
+  /** The settlement asset. Not assumed to be a three-letter fiat code. */
+  readonly assetCode: string;
+  /** Minor units per major unit as a power of ten, so the adapter need not look it up. */
+  readonly assetScale: number;
+  /** How the value crosses the platform boundary. */
+  readonly rail: PaymentRail;
   /**
    * Stable across retries of one logical operation.
    *
@@ -73,6 +77,22 @@ export interface ProviderResult {
 export interface PaymentProvider {
   /** Vocabulary name, matching `Payment.provider`. */
   readonly name: string;
+  /**
+   * The rails this adapter can actually settle on.
+   *
+   * Declared rather than assumed, so the service refuses an impossible pairing before calling out
+   * — asking a card processor for a bank transfer is a mistake worth catching locally rather than
+   * discovering from a gateway error in a language nobody chose.
+   */
+  readonly supportedRails: readonly PaymentRail[];
+  /**
+   * The settlement assets this adapter can move.
+   *
+   * A card processor might declare `['LKR', 'USD']` and a digital-asset custodian `['BTC', 'USDC']`.
+   * **No adapter may declare an internally issued JAYA value**: those are M-13's to allocate and no
+   * external counterparty settles them, which `assertSettlementAsset` enforces at the boundary.
+   */
+  readonly supportedAssets: readonly string[];
   authorise(request: ProviderAuthoriseRequest): Promise<ProviderResult>;
   capture(request: ProviderCaptureRequest): Promise<ProviderResult>;
   cancel(request: ProviderCancelRequest): Promise<ProviderResult>;

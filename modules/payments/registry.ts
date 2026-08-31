@@ -16,12 +16,15 @@ import {
   ATTEMPT_KINDS,
   ATTEMPT_OUTCOMES,
   FAILURE_CODES,
+  INTERNAL_VALUE_CODES,
+  PAYMENT_RAILS,
   PAYMENT_STATUSES,
   PaymentError,
   type AttemptKind,
   type AttemptOutcome,
   type FailureCode,
   type PaymentErrorCode,
+  type PaymentRail,
   type PaymentStatus,
 } from './types.ts';
 
@@ -30,6 +33,7 @@ export type {
   AttemptOutcome,
   FailureCode,
   PaymentErrorCode,
+  PaymentRail,
   PaymentStatus,
 } from './types.ts';
 
@@ -92,6 +96,69 @@ export function assertAttemptOutcome(value: unknown, field: string): AttemptOutc
   return value as AttemptOutcome;
 }
 
+/** Refuse a rail M-12 does not recognise. */
+export function assertPaymentRail(value: unknown, field: string): PaymentRail {
+  if (typeof value !== 'string' || !(PAYMENT_RAILS as readonly string[]).includes(value)) {
+    throw new PaymentError(
+      'unknown-rail',
+      `${field} is "${String(value)}"; expected one of ${PAYMENT_RAILS.join(', ')}`,
+    );
+  }
+  return value as PaymentRail;
+}
+
+/**
+ * Refuse a settlement asset that no external counterparty could settle.
+ *
+ * Two checks, and the second is the architectural one.
+ *
+ * The shape check is deliberately permissive: uppercase letters and digits, three to twelve
+ * characters. It admits `LKR`, `USD`, `BTC` and `USDC` alike, because assuming ISO-4217 here would
+ * make this contract fiat-only for ever and every later digital-asset rail would have to break it.
+ *
+ * The second refuses **JAYA-issued value by name**. Rewards, cashback, merchant credit,
+ * promotional credit and community credit are internal liabilities: no bank, card network or
+ * custodian has heard of them, and there is no rail down which they could travel. Passing one to a
+ * provider adapter would either fail confusingly at the gateway or, far worse, succeed against some
+ * fiat balance and quietly turn a restricted credit into cash. M-13's value router allocates those
+ * legs against the universal ledger; M-12 orchestrates only the externally settled leg.
+ */
+export function assertSettlementAsset(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !/^[A-Z0-9]{3,12}$/.test(value)) {
+    throw new PaymentError(
+      'malformed-asset-code',
+      `${field} is "${String(value)}"; expected 3-12 uppercase letters or digits — a settlement ` +
+        'asset such as LKR, USD, BTC or USDC, not necessarily an ISO-4217 code',
+    );
+  }
+  if ((INTERNAL_VALUE_CODES as readonly string[]).includes(value)) {
+    throw new PaymentError(
+      'internal-value-not-settleable',
+      `${field} is "${value}", which is value JAYA issues itself. No external provider can settle ` +
+        'it, and treating it as cash would convert a restricted credit into money. M-13 allocates ' +
+        'internal value against the universal ledger; M-12 settles only external rails',
+    );
+  }
+  return value;
+}
+
+/**
+ * Refuse an asset scale that is not a plausible power of ten.
+ *
+ * Zero is legitimate — an indivisible unit — and eighteen covers the largest decimal exponent in
+ * common use. Anything outside that is a mistake rather than an exotic asset.
+ */
+export function assertAssetScale(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 18) {
+    throw new PaymentError(
+      'malformed-asset-scale',
+      `${field} is ${String(value)}; expected an integer from 0 to 18, the power of ten giving ` +
+        'minor units per major unit',
+    );
+  }
+  return value;
+}
+
 /** Refuse a failure code M-12 does not recognise. Null passes through. */
 export function assertOptionalFailureCode(value: unknown, field: string): FailureCode | null {
   if (value === null || value === undefined) return null;
@@ -151,6 +218,16 @@ export const FOREIGN_FIELDS: Readonly<Record<string, string>> = Object.freeze({
   // Profile and contact.
   email: 'email belongs to the account profile core, not to a payment record',
   phone: 'phone belongs to the account profile core, not to a payment record',
+
+  // Internal JAYA value. M-13 allocates these; no external rail can settle them.
+  rewardsMinor: 'M-13 Universal Ledger allocates JAYA rewards; no external provider settles them',
+  merchantCreditMinor:
+    'M-13 Universal Ledger allocates merchant credit; no external rail carries it',
+  cashbackMinor: 'M-13 Universal Ledger allocates cashback',
+  promoCreditMinor: 'M-13 Universal Ledger allocates promotional credit',
+  communityCreditMinor: 'M-13 Universal Ledger allocates community value',
+  currency:
+    'M-12 settles an asset rather than a currency; the field is assetCode, and it is not assumed to be fiat',
 
   // Lifecycle fields M-12 computes from the operation rather than accepting.
   status: 'M-12 owns the payment lifecycle; this field is refused on a request',

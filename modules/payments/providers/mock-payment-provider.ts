@@ -33,7 +33,7 @@ import type {
   ProviderRefundRequest,
   ProviderResult,
 } from '../provider.ts';
-import type { FailureCode } from '../types.ts';
+import type { FailureCode, PaymentRail } from '../types.ts';
 
 /** Token substrings that select a failure, in the order they are checked. */
 const FAILURE_TRIGGERS: readonly (readonly [string, FailureCode])[] = [
@@ -83,6 +83,24 @@ function settle(
 
 export class MockPaymentProvider implements PaymentProvider {
   readonly name = 'mock';
+
+  /**
+   * Every external rail, so one mock can stand in for a card processor, a bank and a custodian.
+   * A real adapter declares only what it genuinely settles.
+   */
+  readonly supportedRails: readonly PaymentRail[] = [
+    'card',
+    'bank-transfer',
+    'external-wallet',
+    'digital-asset',
+    'cash-on-delivery',
+  ];
+
+  /**
+   * A fiat spread and two digital assets, so tests can exercise a non-ISO-4217 settlement without
+   * a second adapter. **No internally issued JAYA value appears here, and none ever may.**
+   */
+  readonly supportedAssets: readonly string[] = ['LKR', 'USD', 'AUD', 'INR', 'BTC', 'USDC'];
 
   authorise(request: ProviderAuthoriseRequest): Promise<ProviderResult> {
     return Promise.resolve(settle('auth', request));

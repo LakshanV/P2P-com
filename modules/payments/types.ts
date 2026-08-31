@@ -17,6 +17,70 @@
  * Owned by: M-12 Payments.
  */
 
+/**
+ * How value moves **out of or into the platform**.
+ *
+ * Every rail here crosses the platform boundary: a real counterparty settles, and M-12 exists to
+ * orchestrate that. The list is open to extension — a licensed provider, a new wallet type — and
+ * adding one does not change any record shape, because a rail is a vocabulary word rather than a
+ * branch in the code.
+ */
+export const PAYMENT_RAILS = [
+  'card',
+  'bank-transfer',
+  'external-wallet',
+  'digital-asset',
+  'cash-on-delivery',
+] as const;
+export type PaymentRail = (typeof PAYMENT_RAILS)[number];
+
+/**
+ * Value JAYA issues itself, which **must never reach an external provider**.
+ *
+ * Rewards, cashback, merchant credit, promotional credit and community credit are internal
+ * liabilities: nobody outside the platform settles them, and there is no rail that could. Sending
+ * one to a gateway would be asking a bank to move something it has never heard of, and treating the
+ * result as cash would silently convert a restricted credit into money.
+ *
+ * They are refused here **by name**, with M-13 named as the owner, for the same reason every other
+ * foreign field is: a caller trying it has misunderstood the boundary and needs telling. M-13's
+ * value router allocates these legs; M-12 reports only the externally settled one.
+ *
+ * A purchase of LKR 10,000 paid as 1,500 rewards + 500 merchant credit + 8,000 on a card is three
+ * legs. **M-12 knows about exactly one of them** — the 8,000 — and M-13 proves the three balance.
+ */
+export const INTERNAL_VALUE_CODES = [
+  'JAYA_REWARD',
+  'CASHBACK',
+  'MERCHANT_CREDIT',
+  'PROMO_CREDIT',
+  'DELIVERY_CREDIT',
+  'COMMUNITY_CREDIT',
+] as const;
+export type InternalValueCode = (typeof INTERNAL_VALUE_CODES)[number];
+
+/**
+ * An amount of one settlement asset.
+ *
+ * `assetCode` is deliberately **not** constrained to a three-letter fiat code. A settlement may be
+ * LKR today and BTC, USDC or a licensed provider's unit tomorrow, and a contract that assumed
+ * ISO-4217 would have to be broken to allow it. What every asset does share is that the amount is an
+ * exact integer in minor units — there is no floating point anywhere in this module.
+ *
+ * `assetScale` is how many minor units make a major one, as a power of ten: 2 for LKR, 8 for BTC,
+ * 6 for USDC. It travels with the amount so a reader can render it without consulting a registry.
+ * **K-10's asset-type registry remains the authority**; M-12 records what its caller stated and
+ * never converts between assets — a conversion is a ledger act, and M-13 owns it.
+ */
+export interface PaymentAmount {
+  /** Exact integer minor units. */
+  readonly amountMinor: bigint;
+  /** The settlement asset: `LKR`, `USD`, `BTC`, `USDC`, or a provider's unit. */
+  readonly assetCode: string;
+  /** Minor units per major unit as a power of ten. 2 for LKR, 8 for BTC. */
+  readonly assetScale: number;
+}
+
 /** Lifecycle of a payment. */
 export const PAYMENT_STATUSES = [
   'requires-authorisation',
@@ -93,15 +157,23 @@ export interface Payment {
   readonly status: PaymentStatus;
   /** Which provider adapter handles this payment, as a vocabulary word. */
   readonly provider: string;
+  /** How the value crosses the platform boundary. */
+  readonly rail: PaymentRail;
   /**
    * The provider's opaque token for the instrument.
    *
    * **Never an instrument.** The provider holds the card; this is the handle it gave back.
    */
   readonly instrumentToken: string;
-  /** ISO-4217 currency code, three uppercase letters. */
-  readonly currency: string;
-  /** The authorised amount in integer minor units. */
+  /**
+   * The settlement asset. `LKR` today, potentially `BTC` or a provider unit later — never assumed
+   * to be a three-letter fiat code, and never an internally issued JAYA value (see
+   * `INTERNAL_VALUE_CODES`).
+   */
+  readonly assetCode: string;
+  /** Minor units per major unit as a power of ten. */
+  readonly assetScale: number;
+  /** The authorised amount in integer minor units of `assetCode`. */
   readonly amountMinor: bigint;
   /** How much has been captured. Never exceeds `amountMinor`. */
   readonly capturedMinor: bigint;
@@ -230,8 +302,16 @@ export type PaymentErrorCode =
   | 'over-capture'
   /** The refund would exceed the captured amount. */
   | 'over-refund'
-  /** Not three uppercase letters. */
-  | 'malformed-currency'
+  /** The settlement asset code is not well formed. */
+  | 'malformed-asset-code'
+  /** The asset scale is not a plausible power of ten. */
+  | 'malformed-asset-scale'
+  /** The rail is not one M-12 recognises. */
+  | 'unknown-rail'
+  /** The asset is JAYA-issued value that no external provider can settle. */
+  | 'internal-value-not-settleable'
+  /** The provider adapter does not support this rail or asset. */
+  | 'unsupported-settlement'
   /** The instrument token is not an opaque handle. */
   | 'malformed-token'
   /** The reason text is empty, blank or too long. */

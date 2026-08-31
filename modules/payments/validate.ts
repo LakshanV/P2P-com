@@ -15,11 +15,14 @@
 import { formatInstant, InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
 
 import {
+  assertAssetScale,
   assertAttemptKind,
   assertAttemptOutcome,
   assertOptionalFailureCode,
   assertPaymentIdentifier,
+  assertPaymentRail,
   assertPaymentStatus,
+  assertSettlementAsset,
 } from './registry.ts';
 import {
   PaymentError,
@@ -48,7 +51,9 @@ const PAYMENT_FIELDS: readonly string[] = [
   'status',
   'provider',
   'instrumentToken',
-  'currency',
+  'rail',
+  'assetCode',
+  'assetScale',
   'amountMinor',
   'capturedMinor',
   'refundedMinor',
@@ -104,7 +109,9 @@ function checkPayment(candidate: unknown, source: RecordSource): Payment {
     status: assertPaymentStatus(fields.status, 'status'),
     provider: assertVocabularyWord(fields.provider, 'provider'),
     instrumentToken: assertInstrumentToken(fields.instrumentToken, 'instrumentToken'),
-    currency: assertCurrency(fields.currency, 'currency'),
+    rail: assertPaymentRail(fields.rail, 'rail'),
+    assetCode: assertSettlementAsset(fields.assetCode, 'assetCode'),
+    assetScale: assertAssetScale(fields.assetScale, 'assetScale'),
     amountMinor,
     capturedMinor,
     refundedMinor,
@@ -347,16 +354,6 @@ function assertVocabularyWord(value: unknown, field: string): string {
       'malformed-record',
       `${field} is "${String(value)}"; expected a lowercase word of 1-64 characters starting with ` +
         'a letter',
-    );
-  }
-  return value;
-}
-
-function assertCurrency(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !/^[A-Z]{3}$/.test(value)) {
-    throw new PaymentError(
-      'malformed-currency',
-      `${field} is "${String(value)}"; expected an ISO-4217 code of three uppercase letters`,
     );
   }
   return value;
