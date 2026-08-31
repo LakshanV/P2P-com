@@ -43,6 +43,23 @@ ALTER TABLE module_orders.order_header
   ADD CONSTRAINT order_header_parent_id_opaque
     CHECK (parent_order_id IS NULL OR module_orders.is_opaque_identifier(parent_order_id));
 
+-- A split parent reaches `fulfilling` without ever being `confirmed`, because there is no single
+-- seller to confirm it — its children are each confirmed by their own supplier. Migration 0028's
+-- constraint assumed the only route to `fulfilling` ran through `confirmed`, which was true until
+-- this migration introduced the second route. It is replaced rather than dropped: a standalone or
+-- child order reaching confirmed, fulfilling or completed must still carry the instant it was
+-- confirmed.
+ALTER TABLE module_orders.order_header
+  DROP CONSTRAINT IF EXISTS order_header_confirmed_at_present_once_confirmed;
+
+ALTER TABLE module_orders.order_header
+  ADD CONSTRAINT order_header_confirmed_at_present_once_confirmed
+    CHECK (
+      fulfilment_role = 'parent'
+      OR status NOT IN ('confirmed', 'fulfilling', 'completed')
+      OR confirmed_at IS NOT NULL
+    );
+
 COMMENT ON COLUMN module_orders.order_header.parent_order_id IS
   'The parent order this one fulfils part of, or null. An opaque id within this schema, not a foreign key.';
 

@@ -8,6 +8,14 @@
 
 BEGIN;
 
+-- Restore 0028's narrower constraint before the column it depends on is dropped.
+ALTER TABLE module_orders.order_header
+  DROP CONSTRAINT IF EXISTS order_header_confirmed_at_present_once_confirmed;
+
+ALTER TABLE module_orders.order_header
+  ADD CONSTRAINT order_header_confirmed_at_present_once_confirmed
+    CHECK (status NOT IN ('confirmed', 'fulfilling', 'completed') OR confirmed_at IS NOT NULL);
+
 DROP INDEX IF EXISTS module_orders.order_header_parent_idx;
 
 ALTER TABLE module_orders.order_header

@@ -55,7 +55,11 @@ export type FulfilmentRole = (typeof FULFILMENT_ROLES)[number];
 export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatus[]>> =
   Object.freeze({
     draft: ['placed', 'cancelled'],
-    placed: ['confirmed', 'cancelled'],
+    // `placed -> fulfilling` is the split route: a parent begins fulfilment the moment its children
+    // exist, and is never `confirmed` because there is no single seller to confirm it — each child
+    // is confirmed by its own supplier. `startFulfilment` still requires `confirmed`, so a
+    // standalone order cannot take this shortcut; only `splitOrder` can.
+    placed: ['confirmed', 'fulfilling', 'cancelled'],
     confirmed: ['fulfilling', 'cancelled'],
     fulfilling: ['completed', 'cancelled'],
     completed: [],
