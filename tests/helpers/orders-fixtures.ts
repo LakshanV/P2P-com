@@ -145,6 +145,8 @@ export function orderRecord(overrides: Partial<Order> = {}): Order {
     buyerAccountId: BUYER,
     sellerAccountId: SELLER,
     status: 'draft',
+    parentOrderId: null,
+    fulfilmentRole: 'standalone',
     currency: 'LKR',
     subtotalMinor: 0n,
     totalMinor: 0n,

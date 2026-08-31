@@ -33,21 +33,6 @@ export const ORDER_EVENT_KINDS = [
 ] as const;
 export type OrderEventKind = (typeof ORDER_EVENT_KINDS)[number];
 
-/**
- * What part an order plays in split supplier fulfilment.
- *
- * A buyer orders twenty tonnes and no single supplier holds twenty tonnes, so the order becomes a
- * `parent` with one `child` per supplier. A child is a real order with its own seller and its own
- * lifecycle, which is what lets one supplier fail without the others noticing and without the rest
- * of the platform having to learn a second kind of thing.
- *
- * Two levels only. A child may not itself be split; that limit is enforced in the service, because
- * expressing "the parent of this row has no parent of its own" needs a subquery and a database
- * CHECK cannot execute one.
- */
-export const FULFILMENT_ROLES = ['standalone', 'parent', 'child'] as const;
-export type FulfilmentRole = (typeof FULFILMENT_ROLES)[number];
-
 /** Reasons an order may be cancelled. */
 export const CANCELLATION_REASONS = [
   'buyer-withdrew',
@@ -86,16 +71,6 @@ export interface Order {
   readonly sellerAccountId: string;
   /** Current lifecycle status. */
   readonly status: OrderStatus;
-  /**
-   * The parent this order fulfils part of, or null when it has none.
-   *
-   * An opaque id within this schema rather than a foreign key, for the same reason every other
-   * reference here is: the service owns the invariant, and a self-referencing key would make the
-   * table's own rollback order depend on its contents.
-   */
-  readonly parentOrderId: string | null;
-  /** What part this order plays in split fulfilment. An order is born `standalone`. */
-  readonly fulfilmentRole: FulfilmentRole;
   /** ISO-4217 currency code, three uppercase letters. */
   readonly currency: string;
   /** Sum of the line totals in integer minor units. */

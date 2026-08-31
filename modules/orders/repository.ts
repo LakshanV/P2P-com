@@ -35,6 +35,14 @@ export interface OrderTransaction extends OutboxTransaction {
   findOrderByIdempotencyKey(idempotencyKey: string): Promise<Order | null>;
   findOrdersByBuyerAccountId(buyerAccountId: string): Promise<readonly Order[]>;
   findOrdersBySellerAccountId(sellerAccountId: string): Promise<readonly Order[]>;
+  /**
+   * Every child of one parent, ordered by order id.
+   *
+   * The order is fixed rather than incidental because a fulfilment summary is computed from this
+   * list, and a summary whose row order depends on insertion order is one two readers can disagree
+   * about.
+   */
+  findChildrenByParentId(parentOrderId: string): Promise<readonly Order[]>;
   insertOrder(order: Order): Promise<void>;
   updateOrder(order: Order): Promise<void>;
 
@@ -343,6 +351,13 @@ class InMemoryOrderTransaction implements OrderTransaction {
     const found = this.#state.orders
       .filter((o) => o.sellerAccountId === sellerAccountId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.orderId.localeCompare(b.orderId));
+    return Promise.resolve(sealOrders(found));
+  }
+
+  findChildrenByParentId(parentOrderId: string): Promise<readonly Order[]> {
+    const found = this.#state.orders
+      .filter((o) => o.parentOrderId === parentOrderId)
+      .sort((a, b) => a.orderId.localeCompare(b.orderId));
     return Promise.resolve(sealOrders(found));
   }
 

@@ -18,16 +18,7 @@ import { databaseErrorDetail } from '../../platform/db/client.ts';
 import type { Database, DatabaseClient } from '../../platform/db/client.ts';
 import type { OutboxEntry } from '../../platform/outbox/types.ts';
 
-import {
-  sealOrder,
-  sealOrderEvent,
-  sealOrderEvents,
-  sealOrderItem,
-  sealOrderItems,
-  sealOrderSnapshot,
-  sealOrderSnapshots,
-  sealOrders,
-} from './immutable.ts';
+import { sealOrder, sealOrderEvent, sealOrderItem, sealOrderSnapshot } from './immutable.ts';
 import type { OrderRepository, OrderTransaction } from './repository.ts';
 import {
   OrderError,
@@ -124,6 +115,8 @@ const ORDER_HEADER_COLUMNS = [
   'buyer_account_id',
   'seller_account_id',
   'status',
+  'parent_order_id',
+  'fulfilment_role',
   'currency',
   'subtotal_minor',
   'total_minor',
@@ -191,6 +184,8 @@ const ORDER_HEADER_PROJECTION = [
   'buyer_account_id',
   'seller_account_id',
   'status',
+  'parent_order_id',
+  'fulfilment_role',
   'currency',
   'subtotal_minor',
   'total_minor',
@@ -319,6 +314,8 @@ export function toOrder(row: Record<string, unknown>): Order {
         buyerAccountId: text(row.buyer_account_id, 'buyer_account_id'),
         sellerAccountId: text(row.seller_account_id, 'seller_account_id'),
         status: text(row.status, 'status'),
+        parentOrderId: optionalText(row.parent_order_id, 'parent_order_id'),
+        fulfilmentRole: text(row.fulfilment_role, 'fulfilment_role'),
         currency: text(row.currency, 'currency'),
         subtotalMinor: bigintValue(row.subtotal_minor, 'subtotal_minor'),
         totalMinor: bigintValue(row.total_minor, 'total_minor'),
@@ -540,16 +537,28 @@ class PostgresOrderTransaction implements OrderTransaction {
     return Object.freeze(result.rows.map(toOrder));
   }
 
+  async findChildrenByParentId(parentOrderId: string): Promise<readonly Order[]> {
+    const result = await this.#client.query<Record<string, unknown>>(
+      `SELECT ${ORDER_HEADER_PROJECTION} FROM ${ORDER_HEADER_TABLE}
+       WHERE parent_order_id = $1 ORDER BY order_id ASC;`,
+      [parentOrderId],
+    );
+    return Object.freeze(result.rows.map(toOrder));
+  }
+
   async insertOrder(order: Order): Promise<void> {
     try {
       await this.#client.query(
         `INSERT INTO ${ORDER_HEADER_TABLE} (${ORDER_HEADER_COLUMNS.join(', ')})
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+                 $19);`,
         [
           order.orderId,
           order.buyerAccountId,
           order.sellerAccountId,
           order.status,
+          order.parentOrderId,
+          order.fulfilmentRole,
           order.currency,
           order.subtotalMinor,
           order.totalMinor,
@@ -573,16 +582,19 @@ class PostgresOrderTransaction implements OrderTransaction {
   async updateOrder(order: Order): Promise<void> {
     await this.#client.query(
       `UPDATE ${ORDER_HEADER_TABLE}
-       SET buyer_account_id = $1, seller_account_id = $2, status = $3, currency = $4,
-           subtotal_minor = $5, total_minor = $6, item_count = $7, placed_at = $8,
-           confirmed_at = $9, completed_at = $10, cancelled_at = $11,
-           cancellation_reason = $12, created_at = $13, updated_at = $14,
-           correlation_id = $15, idempotency_key = $16
-       WHERE order_id = $17;`,
+       SET buyer_account_id = $1, seller_account_id = $2, status = $3, parent_order_id = $4,
+           fulfilment_role = $5, currency = $6,
+           subtotal_minor = $7, total_minor = $8, item_count = $9, placed_at = $10,
+           confirmed_at = $11, completed_at = $12, cancelled_at = $13,
+           cancellation_reason = $14, created_at = $15, updated_at = $16,
+           correlation_id = $17, idempotency_key = $18
+       WHERE order_id = $19;`,
       [
         order.buyerAccountId,
         order.sellerAccountId,
         order.status,
+        order.parentOrderId,
+        order.fulfilmentRole,
         order.currency,
         order.subtotalMinor,
         order.totalMinor,
