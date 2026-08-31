@@ -207,7 +207,7 @@ test('cancellation records a vocabulary reason and is terminal', async () => {
   assert.equal(result.order.cancellationReason, 'stock-unavailable');
 
   // The reason must reach the event — a cancellation nobody can attribute is a support ticket.
-  assert.equal(lastEventPayload(harness.repository).reason, 'stock-unavailable');
+  assert.equal(lastEventPayload(harness.repository).cancellation_reason, 'stock-unavailable');
 
   assert.equal(
     await codeOf(() => harness.service.confirmOrder(confirmRequest(orderId))),

@@ -22,6 +22,7 @@ import { sealOrder, sealOrderEvent, sealOrderItem, sealOrderSnapshot } from './i
 import type { OrderRepository, OrderTransaction } from './repository.ts';
 import {
   OrderError,
+  type FulfilmentRole,
   type Order,
   type OrderErrorCode,
   type OrderEvent,
@@ -611,6 +612,50 @@ class PostgresOrderTransaction implements OrderTransaction {
         order.orderId,
       ],
     );
+  }
+
+  /**
+   * Optimistic locking on the split transition, done in SQL rather than by read-then-write.
+   *
+   * The `AND fulfilment_role = $20` is the whole mechanism: PostgreSQL evaluates it against the row
+   * as it stands at the moment of the update, so a second transaction that already turned this
+   * order into a parent leaves nothing for this one to match and the row count comes back zero.
+   * Reading the role first and updating afterwards would leave a window between the two.
+   */
+  async updateOrderIfRole(order: Order, expectedRole: FulfilmentRole): Promise<boolean> {
+    const result = await this.#client.query(
+      `UPDATE ${ORDER_HEADER_TABLE}
+       SET buyer_account_id = $1, seller_account_id = $2, status = $3, parent_order_id = $4,
+           fulfilment_role = $5, currency = $6,
+           subtotal_minor = $7, total_minor = $8, item_count = $9, placed_at = $10,
+           confirmed_at = $11, completed_at = $12, cancelled_at = $13,
+           cancellation_reason = $14, created_at = $15, updated_at = $16,
+           correlation_id = $17, idempotency_key = $18
+       WHERE order_id = $19 AND fulfilment_role = $20;`,
+      [
+        order.buyerAccountId,
+        order.sellerAccountId,
+        order.status,
+        order.parentOrderId,
+        order.fulfilmentRole,
+        order.currency,
+        order.subtotalMinor,
+        order.totalMinor,
+        order.itemCount,
+        order.placedAt,
+        order.confirmedAt,
+        order.completedAt,
+        order.cancelledAt,
+        order.cancellationReason,
+        order.createdAt,
+        order.updatedAt,
+        order.correlationId,
+        order.idempotencyKey,
+        order.orderId,
+        expectedRole,
+      ],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async findItemById(itemId: string): Promise<OrderItem | null> {

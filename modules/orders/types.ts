@@ -43,6 +43,10 @@ export const CANCELLATION_REASONS = [
 ] as const;
 export type CancellationReason = (typeof CANCELLATION_REASONS)[number];
 
+/** The role an order plays in split supplier fulfilment. */
+export const FULFILMENT_ROLES = ['standalone', 'parent', 'child'] as const;
+export type FulfilmentRole = (typeof FULFILMENT_ROLES)[number];
+
 /**
  * The legal state transitions. The state machine is a table, not scattered `if`s.
  *
@@ -89,6 +93,10 @@ export interface Order {
   readonly cancelledAt: string | null;
   /** One of CANCELLATION_REASONS when cancelled, otherwise null. */
   readonly cancellationReason: CancellationReason | null;
+  /** The parent order this one fulfils part of, or null. */
+  readonly parentOrderId: string | null;
+  /** `standalone`, `parent` or `child`. */
+  readonly fulfilmentRole: FulfilmentRole;
   /** When the order was created. */
   readonly createdAt: string;
   /** When the order was last changed. */
@@ -185,6 +193,26 @@ export interface OrderEvent {
   readonly idempotencyKey: string;
 }
 
+/** One child in a fulfilment summary. */
+export interface FulfilmentChild {
+  readonly orderId: string;
+  readonly sellerAccountId: string;
+  readonly quantity: bigint;
+  readonly status: OrderStatus;
+}
+
+/** The derived view of how much of a parent order has been fulfilled. */
+export interface FulfilmentSummary {
+  readonly orderedQuantity: bigint;
+  readonly allocatedQuantity: bigint;
+  readonly fulfilledQuantity: bigint;
+  readonly cancelledQuantity: bigint;
+  readonly pendingQuantity: bigint;
+  readonly fullyAllocated: boolean;
+  readonly fullyFulfilled: boolean;
+  readonly children: readonly FulfilmentChild[];
+}
+
 export type OrderErrorCode =
   /** An identifier is not well formed. */
   | 'malformed-identifier'
@@ -216,6 +244,8 @@ export type OrderErrorCode =
   | 'unknown-cancellation-reason'
   /** The event kind is not one M-11 recognises. */
   | 'unknown-event-kind'
+  /** The fulfilment role is not one M-11 recognises. */
+  | 'unknown-fulfilment-role'
   /** The currency is not a valid ISO-4217 code. */
   | 'malformed-currency'
   /** The reason text is malformed. */
@@ -232,24 +262,6 @@ export type OrderErrorCode =
   | 'order-empty'
   /** The order is in a terminal state and refuses further transition. */
   | 'order-terminal'
-  /** The order is not `placed`, and only a placed order may be split. */
-  | 'order-not-placed'
-  /** The order already has children. */
-  | 'already-split'
-  /** The order is itself a child; split fulfilment is two levels only. */
-  | 'nested-split'
-  /** No allocations were supplied, or an allocation carried no items. */
-  | 'empty-allocation'
-  /** The allocated quantities do not sum to the parent's ordered quantity. */
-  | 'allocation-mismatch'
-  /** An allocated line's currency does not match the parent's. */
-  | 'allocation-currency-mismatch'
-  /** A parent cannot complete while a child is still in flight. */
-  | 'children-outstanding'
-  /** Every child was cancelled, so there is nothing to complete. */
-  | 'nothing-fulfilled'
-  /** The fulfilment role is not one M-11 recognises. */
-  | 'unknown-fulfilment-role'
   /** The requested transition is not in the state machine. */
   | 'illegal-transition'
   /** A line's currency does not match the order's currency. */
@@ -259,48 +271,25 @@ export type OrderErrorCode =
   /** A line's lineTotalMinor does not equal quantity * unitPriceMinor. */
   | 'line-total-mismatch'
   /** A snapshot already exists for this order. */
-  | 'snapshot-exists';
+  | 'snapshot-exists'
+  /** The order is not in `placed` status. */
+  | 'order-not-placed'
+  /** The order has already been split into children. */
+  | 'already-split'
+  /** The order is itself a child and cannot be split. */
+  | 'nested-split'
+  /** The split allocation is empty or an allocation has no items. */
+  | 'empty-allocation'
+  /** The summed child quantity does not match the parent's ordered quantity. */
+  | 'allocation-mismatch'
+  /** A child line's currency differs from the parent's currency. */
+  | 'allocation-currency-mismatch'
+  /** The parent still has non-terminal children and cannot complete. */
+  | 'children-outstanding'
+  /** Every child was cancelled; the parent should be cancelled, not completed. */
+  | 'nothing-fulfilled';
 
 /** A refusal the caller must act on. */
-/**
- * What a parent order's children add up to.
- *
- * **Every number here is derived by summing child rows; nothing stores a ratio.** That is the
- * module's central decision about split fulfilment, and it is the same discipline M-04 applies to
- * inventory availability and K-10 to balances: a stored "percent fulfilled" is a second source of
- * truth that drifts the first time a child moves and nobody recomputes it.
- *
- * For a standalone order with no children, the allocated, fulfilled and cancelled quantities are
- * zero and `orderedQuantity` is its own line total — so a caller need not branch on whether an
- * order was ever split.
- */
-export interface FulfilmentSummary {
-  /** The parent's own ordered quantity, summed across its lines. */
-  readonly orderedQuantity: bigint;
-  /** How much of it has been allocated to children. */
-  readonly allocatedQuantity: bigint;
-  /** How much arrived: the quantity of children that reached `completed`. */
-  readonly fulfilledQuantity: bigint;
-  /** How much will not arrive: the quantity of children that reached `cancelled`. */
-  readonly cancelledQuantity: bigint;
-  /** Still in flight: allocated minus fulfilled minus cancelled. */
-  readonly pendingQuantity: bigint;
-  /** One row per child, ordered by order id so two readers cannot disagree. */
-  readonly children: readonly FulfilmentChild[];
-  /** Whether the allocation covers the whole ordered quantity. */
-  readonly fullyAllocated: boolean;
-  /** Whether every allocated unit actually arrived. */
-  readonly fullyFulfilled: boolean;
-}
-
-/** One child's contribution to its parent's fulfilment. */
-export interface FulfilmentChild {
-  readonly orderId: string;
-  readonly sellerAccountId: string;
-  readonly quantity: bigint;
-  readonly status: OrderStatus;
-}
-
 export class OrderError extends Error {
   readonly code: OrderErrorCode;
 

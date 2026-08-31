@@ -23,6 +23,7 @@ import {
 } from './immutable.ts';
 import {
   OrderError,
+  type FulfilmentRole,
   type Order,
   type OrderEvent,
   type OrderItem,
@@ -45,6 +46,19 @@ export interface OrderTransaction extends OutboxTransaction {
   findChildrenByParentId(parentOrderId: string): Promise<readonly Order[]>;
   insertOrder(order: Order): Promise<void>;
   updateOrder(order: Order): Promise<void>;
+  /**
+   * Update an order only while its stored fulfilment role is still `expectedRole`.
+   *
+   * Optimistic locking for the one transition that cannot be allowed to happen twice. Two callers
+   * splitting the same parent both read it as `standalone`, both build a full set of children, and
+   * without this both would commit — promising the same twenty tonnes to two different sets of
+   * suppliers, with the second set of children invisible to the first caller.
+   *
+   * Returns false when the stored role has already moved, so the caller can refuse rather than
+   * overwrite. `updateOrder` stays unguarded because every other transition is a status change that
+   * the state machine already serialises.
+   */
+  updateOrderIfRole(order: Order, expectedRole: FulfilmentRole): Promise<boolean>;
 
   /** Item lookup and creation. */
   findItemById(itemId: string): Promise<OrderItem | null>;
@@ -135,7 +149,7 @@ export class InMemoryOrderRepository implements OrderRepository {
     outboxWorking.seed(this.#outbox.entries());
 
     const touched = new Touched();
-    const tx = new InMemoryOrderTransaction(working, outboxWorking, touched);
+    const tx = new InMemoryOrderTransaction(working, outboxWorking, touched, () => this.#orders);
 
     try {
       const result = await body(tx);
@@ -169,6 +183,20 @@ export class InMemoryOrderRepository implements OrderRepository {
             `order ${order.orderId} was created by another transaction while this one was open`,
           );
         }
+      }
+    }
+
+    // Guarded updates: the role must still be what the transaction saw when it decided to write.
+    // Two concurrent splits both pass the check inside their own bodies, because neither has
+    // committed yet; this is the point at which exactly one of them loses.
+    for (const [orderId, expectedRole] of touched.roleGuards) {
+      const held = this.#orders.find((candidate) => candidate.orderId === orderId);
+      if (held !== undefined && held.fulfilmentRole !== expectedRole) {
+        throw new OrderError(
+          'already-split',
+          `order ${orderId} was changed from ${expectedRole} to ${held.fulfilmentRole} by another ` +
+            'transaction while this one was open',
+        );
       }
     }
 
@@ -305,6 +333,8 @@ class Touched {
   readonly orders = new Set<string>();
   readonly orderKeys = new Set<string>();
   readonly orderUpdates = new Set<string>();
+  /** orderId to the fulfilment role the transaction expects to still be there at commit. */
+  readonly roleGuards = new Map<string, FulfilmentRole>();
   readonly items = new Set<string>();
   readonly itemKeys = new Set<string>();
   readonly snapshots = new Set<string>();
@@ -318,11 +348,19 @@ class InMemoryOrderTransaction implements OrderTransaction {
   readonly #state: WorkingSet;
   readonly #outbox: InMemoryOutboxStore;
   readonly #touched: Touched;
+  /** The committed store, so a guarded update can see what other transactions have already done. */
+  readonly #committed: () => readonly Order[];
 
-  constructor(state: WorkingSet, outbox: InMemoryOutboxStore, touched: Touched) {
+  constructor(
+    state: WorkingSet,
+    outbox: InMemoryOutboxStore,
+    touched: Touched,
+    committed: () => readonly Order[],
+  ) {
     this.#state = state;
     this.#outbox = outbox;
     this.#touched = touched;
+    this.#committed = committed;
   }
 
   insertOutbox(entry: OutboxEntry): Promise<void> {
@@ -395,6 +433,26 @@ class InMemoryOrderTransaction implements OrderTransaction {
     this.#state.orders[index] = sealOrder(order);
     this.#touched.orderUpdates.add(order.orderId);
     return Promise.resolve();
+  }
+
+  updateOrderIfRole(order: Order, expectedRole: FulfilmentRole): Promise<boolean> {
+    // Checked against the committed store rather than this transaction's working copy: the whole
+    // point is to notice a change another transaction has already made.
+    const committed = this.#committed().find((held) => held.orderId === order.orderId);
+    if (committed === undefined) {
+      return Promise.reject(
+        new OrderError('order-not-found', `order ${order.orderId} does not exist`),
+      );
+    }
+    if (committed.fulfilmentRole !== expectedRole) return Promise.resolve(false);
+
+    const index = this.#state.orders.findIndex((held) => held.orderId === order.orderId);
+    if (index !== -1) this.#state.orders[index] = sealOrder(order);
+    this.#touched.orderUpdates.add(order.orderId);
+    // Re-checked at commit as well. Two transactions running concurrently both reach this line
+    // before either commits, so the read above cannot be the only guard.
+    this.#touched.roleGuards.set(order.orderId, expectedRole);
+    return Promise.resolve(true);
   }
 
   findItemById(itemId: string): Promise<OrderItem | null> {

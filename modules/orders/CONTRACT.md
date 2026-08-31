@@ -147,7 +147,71 @@ Each event carries a matching audit record.
 
 ---
 
-## 7. What is not delivered
+## 7. Split supplier fulfilment
+
+A buyer may order a quantity no single supplier can deliver. `splitOrder` turns one `placed`
+standalone order into a `parent` with one `placed` `child` per supplier allocation. Children are
+real orders: they have their own seller, their own item rows, their own event log and their own
+lifecycle. A consumer that does not care about splitting sees ordinary `order.placed`,
+`order.completed` and `order.cancelled` events.
+
+### The parent/child model
+
+- Every order is born `standalone` with no `parentOrderId`.
+- A standalone order that is split becomes a `parent` and gains children. The parent moves to
+  `fulfilling` at split time.
+- Each child has `fulfilmentRole: 'child'` and `parentOrderId` set to its parent.
+- Split fulfilment is **two levels only**: a child may not be split again. This is a service rule
+  (`nested-split`) rather than a database CHECK, because expressing "this row's parent has no
+  parent" requires a subquery and a CHECK cannot execute one.
+
+### Partial is a derived quantity, not a status
+
+The status machine in §5 is unchanged. "Partially fulfilled" is not a status because it is a ratio
+that changes every time a child moves. `getFulfilmentSummary(orderId)` derives every number by
+summing child rows:
+
+- `orderedQuantity` — the parent's own item total.
+- `allocatedQuantity` — sum of child item quantities.
+- `fulfilledQuantity` — quantity of children whose status is `completed`.
+- `cancelledQuantity` — quantity of children whose status is `cancelled`.
+- `pendingQuantity` — `allocated − fulfilled − cancelled`.
+
+Nothing stores a ratio, so the summary cannot drift from the orders it describes.
+
+### The allocation-mismatch rule
+
+`splitOrder` groups parent items and allocated items by `(listingId, versionId)` and refuses
+`allocation-mismatch` unless the summed child quantity equals the parent's ordered quantity for
+every pair. Allocating 7 t and 5 t of a 20 t order and forgetting the last 8 t is impossible to
+commit, which is why splitting is one transactional act rather than several `createOrder` calls.
+
+### Lifecycle rules for parents
+
+- `completeOrder` on a parent refuses `children-outstanding` unless every child is terminal
+  (`completed` or `cancelled`). It refuses `nothing-fulfilled` when every child was cancelled.
+  Partial fulfilment completes the parent: the buyer's remedy for a short delivery is a refund,
+  not a permanently open order.
+- `cancelOrder` on a parent cascades to every non-terminal child with the parent's reason, in the
+  same transaction. Already-terminal children are left alone. Cancellation is never refused for
+  having outstanding children.
+- Cancelling one child does **not** cancel the parent or its siblings.
+
+### Events
+
+In addition to the events in §6:
+
+| Fact | Event |
+|---|---|
+| A parent was split into children | `order.split` |
+| A child order was placed | `order.placed` |
+
+A child's `order.cancelled` event carries `parent_order_id` so a consumer can attribute the
+cancellation to the order it was fulfilling part of.
+
+---
+
+## 8. What is not delivered
 
 - **No integration beyond the contract surface.** No payment, ledger, commission, logistics or
   returns module reacts to these events yet.
@@ -157,20 +221,21 @@ Each event carries a matching audit record.
   transition an order as any account.
 - **No commerce-unit-type check.** `commerceUnitTypeId` is not verified against K-11, for the reason
   in §1: no join across a unit boundary.
-- **No split payments, refunds, partial fulfilment or returns.**
+- **No split payments, refunds or returns.** Split supplier fulfilment is delivered; payments and
+  refunds for it are not.
 - **Nothing applied to a live server.** Migration 0028 runs in the integration suite against a live
   PostgreSQL 16 and nowhere else.
 
 ---
 
-## 8. Verification
+## 9. Verification
 
 ```
 npm run typecheck
 npm run lint
 npm run format:check
 npm run check:boundaries      # M-11 is L5: platform/, kernel/ and L1–L4 modules only, never K-13
-npm run check:migrations      # 0028 is paired, transactional and module-owned
-node --test tests/orders.test.ts tests/orders-repository.test.ts
+npm run check:migrations      # 0028 and 0029 are paired, transactional and module-owned
+node --test tests/orders.test.ts tests/orders-split-fulfilment.test.ts
 npm run test:integration      # tests/integration/orders.integration.ts
 ```

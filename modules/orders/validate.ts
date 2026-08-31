@@ -48,8 +48,6 @@ const ORDER_FIELDS: readonly string[] = [
   'buyerAccountId',
   'sellerAccountId',
   'status',
-  'parentOrderId',
-  'fulfilmentRole',
   'currency',
   'subtotalMinor',
   'totalMinor',
@@ -59,6 +57,8 @@ const ORDER_FIELDS: readonly string[] = [
   'completedAt',
   'cancelledAt',
   'cancellationReason',
+  'parentOrderId',
+  'fulfilmentRole',
   'createdAt',
   'updatedAt',
   'correlationId',
@@ -84,38 +84,26 @@ function checkOrder(candidate: unknown, source: RecordSource): Order {
   }
 
   const fields = candidate as Record<string, unknown>;
-
-  const orderId = assertOrderIdentifier(fields.orderId, 'orderId');
+  const parentOrderId = assertOptionalIdentifier(fields.parentOrderId, 'parentOrderId');
   const fulfilmentRole = assertFulfilmentRole(fields.fulfilmentRole, 'fulfilmentRole');
-  const parentOrderId =
-    fields.parentOrderId === null || fields.parentOrderId === undefined
-      ? null
-      : assertOrderIdentifier(fields.parentOrderId, 'parentOrderId');
 
-  // A child has a parent, and only a child has one. The database says the same thing in
-  // `order_header_child_has_parent`; saying it here too means the caller learns which of the two
-  // fields is wrong, rather than being handed a constraint name.
   if ((fulfilmentRole === 'child') !== (parentOrderId !== null)) {
     throw new OrderError(
       'malformed-record',
-      `fulfilmentRole is "${fulfilmentRole}" but parentOrderId is ` +
-        `${parentOrderId === null ? 'null' : `"${parentOrderId}"`}; a child has a parent and only ` +
-        'a child has one',
+      `a ${fulfilmentRole} order ${
+        parentOrderId === null ? 'must have a parentOrderId' : 'must not have a parentOrderId'
+      }`,
     );
   }
-
-  // An order that is its own parent makes the fulfilment summary infinitely recursive.
-  if (parentOrderId !== null && parentOrderId === orderId) {
-    throw new OrderError('malformed-record', `order ${orderId} is its own parent`);
+  if (parentOrderId !== null && parentOrderId === fields.orderId) {
+    throw new OrderError('malformed-record', 'an order may not be its own parent');
   }
 
   return {
-    orderId,
+    orderId: assertOrderIdentifier(fields.orderId, 'orderId'),
     buyerAccountId: assertOrderIdentifier(fields.buyerAccountId, 'buyerAccountId'),
     sellerAccountId: assertOrderIdentifier(fields.sellerAccountId, 'sellerAccountId'),
     status: assertOrderStatus(fields.status, 'status'),
-    parentOrderId,
-    fulfilmentRole,
     currency: assertCurrency(fields.currency, 'currency'),
     subtotalMinor: assertNonNegativeBigint(fields.subtotalMinor, 'subtotalMinor'),
     totalMinor: assertNonNegativeBigint(fields.totalMinor, 'totalMinor'),
@@ -128,6 +116,8 @@ function checkOrder(candidate: unknown, source: RecordSource): Order {
       fields.cancellationReason,
       'cancellationReason',
     ),
+    parentOrderId,
+    fulfilmentRole,
     createdAt: checkInstant(fields.createdAt, 'createdAt', source),
     updatedAt: checkInstant(fields.updatedAt, 'updatedAt', source),
     correlationId: assertOrderIdentifier(fields.correlationId, 'correlationId'),
@@ -437,24 +427,22 @@ function assertOptionalStatus(value: unknown, field: string): OrderStatus | null
   return assertOrderStatus(value, field);
 }
 
-/** The fulfilment role, refused by name when it is not one of the three M-11 recognises. */
-function assertFulfilmentRole(value: unknown, field: string): FulfilmentRole {
-  if (typeof value !== 'string' || !FULFILMENT_ROLES.includes(value as FulfilmentRole)) {
-    throw new OrderError(
-      'unknown-fulfilment-role',
-      `${field} is ${value === undefined ? 'undefined' : `"${String(value)}"`}; expected one of ` +
-        FULFILMENT_ROLES.join(', '),
-    );
-  }
-  return value as FulfilmentRole;
-}
-
 function assertOptionalCancellationReason(
   value: unknown,
   field: string,
 ): CancellationReason | null {
   if (value === null || value === undefined) return null;
   return assertCancellationReason(value, field);
+}
+
+function assertFulfilmentRole(value: unknown, field: string): FulfilmentRole {
+  if (typeof value !== 'string' || !(FULFILMENT_ROLES as readonly string[]).includes(value)) {
+    throw new OrderError(
+      'unknown-fulfilment-role',
+      `${field} is "${String(value)}"; expected one of ${FULFILMENT_ROLES.join(', ')}`,
+    );
+  }
+  return value as FulfilmentRole;
 }
 
 function assertCurrency(value: unknown, field: string): string {

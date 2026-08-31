@@ -72,10 +72,23 @@ const ORDER_EVENT_FIELDS = [
 const CANCELLATION_EVENT_FIELDS = [
   ...ORDER_EVENT_FIELDS,
   {
+    name: 'cancellation_reason',
+    kind: 'string',
+    required: true,
+    description:
+      'The vocabulary reason a consumer branches on: buyer-withdrew, seller-declined, payment-failed, stock-unavailable or expired.',
+  },
+  {
     name: 'reason',
     kind: 'string',
     required: true,
     description: 'Why the order was cancelled.',
+  },
+  {
+    name: 'parent_order_id',
+    kind: 'string',
+    required: true,
+    description: 'The parent order id when this is a child, otherwise empty.',
   },
 ] satisfies PayloadField[];
 
@@ -146,6 +159,13 @@ const CANCELLATION_AUDIT_FIELDS = [
     required: true,
     classification: 'internal',
     description: 'Why the order was cancelled.',
+  },
+  {
+    name: 'parent_order_id',
+    kind: 'string',
+    required: true,
+    classification: 'internal',
+    description: 'The parent order id when this is a child, otherwise empty.',
   },
 ] as const;
 
@@ -364,13 +384,15 @@ export function makeOrderCompletedEvent(order: Order, event: OrderEvent): Outbox
 }
 
 /** The event reporting that an order was cancelled. */
-export function makeOrderCancelledEvent(
-  order: Order,
-  event: OrderEvent,
-  cancellationReason: string,
-): OutboxEntry {
+export function makeOrderCancelledEvent(order: Order, event: OrderEvent): OutboxEntry {
   return orderEventOutboxEntry(order, event, ORDER_CANCELLED_EVENT, {
-    reason: cancellationReason,
+    // Two different things, and a consumer needs the first. `cancellation_reason` is the closed
+    // vocabulary word to branch on — a refund flow behaves differently for `payment-failed` than
+    // for `buyer-withdrew`. `reason` is the free text a human wrote, which nothing can switch on.
+    // Publishing only the prose would make every downstream reader parse English.
+    cancellation_reason: order.cancellationReason ?? '',
+    reason: event.reason,
+    parent_order_id: order.parentOrderId ?? '',
   });
 }
 
@@ -400,12 +422,81 @@ export function makeOrderCompletedAction(order: Order, event: OrderEvent): Outbo
 }
 
 /** The audit record for one order cancellation. */
-export function makeOrderCancelledAction(
+export function makeOrderCancelledAction(order: Order, event: OrderEvent): OutboxEntry {
+  return orderAuditOutboxEntry(order, event, ORDER_CANCELLED_ACTION, {
+    reason: event.reason,
+    parent_order_id: order.parentOrderId ?? '',
+  });
+}
+
+const SPLIT_EVENT_FIELDS = [
+  ...ORDER_EVENT_FIELDS,
+  {
+    name: 'child_order_ids',
+    kind: 'string',
+    required: true,
+    description: 'The child order ids, comma-separated in allocation order.',
+  },
+  {
+    name: 'allocation_count',
+    kind: 'string',
+    required: true,
+    description: 'How many suppliers the order was split across.',
+  },
+] satisfies PayloadField[];
+
+/**
+ * The event reporting that an order was split across suppliers.
+ *
+ * The children also emit an ordinary `order.placed` each, which is deliberate: a consumer that does
+ * not care about splitting sees three normal orders, and only one that does needs to understand
+ * this event. That is the whole reason children are real orders rather than a sub-entity.
+ */
+export const ORDER_SPLIT_EVENT: EventTypeDefinition = {
+  type: 'order.split',
+  schemaVersion: 1,
+  owner: 'M-11',
+  description: 'An order was split into child orders, one per supplier.',
+  payloadFields: SPLIT_EVENT_FIELDS,
+};
+
+export const ORDER_SPLIT_ACTION: AuditActionDefinition = {
+  action: 'order.split',
+  owner: 'M-11',
+  authority: 'business-authoritative',
+  description: 'An order was split into child orders, one per supplier.',
+  evidenceFields: [
+    ...ORDER_AUDIT_FIELDS,
+    {
+      name: 'child_order_ids',
+      kind: 'string',
+      required: true,
+      classification: 'internal',
+      description: 'The child order ids, comma-separated in allocation order.',
+    },
+  ],
+  resourceTypes: ['order'],
+};
+
+/** The event reporting that an order was split across suppliers. */
+export function makeOrderSplitEvent(
   order: Order,
   event: OrderEvent,
-  cancellationReason: string,
+  childOrderIds: readonly string[],
 ): OutboxEntry {
-  return orderAuditOutboxEntry(order, event, ORDER_CANCELLED_ACTION, {
-    reason: cancellationReason,
+  return orderEventOutboxEntry(order, event, ORDER_SPLIT_EVENT, {
+    child_order_ids: childOrderIds.join(','),
+    allocation_count: String(childOrderIds.length),
+  });
+}
+
+/** The audit record for one split. */
+export function makeOrderSplitAction(
+  order: Order,
+  event: OrderEvent,
+  childOrderIds: readonly string[],
+): OutboxEntry {
+  return orderAuditOutboxEntry(order, event, ORDER_SPLIT_ACTION, {
+    child_order_ids: childOrderIds.join(','),
   });
 }

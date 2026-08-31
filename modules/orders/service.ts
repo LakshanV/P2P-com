@@ -33,6 +33,8 @@ import {
 import {
   ORDER_TRANSITIONS,
   OrderError,
+  type FulfilmentChild,
+  type FulfilmentSummary,
   type Order,
   type OrderEvent,
   type OrderEventKind,
@@ -53,6 +55,8 @@ import {
   makeOrderFulfillingEvent,
   makeOrderPlacedAction,
   makeOrderPlacedEvent,
+  makeOrderSplitAction,
+  makeOrderSplitEvent,
 } from './outbox.ts';
 
 export interface CreateOrderRequest {
@@ -178,6 +182,63 @@ export interface CancelOrderResult {
   readonly replayed: boolean;
 }
 
+/** One line of one supplier's allocation. Mirrors an order item, minus the fields M-11 derives. */
+export interface SplitAllocationItem {
+  readonly itemId: string;
+  readonly listingId: string;
+  readonly versionId: string;
+  readonly commerceUnitTypeId: string;
+  readonly quantity: bigint;
+  readonly unitPriceMinor: bigint;
+  readonly lineTotalMinor: bigint;
+  /**
+   * Stated by the caller rather than inherited from the parent, so a mismatch is caught rather than
+   * silently absorbed. A child line in a different currency from its parent is a mistake somebody
+   * needs to hear about.
+   */
+  readonly currency: string;
+  readonly reservationId: string | null;
+}
+
+/** What one supplier will fulfil, and the identifiers for the child order that records it. */
+export interface SplitAllocation {
+  readonly orderId: string;
+  readonly sellerAccountId: string;
+  readonly idempotencyKey: string;
+  readonly eventId: string;
+  readonly items: readonly SplitAllocationItem[];
+}
+
+export interface SplitOrderRequest {
+  readonly parentOrderId: string;
+  readonly allocations: readonly SplitAllocation[];
+  readonly occurredAt: string;
+  readonly updatedAt: string;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+  /** Opaque id for the parent's split event; the outbox entries derive from it. */
+  readonly eventId: string;
+  readonly reason: string;
+}
+
+export interface SplitOrderResult {
+  /** The parent, now `fulfilling` and marked as a parent. Named `order` for consistency with every other result in this module. */
+  readonly order: Order;
+  readonly children: readonly Order[];
+  readonly replayed: boolean;
+}
+
+const SPLIT_ORDER_KEYS: readonly string[] = [
+  'parentOrderId',
+  'allocations',
+  'occurredAt',
+  'updatedAt',
+  'correlationId',
+  'idempotencyKey',
+  'eventId',
+  'reason',
+];
+
 const CREATE_ORDER_KEYS: readonly string[] = [
   'orderId',
   'buyerAccountId',
@@ -288,8 +349,6 @@ export class OrderService {
           buyerAccountId: request.buyerAccountId,
           sellerAccountId: request.sellerAccountId,
           status: 'draft',
-          // Every order is born standalone. It becomes a parent only by being split and a child
-          // only by being created as part of one, so neither is something a caller may assert.
           parentOrderId: null,
           fulfilmentRole: 'standalone',
           currency: request.currency,
@@ -648,9 +707,13 @@ export class OrderService {
    *
    * `fulfilling` → `completed`. Terminal.
    */
-  async completeOrder(request: CompleteOrderRequest): Promise<CompleteOrderResult> {
+  completeOrder(request: CompleteOrderRequest): Promise<CompleteOrderResult>;
+  completeOrder(request: Record<string, unknown>): Promise<CompleteOrderResult>;
+  async completeOrder(
+    request: CompleteOrderRequest | Record<string, unknown>,
+  ): Promise<CompleteOrderResult> {
     return this.#transition({
-      request,
+      request: request as CompleteOrderRequest,
       permittedKeys: COMPLETE_ORDER_KEYS,
       operation: 'completeOrder',
       fromStatus: 'fulfilling',
@@ -659,6 +722,31 @@ export class OrderService {
       orderTimestampField: 'completedAt',
       makeEvent: makeOrderCompletedEvent,
       makeAction: makeOrderCompletedAction,
+      guard: async (order, tx) => {
+        if (order.fulfilmentRole !== 'parent') return;
+
+        const children = await tx.findChildrenByParentId(order.orderId);
+        const outstanding = children.filter((child) => !isTerminal(child.status));
+        if (outstanding.length > 0) {
+          throw new OrderError(
+            'children-outstanding',
+            `order ${order.orderId} has ${String(outstanding.length)} child order(s) still in ` +
+              'flight; a parent completes only once every supplier has finished or failed',
+          );
+        }
+
+        // Partial delivery completes the parent — the buyer's remedy for a short delivery is a
+        // refund, not a permanently open order. But an order where *nothing* arrived was not
+        // fulfilled at all, and calling that "completed" would misreport it to every downstream
+        // consumer. That case is a cancellation.
+        if (!children.some((child) => child.status === 'completed')) {
+          throw new OrderError(
+            'nothing-fulfilled',
+            `every child of order ${order.orderId} was cancelled; an order where nothing was ` +
+              'delivered is cancelled, not completed',
+          );
+        }
+      },
     });
   }
 
@@ -667,49 +755,54 @@ export class OrderService {
    *
    * Any non-terminal status → `cancelled`. Terminal.
    */
-  async cancelOrder(request: CancelOrderRequest): Promise<CancelOrderResult> {
+  cancelOrder(request: CancelOrderRequest): Promise<CancelOrderResult>;
+  cancelOrder(request: Record<string, unknown>): Promise<CancelOrderResult>;
+  async cancelOrder(
+    request: CancelOrderRequest | Record<string, unknown>,
+  ): Promise<CancelOrderResult> {
     assertNoForeignConcerns(request, CANCEL_ORDER_KEYS, 'cancelOrder');
-    assertOrderIdentifier(request.orderId, 'orderId');
-    assertOrderIdentifier(request.eventId, 'eventId');
+    const typed = request as CancelOrderRequest;
+    assertOrderIdentifier(typed.orderId, 'orderId');
+    assertOrderIdentifier(typed.eventId, 'eventId');
     const cancellationReason = assertCancellationReason(
-      request.cancellationReason,
+      typed.cancellationReason,
       'cancellationReason',
     );
-    const cancelledAt = parseAndCheckInstant(request.cancelledAt, 'cancelledAt');
-    const updatedAt = parseAndCheckInstant(request.updatedAt, 'updatedAt');
+    const cancelledAt = parseAndCheckInstant(typed.cancelledAt, 'cancelledAt');
+    const updatedAt = parseAndCheckInstant(typed.updatedAt, 'updatedAt');
 
     return this.#repository.withTransaction(async (tx) => {
-      const existingEvent = await tx.findEventByIdempotencyKey(request.idempotencyKey);
+      const existingEvent = await tx.findEventByIdempotencyKey(typed.idempotencyKey);
       if (existingEvent !== null) {
-        const expected = buildCancelEventFromRequest(request, existingEvent);
+        const expected = buildCancelEventFromRequest(typed, existingEvent);
         if (!eventEquals(existingEvent, expected)) {
           throw new OrderError(
             'idempotency-key-reuse',
-            `idempotency key "${request.idempotencyKey}" has already been used for a different event`,
+            `idempotency key "${typed.idempotencyKey}" has already been used for a different event`,
           );
         }
-        const order = await requireOrder(tx, request.orderId);
+        const order = await requireOrder(tx, typed.orderId);
         return { order: sealOrder(order), replayed: true };
       }
 
-      const existingEventId = await tx.findEventById(request.eventId);
+      const existingEventId = await tx.findEventById(typed.eventId);
       if (existingEventId !== null) {
-        const expected = buildCancelEventFromRequest(request, existingEventId);
+        const expected = buildCancelEventFromRequest(typed, existingEventId);
         if (!eventEquals(existingEventId, expected)) {
           throw new OrderError(
             'duplicate-event-id',
-            `event ${request.eventId} already exists with different content`,
+            `event ${typed.eventId} already exists with different content`,
           );
         }
-        const order = await requireOrder(tx, request.orderId);
+        const order = await requireOrder(tx, typed.orderId);
         return { order: sealOrder(order), replayed: true };
       }
 
-      const order = await requireOrder(tx, request.orderId);
+      const order = await requireOrder(tx, typed.orderId);
       if (isTerminal(order.status)) {
         throw new OrderError(
           'order-terminal',
-          `order ${request.orderId} is ${order.status} and cannot be cancelled`,
+          `order ${typed.orderId} is ${order.status} and cannot be cancelled`,
         );
       }
       assertTransitionLegal(order.status, 'cancelled');
@@ -717,15 +810,15 @@ export class OrderService {
       const event = sealOrderEvent(
         validateOrderEvent(
           {
-            eventId: request.eventId,
+            eventId: typed.eventId,
             orderId: order.orderId,
             kind: 'cancelled',
             fromStatus: order.status,
             toStatus: 'cancelled',
-            reason: request.reason,
+            reason: typed.reason,
             occurredAt: cancelledAt,
-            correlationId: request.correlationId,
-            idempotencyKey: request.idempotencyKey,
+            correlationId: typed.correlationId,
+            idempotencyKey: typed.idempotencyKey,
           },
           'request',
         ),
@@ -741,9 +834,353 @@ export class OrderService {
 
       await tx.updateOrder(updated);
       await tx.insertEvent(event);
-      await tx.insertOutbox(makeOrderCancelledEvent(updated, event, cancellationReason));
-      await tx.insertOutbox(makeOrderCancelledAction(updated, event, cancellationReason));
+      await tx.insertOutbox(makeOrderCancelledEvent(updated, event));
+      await tx.insertOutbox(makeOrderCancelledAction(updated, event));
+
+      // Cancelling a parent cascades to its children, in the same transaction, carrying the
+      // parent's reason so every cancelled child can be attributed. Children that already reached
+      // a terminal state are left alone: a supplier who already delivered is not un-delivered by
+      // the buyer abandoning the rest of the order.
+      //
+      // The child events are derived from the parent's event id rather than supplied by the
+      // caller, because the caller cannot know how many children there are — and an id derived
+      // from the child order alone would collide if that child were ever cancelled twice.
+      if (updated.fulfilmentRole === 'parent') {
+        const children = await tx.findChildrenByParentId(updated.orderId);
+        for (const child of children) {
+          if (isTerminal(child.status)) continue;
+
+          const childEvent = sealOrderEvent(
+            validateOrderEvent(
+              {
+                eventId: `${typed.eventId}:${child.orderId}`,
+                orderId: child.orderId,
+                kind: 'cancelled',
+                fromStatus: child.status,
+                toStatus: 'cancelled',
+                reason: typed.reason,
+                occurredAt: cancelledAt,
+                correlationId: typed.correlationId,
+                idempotencyKey: `${typed.idempotencyKey}:${child.orderId}`,
+              },
+              'request',
+            ),
+          );
+
+          const cancelledChild = sealOrder({
+            ...child,
+            status: 'cancelled',
+            cancelledAt,
+            cancellationReason,
+            updatedAt,
+          });
+
+          await tx.updateOrder(cancelledChild);
+          await tx.insertEvent(childEvent);
+          await tx.insertOutbox(makeOrderCancelledEvent(cancelledChild, childEvent));
+          await tx.insertOutbox(makeOrderCancelledAction(cancelledChild, childEvent));
+        }
+      }
+
       return { order: updated, replayed: false };
+    });
+  }
+
+  /**
+   * Split a placed order across several suppliers.
+   *
+   * The parent becomes `fulfilling` and each allocation becomes a `placed` child order with its own
+   * seller and its own lifecycle. One transaction: a partially written split would leave the
+   * unallocated remainder owned by nobody, which is exactly the state this operation exists to make
+   * impossible.
+   *
+   * Refuses `order-not-placed`, `already-split`, `nested-split`, `empty-allocation`,
+   * `allocation-currency-mismatch` and — the central rule — `allocation-mismatch` when the summed
+   * child quantities do not equal the parent's ordered quantity for every pinned listing version.
+   */
+  async splitOrder(request: Record<string, unknown>): Promise<SplitOrderResult> {
+    assertNoForeignConcerns(request, SPLIT_ORDER_KEYS, 'splitOrder');
+    const typed = request as unknown as SplitOrderRequest;
+    assertOrderIdentifier(typed.parentOrderId, 'parentOrderId');
+    assertOrderIdentifier(typed.eventId, 'eventId');
+    const occurredAt = parseAndCheckInstant(typed.occurredAt, 'occurredAt');
+    const updatedAt = parseAndCheckInstant(typed.updatedAt, 'updatedAt');
+
+    if (typed.allocations.length === 0) {
+      throw new OrderError('empty-allocation', 'splitOrder needs at least one allocation');
+    }
+    for (const allocation of typed.allocations) {
+      assertOrderIdentifier(allocation.orderId, 'allocations[].orderId');
+      assertOrderIdentifier(allocation.eventId, 'allocations[].eventId');
+      if (allocation.items.length === 0) {
+        throw new OrderError(
+          'empty-allocation',
+          `allocation ${allocation.orderId} carries no items`,
+        );
+      }
+    }
+
+    const currencies = new Set(
+      typed.allocations.flatMap((a) => a.items.map((item) => item.currency)),
+    );
+    if (currencies.size > 1) {
+      throw new OrderError(
+        'allocation-currency-mismatch',
+        `the allocations name more than one currency (${[...currencies].sort().join(', ')}); ` +
+          'every child of one order is priced in the order’s currency',
+      );
+    }
+
+    return this.#repository.withTransaction(async (tx) => {
+      const existingEvent = await tx.findEventByIdempotencyKey(typed.idempotencyKey);
+      if (existingEvent !== null) {
+        const parent = await requireOrder(tx, typed.parentOrderId);
+        return {
+          order: sealOrder(parent),
+          children: await tx.findChildrenByParentId(parent.orderId),
+          replayed: true,
+        };
+      }
+
+      const parent = await requireOrder(tx, typed.parentOrderId);
+      if (parent.fulfilmentRole === 'child') {
+        throw new OrderError(
+          'nested-split',
+          `order ${parent.orderId} is itself a child; split fulfilment is two levels only`,
+        );
+      }
+      if (parent.fulfilmentRole === 'parent') {
+        throw new OrderError('already-split', `order ${parent.orderId} has already been split`);
+      }
+      if (parent.status !== 'placed') {
+        throw new OrderError(
+          'order-not-placed',
+          `order ${parent.orderId} is ${parent.status}; only a placed order may be split`,
+        );
+      }
+      const allocationCurrency = typed.allocations[0]?.items[0]?.currency;
+      if (allocationCurrency !== undefined && allocationCurrency !== parent.currency) {
+        throw new OrderError(
+          'allocation-currency-mismatch',
+          `the allocations are priced in ${allocationCurrency} but order ${parent.orderId} is in ` +
+            parent.currency,
+        );
+      }
+
+      // The central rule. Group both sides by the pinned listing version and require them to agree
+      // exactly: allocating 7 and 5 tonnes of a 20-tonne order and committing it would leave the
+      // remaining 8 owned by nobody, with no record that anyone was ever meant to supply it.
+      const parentItems = await tx.findItemsByOrderId(parent.orderId);
+      const ordered = sumByVersion(parentItems.map((i) => [i.versionId, i.quantity] as const));
+      const allocated = sumByVersion(
+        typed.allocations.flatMap((a) => a.items.map((i) => [i.versionId, i.quantity] as const)),
+      );
+      for (const [versionId, quantity] of ordered) {
+        const given = allocated.get(versionId) ?? 0n;
+        if (given !== quantity) {
+          throw new OrderError(
+            'allocation-mismatch',
+            `version ${versionId}: the order is for ${String(quantity)} but ${String(given)} was ` +
+              'allocated. Every ordered unit must be allocated to exactly one supplier',
+          );
+        }
+      }
+      for (const versionId of allocated.keys()) {
+        if (!ordered.has(versionId)) {
+          throw new OrderError(
+            'allocation-mismatch',
+            `version ${versionId} was allocated but is not on the order`,
+          );
+        }
+      }
+
+      const children: Order[] = [];
+      for (const allocation of typed.allocations) {
+        const child = sealOrder(
+          validateOrder(
+            {
+              orderId: allocation.orderId,
+              buyerAccountId: parent.buyerAccountId,
+              sellerAccountId: allocation.sellerAccountId,
+              status: 'placed',
+              parentOrderId: parent.orderId,
+              fulfilmentRole: 'child',
+              currency: parent.currency,
+              subtotalMinor: allocation.items.reduce((sum, i) => sum + i.lineTotalMinor, 0n),
+              totalMinor: allocation.items.reduce((sum, i) => sum + i.lineTotalMinor, 0n),
+              itemCount: allocation.items.length,
+              placedAt: occurredAt,
+              confirmedAt: null,
+              completedAt: null,
+              cancelledAt: null,
+              cancellationReason: null,
+              createdAt: occurredAt,
+              updatedAt,
+              correlationId: typed.correlationId,
+              idempotencyKey: allocation.idempotencyKey,
+            },
+            'request',
+          ),
+        );
+
+        await tx.insertOrder(child);
+        for (const item of allocation.items) {
+          await tx.insertItem(
+            sealOrderItem(
+              validateOrderItem(
+                {
+                  itemId: item.itemId,
+                  orderId: child.orderId,
+                  listingId: item.listingId,
+                  versionId: item.versionId,
+                  commerceUnitTypeId: item.commerceUnitTypeId,
+                  quantity: item.quantity,
+                  unitPriceMinor: item.unitPriceMinor,
+                  lineTotalMinor: item.lineTotalMinor,
+                  currency: item.currency,
+                  reservationId: item.reservationId,
+                  addedAt: occurredAt,
+                  correlationId: typed.correlationId,
+                  idempotencyKey: `${allocation.idempotencyKey}:${item.itemId}`,
+                },
+                'request',
+              ),
+            ),
+          );
+        }
+
+        const childEvent = sealOrderEvent(
+          validateOrderEvent(
+            {
+              eventId: allocation.eventId,
+              orderId: child.orderId,
+              kind: 'placed',
+              fromStatus: null,
+              toStatus: 'placed',
+              reason: typed.reason,
+              occurredAt,
+              correlationId: typed.correlationId,
+              idempotencyKey: allocation.idempotencyKey,
+            },
+            'request',
+          ),
+        );
+        await tx.insertEvent(childEvent);
+        await tx.insertOutbox(makeOrderPlacedEvent(child, childEvent));
+        await tx.insertOutbox(makeOrderPlacedAction(child, childEvent));
+        children.push(child);
+      }
+
+      const updatedParent = sealOrder({
+        ...parent,
+        status: 'fulfilling',
+        fulfilmentRole: 'parent',
+        updatedAt,
+      });
+      const parentEvent = sealOrderEvent(
+        validateOrderEvent(
+          {
+            eventId: typed.eventId,
+            orderId: parent.orderId,
+            kind: 'fulfilling',
+            fromStatus: parent.status,
+            toStatus: 'fulfilling',
+            reason: typed.reason,
+            occurredAt,
+            correlationId: typed.correlationId,
+            idempotencyKey: typed.idempotencyKey,
+          },
+          'request',
+        ),
+      );
+
+      // Guarded: another caller may have split this same parent while this request was being
+      // prepared. Both read it as standalone, both built a full set of children, and only one may
+      // win — otherwise the same twenty tonnes is promised to two different sets of suppliers, and
+      // the loser's children are invisible to the winner.
+      const won = await tx.updateOrderIfRole(updatedParent, 'standalone');
+      if (!won) {
+        throw new OrderError(
+          'already-split',
+          `order ${parent.orderId} was split by another transaction while this one was open`,
+        );
+      }
+      await tx.insertEvent(parentEvent);
+      await tx.insertOutbox(
+        makeOrderSplitEvent(
+          updatedParent,
+          parentEvent,
+          children.map((c) => c.orderId),
+        ),
+      );
+      await tx.insertOutbox(
+        makeOrderSplitAction(
+          updatedParent,
+          parentEvent,
+          children.map((c) => c.orderId),
+        ),
+      );
+
+      return { order: updatedParent, children: Object.freeze(children), replayed: false };
+    });
+  }
+
+  /** Every child of one parent, sealed and ordered by order id. */
+  async listChildren(parentOrderId: string): Promise<readonly Order[]> {
+    assertOrderIdentifier(parentOrderId, 'parentOrderId');
+    const children = await this.#repository.withTransaction((tx) =>
+      tx.findChildrenByParentId(parentOrderId),
+    );
+    return sealOrders(children);
+  }
+
+  /**
+   * What an order's children add up to.
+   *
+   * Every number is summed from rows that already exist; nothing here reads a stored ratio, because
+   * a stored ratio drifts the first time a child moves and nobody recomputes it.
+   */
+  async getFulfilmentSummary(orderId: string): Promise<FulfilmentSummary> {
+    assertOrderIdentifier(orderId, 'orderId');
+    return this.#repository.withTransaction(async (tx) => {
+      // Reading the order first means an unknown id is refused rather than silently summarised
+      // as a row of zeroes.
+      await requireOrder(tx, orderId);
+      const ownItems = await tx.findItemsByOrderId(orderId);
+      const orderedQuantity = ownItems.reduce((sum, item) => sum + item.quantity, 0n);
+
+      const childOrders = await tx.findChildrenByParentId(orderId);
+      const children: FulfilmentChild[] = [];
+      let allocated = 0n;
+      let fulfilled = 0n;
+      let cancelled = 0n;
+
+      for (const child of childOrders) {
+        const items = await tx.findItemsByOrderId(child.orderId);
+        const quantity = items.reduce((sum, item) => sum + item.quantity, 0n);
+        allocated += quantity;
+        if (child.status === 'completed') fulfilled += quantity;
+        if (child.status === 'cancelled') cancelled += quantity;
+        children.push(
+          Object.freeze({
+            orderId: child.orderId,
+            sellerAccountId: child.sellerAccountId,
+            quantity,
+            status: child.status,
+          }),
+        );
+      }
+
+      return Object.freeze({
+        orderedQuantity,
+        allocatedQuantity: allocated,
+        fulfilledQuantity: fulfilled,
+        cancelledQuantity: cancelled,
+        pendingQuantity: allocated - fulfilled - cancelled,
+        children: Object.freeze(children),
+        fullyAllocated: allocated === orderedQuantity,
+        fullyFulfilled: orderedQuantity > 0n && fulfilled === orderedQuantity,
+      }) satisfies FulfilmentSummary;
     });
   }
 
@@ -763,6 +1200,12 @@ export class OrderService {
       order: Order,
       event: OrderEvent,
     ) => import('../../platform/outbox/types.ts').OutboxEntry;
+    /**
+     * An extra rule checked inside the transaction, after the order is loaded and before anything
+     * is written. A parent order uses it to refuse completion while a child is still in flight;
+     * checking that before opening the transaction would be a race against the child finishing.
+     */
+    readonly guard?: (order: Order, tx: OrderTransaction) => Promise<void>;
   }): Promise<{ readonly order: Order; readonly replayed: boolean }> {
     const request = options.request as Record<string, unknown>;
     assertNoForeignConcerns(request, options.permittedKeys, options.operation);
@@ -821,6 +1264,7 @@ export class OrderService {
         );
       }
       assertTransitionLegal(options.fromStatus, options.toStatus);
+      if (options.guard !== undefined) await options.guard(order, tx);
 
       const event = sealOrderEvent(
         validateOrderEvent(
@@ -1095,4 +1539,13 @@ function buildCancelEventFromRequest(request: CancelOrderRequest, stored: OrderE
     correlationId: request.correlationId,
     idempotencyKey: request.idempotencyKey,
   };
+}
+
+/** Sum quantities by pinned listing version, so both sides of a split can be compared exactly. */
+function sumByVersion(entries: readonly (readonly [string, bigint])[]): Map<string, bigint> {
+  const totals = new Map<string, bigint>();
+  for (const [versionId, quantity] of entries) {
+    totals.set(versionId, (totals.get(versionId) ?? 0n) + quantity);
+  }
+  return totals;
 }

@@ -13,6 +13,7 @@
 
 export {
   CANCELLATION_REASONS,
+  FULFILMENT_ROLES,
   ORDER_EVENT_KINDS,
   ORDER_STATUSES,
   ORDER_TRANSITIONS,
@@ -20,6 +21,9 @@ export {
 } from './types.ts';
 export type {
   CancellationReason,
+  FulfilmentChild,
+  FulfilmentRole,
+  FulfilmentSummary,
   Order,
   OrderErrorCode,
   OrderEvent,
@@ -75,6 +79,10 @@ export type {
   CreateOrderResult,
   PlaceOrderRequest,
   PlaceOrderResult,
+  SplitAllocation,
+  SplitAllocationItem,
+  SplitOrderRequest,
+  SplitOrderResult,
   StartFulfilmentRequest,
   StartFulfilmentResult,
 } from './service.ts';
@@ -112,6 +120,8 @@ export {
   ORDER_FULFILLING_EVENT,
   ORDER_PLACED_ACTION,
   ORDER_PLACED_EVENT,
+  ORDER_SPLIT_ACTION,
+  ORDER_SPLIT_EVENT,
   makeOrderCancelledAction,
   makeOrderCancelledEvent,
   makeOrderCompletedAction,
@@ -124,4 +134,6 @@ export {
   makeOrderFulfillingEvent,
   makeOrderPlacedAction,
   makeOrderPlacedEvent,
+  makeOrderSplitAction,
+  makeOrderSplitEvent,
 } from './outbox.ts';
