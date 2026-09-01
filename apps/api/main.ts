@@ -59,6 +59,11 @@ import {
 
 import { buildApi, type ApiAccess, type ApiServices } from './app.ts';
 import {
+  ORDER_INVENTORY_SUBSCRIPTION,
+  orderInventoryHandler,
+  type InventoryResolution,
+} from './consumers/order-inventory.ts';
+import {
   PAYMENT_SETTLEMENT_SUBSCRIPTION,
   paymentSettlementHandler,
   settlementAssets,
@@ -234,13 +239,27 @@ function randomOpaque(length: number): string {
 export function registerConsumers(options: {
   readonly events: EventService;
   readonly ledger: FinancialLedgerService;
-  readonly observe?: (outcome: SettlementOutcome) => void;
+  readonly orders: OrderService;
+  readonly listings: UniversalListingService;
+  readonly observe?: (outcome: SettlementOutcome | InventoryResolution) => void;
 }): void {
   options.events.register(
     PAYMENT_SETTLEMENT_SUBSCRIPTION,
     paymentSettlementHandler({
       ledger: options.ledger,
       assets: settlementAssetsFromEnvironment(),
+      ...(options.observe === undefined ? {} : { observe: options.observe }),
+    }),
+  );
+
+  // Both endings of an order resolve the stock its lines held. Registering only one would be the
+  // leak with extra steps: a cancelled order whose reservation nobody releases is stock nobody can
+  // ever buy again.
+  options.events.register(
+    ORDER_INVENTORY_SUBSCRIPTION,
+    orderInventoryHandler({
+      orders: options.orders,
+      listings: options.listings,
       ...(options.observe === undefined ? {} : { observe: options.observe }),
     }),
   );
