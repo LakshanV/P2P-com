@@ -91,6 +91,10 @@ export function createHttpServer(options: ServerOptions): Server {
         // A body that blew the limit is passed through as a very long string so the pipeline's own
         // limit check produces the 413, keeping the decision in one place.
         body: overLimit ? 'x'.repeat(limit + 1) : body,
+        // The one address the caller did not choose. Everything a rate limiter can trust starts
+        // here; `X-Forwarded-For` is data the client sent, and is honoured only where the
+        // deployment has declared a proxy in front of it.
+        socketAddress: incoming.socket.remoteAddress ?? null,
       };
 
       const response = await handleRequest(options, raw);

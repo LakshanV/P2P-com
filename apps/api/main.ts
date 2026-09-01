@@ -35,6 +35,7 @@ import {
 import { IdentityService, PostgresIdentityRepository } from '../../kernel/identity/index.ts';
 import { PermissionService, PostgresPermissionRepository } from '../../kernel/permissions/index.ts';
 import { PostgresDatabase } from '../../platform/db/postgres.ts';
+import { InMemoryRateLimitStore } from '../../platform/http/rate-limit.ts';
 import { createHttpServer } from '../../platform/http/server.ts';
 import type { RequestRecord } from '../../platform/http/pipeline.ts';
 import { LedgerService, PostgresLedgerRepository } from '../../kernel/ledger-foundation/index.ts';
@@ -227,6 +228,19 @@ export function start(options: StartOptions): ReturnType<typeof createHttpServer
     services: servicesFor(options.databaseUrl),
     access: accessFor(database, nowMicros),
     webhookSecrets: webhookSecretsFromEnvironment(),
+    throttle: {
+      // In memory, which is correct for one process and honestly wrong for two: each instance would
+      // enforce the limit separately, so two instances permit twice as much. That is acceptable
+      // while one process serves the platform, and stops being acceptable the moment a second one
+      // starts. Whoever adds the second instance owns replacing this with a shared store.
+      store: new InMemoryRateLimitStore(),
+      now: nowMicros,
+      // Zero unless the deployment says otherwise, and the default is the safe one: with no
+      // declared proxy, `X-Forwarded-For` is ignored entirely. Setting this too high is worse than
+      // leaving it at zero — it lets a caller choose its own bucket by writing the header, which
+      // removes the limit rather than loosening it.
+      trustedProxyCount: Number(process.env.JAYA_TRUSTED_PROXY_COUNT ?? '0'),
+    },
     observe: logRequest,
   });
   const server = createHttpServer(api);

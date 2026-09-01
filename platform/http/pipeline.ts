@@ -13,6 +13,7 @@
  */
 
 import { toJsonSafe } from './json.ts';
+import type { RateLimitDecision } from './rate-limit.ts';
 import { internalError, problem } from './problem.ts';
 import { splitTarget, type Router } from './router.ts';
 import { HTTP_METHODS, type HttpMethod, type HttpRequest, type HttpResponse } from './types.ts';
@@ -54,6 +55,23 @@ export interface PipelineOptions {
     route: MatchedRoute,
     correlationId: string,
   ) => Promise<void>;
+  /**
+   * Called after routing and **before** authorisation. Returning a decision that is not allowed
+   * refuses the request with a 429.
+   *
+   * Before authorisation on purpose. Authorising costs a session validation, an account lookup and
+   * a grant evaluation — three database reads — and a caller being throttled is precisely a caller
+   * that must not be able to make the server do that work. Limiting after the expensive part would
+   * be a limiter that meters the exit.
+   *
+   * Like the authorisation hook, the substrate supplies the mechanism and knows none of the policy:
+   * which routes are limited and how hard is the application's to decide.
+   */
+  readonly rateLimit?: (
+    request: HttpRequest,
+    route: MatchedRoute,
+    socketAddress: string | null,
+  ) => Promise<RateLimitDecision>;
   /** Correlation id for a request that did not bring one. */
   readonly correlationFor: (request: RawRequest) => string;
   /** Largest body accepted, in bytes. */
@@ -79,6 +97,14 @@ export interface RawRequest {
   readonly headers: Readonly<Record<string, string>>;
   /** The body as text, or null when there was none. */
   readonly body: string | null;
+  /**
+   * The peer's address, from the socket. Null when there is no socket.
+   *
+   * Separate from the headers, and deliberately so: this is the one address a caller cannot choose
+   * for itself, which is the only reason it is worth rate limiting against. `X-Forwarded-For` is
+   * data the client sent.
+   */
+  readonly socketAddress?: string | null;
 }
 
 export interface RequestRecord {
@@ -198,6 +224,38 @@ export async function handleRequest(
     body,
     rawBody: raw.body,
   };
+
+  if (options.rateLimit !== undefined && matched.route !== undefined) {
+    const decision = await options.rateLimit(
+      request,
+      { method: matched.route.method, path: matched.route.path },
+      raw.socketAddress ?? null,
+    );
+    if (!decision.allowed) {
+      const response = problem({
+        status: 429,
+        code: 'rate-limited',
+        detail:
+          `Too many requests. At most ${String(decision.limit)} may be in flight for this route ` +
+          `from one caller; try again in ${String(decision.retryAfterSeconds)} seconds.`,
+        correlationId,
+      });
+      return finish(
+        {
+          ...response,
+          headers: {
+            ...response.headers,
+            // The three a client needs to back off politely rather than by guesswork. A limiter
+            // that refuses without saying for how long produces clients that retry immediately.
+            'retry-after': String(decision.retryAfterSeconds),
+            'x-ratelimit-limit': String(decision.limit),
+            'x-ratelimit-remaining': String(decision.remaining),
+          },
+        },
+        'rate-limited',
+      );
+    }
+  }
 
   try {
     if (options.authorize !== undefined && matched.route !== undefined) {

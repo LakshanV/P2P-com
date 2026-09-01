@@ -41,6 +41,7 @@ import { json, type HttpRequest } from '../../platform/http/types.ts';
 
 import { accessFor, guard } from './access.ts';
 import { ApiError, describeApiError } from './errors.ts';
+import { buildThrottle, type ThrottleOptions } from './throttle.ts';
 import { NO_WEBHOOK_SECRETS, type WebhookSecrets } from './webhook-signature.ts';
 import { addCockpitRoutes } from './routes/cockpit.ts';
 import { addLedgerRoutes } from './routes/ledger.ts';
@@ -81,6 +82,15 @@ export interface ApiOptions {
    * because leaving it out closes the route rather than opening it.
    */
   readonly webhookSecrets?: WebhookSecrets;
+  /**
+   * Rate limiting. Omitted means **no limit at all**, which is right only for a suite.
+   *
+   * Optional rather than required, unlike `access`, because the failure modes differ in kind. An
+   * API with no guard silently serves everybody's data; an API with no limiter serves the right
+   * data too eagerly. The first must be impossible to build; the second is a deployment concern,
+   * and `main.ts` always supplies one.
+   */
+  readonly throttle?: ThrottleOptions;
   /** Overridable so a suite can pin the clock and the generated ids. Defaults to the real ones. */
   readonly clock?: () => string;
   readonly generateCorrelationId?: () => string;
@@ -209,6 +219,7 @@ export function buildApi(options: ApiOptions): PipelineOptions {
     router,
     describe: describeApiError,
     authorize,
+    ...(options.throttle === undefined ? {} : { rateLimit: buildThrottle(options.throttle) }),
     correlationFor: (raw: RawRequest) => correlationOf(raw.headers, generateCorrelationId),
     ...(options.observe === undefined ? {} : { observe: options.observe }),
   };
