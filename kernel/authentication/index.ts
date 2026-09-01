@@ -107,3 +107,31 @@ export {
 
 export { MockVerifier } from './verifiers/index.ts';
 export type { ClockSupplier, MockVerifierOptions, ProofPredicate } from './verifiers/index.ts';
+
+/**
+ * The password verifier: the first thing in this repository that can authenticate a real person.
+ *
+ * Behind the same `Verifier` port as the mock, so OTP or OIDC later means another implementation
+ * of one interface rather than a change here. K-02 still never holds a password — this holds a
+ * scrypt hash, and holding it is the only thing it does.
+ */
+export {
+  InMemoryPasswordCredentialStore,
+  MAXIMUM_PASSWORD_LENGTH,
+  MINIMUM_PASSWORD_LENGTH,
+  PRODUCTION_PARAMETERS,
+  PasswordVerifier,
+  TEST_ONLY_FAST_PARAMETERS,
+  WeakPasswordError,
+  hashPassword,
+  needsRehash,
+  parseStoredHash,
+  resetDecoyForTests,
+  verifyPassword,
+} from './verifiers/index.ts';
+export type {
+  PasswordCredential,
+  PasswordCredentialStore,
+  PasswordVerifierOptions,
+  ScryptParameters,
+} from './verifiers/index.ts';

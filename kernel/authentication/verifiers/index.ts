@@ -8,3 +8,27 @@
 
 export { MockVerifier } from './mock-verifier.ts';
 export type { MockVerifierOptions, ProofPredicate, ClockSupplier } from './mock-verifier.ts';
+
+export {
+  InMemoryPasswordCredentialStore,
+  PasswordVerifier,
+  resetDecoyForTests,
+} from './password-verifier.ts';
+export type {
+  PasswordCredential,
+  PasswordCredentialStore,
+  PasswordVerifierOptions,
+} from './password-verifier.ts';
+
+export {
+  MAXIMUM_PASSWORD_LENGTH,
+  MINIMUM_PASSWORD_LENGTH,
+  PRODUCTION_PARAMETERS,
+  TEST_ONLY_FAST_PARAMETERS,
+  WeakPasswordError,
+  hashPassword,
+  needsRehash,
+  parseStoredHash,
+  verifyPassword,
+} from './password-hash.ts';
+export type { ScryptParameters } from './password-hash.ts';
