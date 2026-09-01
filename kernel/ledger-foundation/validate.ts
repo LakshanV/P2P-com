@@ -196,11 +196,23 @@ function assertAssetClass(value: unknown, field: string): AssetClass {
   return value as AssetClass;
 }
 
+/**
+ * How many decimal places the asset divides into.
+ *
+ * **Zero is legitimate and means indivisible.** A loyalty stamp, a ticket, a seat and a reward
+ * point that comes only in whole units are all real value types, and a ledger that cannot express
+ * one is not a universal ledger. Refusing zero here would have forced every such scheme to invent a
+ * fictional minor unit and then remember never to use it.
+ *
+ * The ceiling is eighteen, the largest decimal exponent in common use; beyond that is a mistake
+ * rather than an exotic asset.
+ */
 function assertPrecision(value: unknown, field: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 18) {
     throw new LedgerError(
       'invalid-precision',
-      `${field} is ${JSON.stringify(value)}; expected a positive integer`,
+      `${field} is ${JSON.stringify(value)}; expected a whole number of decimal places from 0 ` +
+        '(indivisible) to 18',
     );
   }
   return value;

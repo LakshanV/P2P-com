@@ -69,15 +69,32 @@ test('refuses malformed or unsupported asset type definitions', async () => {
     /expected one of/,
   );
   await rejectsWith(
-    () => service.registerAssetType(assetType({ precision: 0 })),
+    () => service.registerAssetType(assetType({ precision: -1 })),
     'invalid-precision',
-    /positive integer/,
+    /0 \(indivisible\) to 18/,
   );
   await rejectsWith(
     () => service.registerAssetType(assetType({ precision: 1.5 })),
     'invalid-precision',
-    /positive integer/,
+    /0 \(indivisible\) to 18/,
   );
+  await rejectsWith(
+    () => service.registerAssetType(assetType({ precision: 19 })),
+    'invalid-precision',
+    /0 \(indivisible\) to 18/,
+  );
+});
+
+test('an indivisible asset type is legitimate', async () => {
+  // A loyalty stamp, a ticket, a seat, a reward point that comes only in whole units. Refusing
+  // precision 0 would force every such scheme to invent a fictional minor unit and then remember
+  // never to use it, which is fine until somebody divides by it.
+  const { service } = build();
+  const { assetType: stored } = await service.registerAssetType(
+    assetType({ assetTypeId: 'loyalty_stamp', symbol: 'STAMP', precision: 0, unit: 'stamp' }),
+  );
+
+  assert.equal(stored.precision, 0);
 });
 
 // ---------------------------------------------------------------------------

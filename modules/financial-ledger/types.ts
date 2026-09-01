@@ -98,6 +98,17 @@ export type LegStatus = (typeof LEG_STATUSES)[number];
  * `draft` holds an allocation nothing has acted on. `committed` means every internal leg has
  * posted and the external leg, if there is one, is awaiting settlement. `settled` means every leg
  * has posted. `cancelled` means every posted leg has been reversed.
+ *
+ * **`settled` is not terminal, and that is deliberate.** An order that was paid for in full still
+ * gets cancelled: the goods are returned, the seller cannot supply, a dispute is decided against
+ * them. Making `settled` a dead end would leave the only route back outside the ledger, which is
+ * another way of saying no route back at all. Cancelling a settled plan reverses every leg with a
+ * compensating transaction, in every asset it moved — which is what a refund of a mixed-value
+ * purchase actually is.
+ *
+ * A **partial** return is not modelled as a status. It is a new plan in the opposite direction,
+ * with its own legs and its own arithmetic, because half-reversing a plan would leave its central
+ * invariant — legs sum to the obligation — false.
  */
 export const PLAN_STATUSES = ['draft', 'committed', 'settled', 'cancelled'] as const;
 export type PlanStatus = (typeof PLAN_STATUSES)[number];
@@ -105,7 +116,7 @@ export type PlanStatus = (typeof PLAN_STATUSES)[number];
 export const PLAN_TRANSITIONS: Readonly<Record<PlanStatus, readonly PlanStatus[]>> = Object.freeze({
   draft: ['committed', 'cancelled'],
   committed: ['settled', 'cancelled'],
-  settled: [],
+  settled: ['cancelled'],
   cancelled: [],
 });
 

@@ -75,7 +75,7 @@ All amounts are integer **minor units** (`bigint`). Floating point is never used
 | `malformed-asset-type-id` | The asset type id is not lower_snake_case |
 | `malformed-symbol` | The symbol is not an upper-case token |
 | `unsupported-asset-class` | The asset class is not one of `fiat`, `reward`, `digital_asset`, `community` |
-| `invalid-precision` | Precision is not a positive integer |
+| `invalid-precision` | Precision is not a whole number of decimal places from 0 (indivisible) to 18 |
 | `malformed-issuer` | An asset type gave no issuer. Value nobody stands behind is not a value type |
 | `malformed-unit` | The minor-unit name is not lower_snake_case |
 | `malformed-jurisdiction` | The jurisdiction is not ISO 3166-1 alpha-2 or `GLOBAL` |
