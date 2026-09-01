@@ -43,6 +43,11 @@ export function eventOutboxEntry(options: EventOutboxOptions): OutboxEntry {
     processedAt: null,
     retryCount: 0,
     lastError: null,
+    // A newly produced entry has never been attempted, so it is eligible immediately and has not
+    // been given up on. The relay owns these from here.
+    nextAttemptAt: null,
+    deadLetteredAt: null,
+    deadLetterReason: null,
   };
 }
 
@@ -59,5 +64,10 @@ export function auditOutboxEntry(options: AuditOutboxOptions): OutboxEntry {
     processedAt: null,
     retryCount: 0,
     lastError: null,
+    // A newly produced entry has never been attempted, so it is eligible immediately and has not
+    // been given up on. The relay owns these from here.
+    nextAttemptAt: null,
+    deadLetteredAt: null,
+    deadLetterReason: null,
   };
 }

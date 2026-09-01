@@ -155,6 +155,9 @@ test('a failed transaction leaves no case, no evidence, no record and no outbox 
         processedAt: null,
         retryCount: 0,
         lastError: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        deadLetterReason: null,
       });
       throw new Error('the reviewer changed their mind');
     }),

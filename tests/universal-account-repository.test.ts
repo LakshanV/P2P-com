@@ -113,6 +113,9 @@ test('a failed transaction leaves no capability, no transition and no outbox ent
         processedAt: null,
         retryCount: 0,
         lastError: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        deadLetterReason: null,
       });
       throw new Error('the caller changed its mind');
     }),

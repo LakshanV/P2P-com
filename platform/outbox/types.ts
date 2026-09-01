@@ -46,6 +46,12 @@ export interface OutboxEntry {
   readonly retryCount: number;
   /** The most recent failure message, or null. */
   readonly lastError: string | null;
+  /** When this entry becomes eligible again, or null when it is eligible now. */
+  readonly nextAttemptAt: string | null;
+  /** When the relay gave up, or null. A dead-lettered entry was never dispatched. */
+  readonly deadLetteredAt: string | null;
+  /** Why the relay gave up, or null. */
+  readonly deadLetterReason: string | null;
 }
 
 /**
@@ -59,15 +65,50 @@ export interface OutboxTransaction {
 }
 
 /**
- * A source the relay polls for undispatched entries.
+ * A source the relay claims undispatched entries from.
  *
  * One source per module schema, so the relay can consume from every producer without owning any
  * module's tables.
+ *
+ * **`poll` claims rather than reads.** Two relay instances polling the same table must never be
+ * handed the same row: dispatching one entry twice publishes one fact twice, and a consumer that
+ * deduplicates is not something the relay may assume. The PostgreSQL implementation claims with
+ * `FOR UPDATE SKIP LOCKED`, so a second relay steps over rows the first is holding instead of
+ * blocking on them.
  */
 export interface OutboxSource {
   readonly name: string;
   readonly schema: string;
+  /**
+   * Claim up to `limit` entries that are due at `now`.
+   *
+   * An entry is due when it has not been dispatched, has not been given up on, and its
+   * `nextAttemptAt` has passed or was never set.
+   */
   poll(limit: number, now: string): Promise<readonly OutboxEntry[]>;
   markProcessed(outboxId: string, processedAt: string): Promise<void>;
-  markError(outboxId: string, error: string, retryCount: number, now: string): Promise<void>;
+  /**
+   * Record a failed attempt and schedule the retry.
+   *
+   * `nextAttemptAt` is when the row becomes eligible again. The relay computes it from its backoff
+   * policy; the source only stores it.
+   */
+  markError(
+    outboxId: string,
+    error: string,
+    retryCount: number,
+    nextAttemptAt: string,
+  ): Promise<void>;
+  /**
+   * Give up on an entry.
+   *
+   * The row is **not** marked processed — it never was dispatched — it is only taken out of the
+   * claimable set, with the reason recorded so somebody can find out why.
+   */
+  markDeadLettered(
+    outboxId: string,
+    reason: string,
+    retryCount: number,
+    deadLetteredAt: string,
+  ): Promise<void>;
 }

@@ -8,6 +8,8 @@
  * Owned by: platform substrate.
  */
 
+import { parseInstant } from '../time/instant.ts';
+
 import type { OutboxEntry, OutboxSource } from './types.ts';
 
 /**
@@ -55,11 +57,30 @@ export class InMemoryOutboxStore implements OutboxSource {
     this.#entries.push({ ...entry });
   }
 
-  async poll(limit: number, _now: string): Promise<readonly OutboxEntry[]> {
+  /**
+   * Claim up to `limit` entries that are due at `now`.
+   *
+   * Due means: never dispatched, never given up on, and either eligible immediately or past its
+   * scheduled retry.
+   *
+   * The comparison parses both instants rather than comparing the strings. `formatInstant` trims
+   * trailing zeros — `09:00:02Z` and `09:00:02.000000Z` are the same instant written two ways —
+   * so lexical order is *not* chronological order, and a string comparison would have this
+   * reference implementation disagree with the PostgreSQL adapter, which compares as
+   * `timestamptz`. Two implementations of one contract disagreeing about which rows are due is the
+   * kind of divergence that only shows up under load.
+   */
+  async poll(limit: number, now: string): Promise<readonly OutboxEntry[]> {
     await Promise.resolve();
     if (limit < 1) return [];
+    const at = parseInstant(now).epochMicros;
     return this.#entries
-      .filter((entry) => entry.processedAt === null)
+      .filter(
+        (entry) =>
+          entry.processedAt === null &&
+          entry.deadLetteredAt === null &&
+          (entry.nextAttemptAt === null || parseInstant(entry.nextAttemptAt).epochMicros <= at),
+      )
       .sort(
         (a, b) => a.recordedAt.localeCompare(b.recordedAt) || a.outboxId.localeCompare(b.outboxId),
       )
@@ -83,7 +104,7 @@ export class InMemoryOutboxStore implements OutboxSource {
     outboxId: string,
     error: string,
     retryCount: number,
-    _now: string,
+    nextAttemptAt: string,
   ): Promise<void> {
     await Promise.resolve();
     const index = this.#entries.findIndex((entry) => entry.outboxId === outboxId);
@@ -93,7 +114,34 @@ export class InMemoryOutboxStore implements OutboxSource {
       ...existing,
       retryCount,
       lastError: error,
+      nextAttemptAt,
     };
     this.#entries[index] = updated;
+  }
+
+  /**
+   * Give up on an entry.
+   *
+   * `processedAt` deliberately stays null: the entry was never dispatched, and saying otherwise
+   * would tell every reader the opposite of what happened. The row simply leaves the claimable set.
+   */
+  async markDeadLettered(
+    outboxId: string,
+    reason: string,
+    retryCount: number,
+    deadLetteredAt: string,
+  ): Promise<void> {
+    await Promise.resolve();
+    const index = this.#entries.findIndex((entry) => entry.outboxId === outboxId);
+    if (index === -1) throw new Error(`outbox row ${outboxId} not found`);
+    const existing: OutboxEntry = this.#entries[index] as OutboxEntry;
+    this.#entries[index] = {
+      ...existing,
+      retryCount,
+      lastError: reason,
+      deadLetteredAt,
+      deadLetterReason: reason,
+      nextAttemptAt: null,
+    };
   }
 }

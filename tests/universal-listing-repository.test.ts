@@ -152,6 +152,9 @@ test('a failed transaction leaves nothing at all behind', async () => {
         processedAt: null,
         retryCount: 0,
         lastError: null,
+        nextAttemptAt: null,
+        deadLetteredAt: null,
+        deadLetterReason: null,
       });
       throw new Error('the supplier changed their mind');
     }),

@@ -59,7 +59,9 @@ test(
   liveTestOptions,
   async () => {
     await withTestDatabase(async ({ database, directory }) => {
-      await migrateUp(database, { directory, target: '0016' });
+      // Migrated in full rather than to 0016: the relay reads next_attempt_at and dead_lettered_at,
+      // which migration 0035 adds to this table.
+      await migrateUp(database, { directory });
 
       const configService = new ConfigurationService(
         new ConfigurationRegistry(KEYS),

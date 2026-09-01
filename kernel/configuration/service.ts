@@ -438,6 +438,9 @@ export class ConfigurationService {
       processedAt: null,
       retryCount: 0,
       lastError: null,
+      nextAttemptAt: null,
+      deadLetteredAt: null,
+      deadLetterReason: null,
       payload: {
         eventId,
         type: CONFIGURATION_VERSION_PUBLISHED_EVENT.type,
@@ -482,6 +485,9 @@ export class ConfigurationService {
       processedAt: null,
       retryCount: 0,
       lastError: null,
+      nextAttemptAt: null,
+      deadLetteredAt: null,
+      deadLetterReason: null,
       payload: {
         recordId,
         action: CONFIGURATION_VERSION_PUBLISHED_ACTION.action,
