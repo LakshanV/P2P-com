@@ -1,166 +1,143 @@
 # JAYA — Autonomous Development Status
 
-**Updated:** 2026-08-29  
-**Current branch:** `jaya-p2p-com-47859d`  
-**Governing documents:** `docs/JAYA_MASTER_ARCHITECTURE.md`, `docs/JAYA_MODULE_MAP.md`
+**Updated:** 2026-09-01
+**Branch:** `jaya-p2p-com-47859d`
+**HEAD:** `e0b7761` — *Close the open door: authenticate and authorise every route*
+
+This file says **where the work is right now**. It is deliberately short, and it is not the authority
+on completeness.
+
+| Question | Where the answer lives |
+|---|---|
+| What fraction of the original vision exists? | `JAYA_REQUIREMENTS_TRACEABILITY_MATRIX.md` |
+| What is being built next, and in what order? | `JAYA_REMAINING_BACKLOG.md` |
+| Why was something built the way it was? | `JAYA_DECISION_LOG.md` |
+| What does the architecture permit? | `JAYA_MASTER_ARCHITECTURE.md`, `JAYA_MODULE_MAP.md` |
+
+An earlier revision of this file was allowed to drift for a fortnight and ended up asserting that
+K-04 had no callers, that K-10 through K-15 were uncommitted, and that the next task was work
+already finished. A status document that is wrong is worse than none, because somebody acts on it.
+Anything below that cannot be checked against the repository in under a minute has been removed.
 
 ---
 
-## CURRENT PHASE
+## Where the work stands
 
-**Phase 2 — Identity + Cockpit Shell**
+**Just finished: the front door.** Every HTTP route now authenticates the caller, authorises the
+action against a published policy, and checks the specific object against its owner. Before this
+commit, `GET /v1/accounts/{anyone}/money` returned anyone's balances and
+`POST /v1/payments/{id}/capture` moved money for whoever could reach the port.
 
-Status: **PHASE 1 COMPLETE. M-01 delivered.** All 15 kernel components (K-01 through K-15) are implemented with contracts, migrations, and passing tests. The two P0 kernel gaps an independent audit found — K-10 multi-value and K-13 AI authority — are closed. **M-01 Universal Account is the first business module and the first module-owned schema.** Next: M-02 Capability & Verification, then M-04 Universal Listing.
+Three things closed together:
+
+- **K-02 can authenticate a real person.** A scrypt verifier behind the existing `Verifier` port —
+  OWASP interactive parameters, parameters stored with the hash so the cost can be raised later,
+  timing-safe comparison, and a decoy hash so an unknown account costs the same as a wrong password.
+- **K-04 has callers.** `apps/api/access.ts` calls `authorize` before every handler, and
+  `apps/api/policy.ts` is the V1 policy: what a CUSTOMER, SUPPLIER, DRIVER, SUPPORT, FINANCE or ADMIN
+  may do. A buyer cannot capture or refund; a seller cannot create an order; a session holding no
+  grant reaches nothing.
+- **The webhook route no longer trusts its caller.** It read `signatureVerified` out of the request
+  body, so anybody could post `{"signatureVerified": true, "assertedStatus": "captured"}` and move a
+  payment. It is now HMAC-SHA256 over the raw bytes, with the timestamp inside the signed payload.
+
+**Next**, in order: rate limits, then a durable password credential store, then joining the
+transaction spine — `payment.captured` → `settleExternalLeg`, and order placement → inventory
+reservation. Both of those last two are small: every piece exists and nothing calls across.
 
 ---
 
-## CURRENT MODULE
+## Terminology
 
-**M-09 RFQ / M-10 Quotes, or M-11 Orders**
+Used strictly throughout these documents, and not interchangeably.
 
-L1 is complete and M-04 is delivered in full — an offer whose terms change by version and never by edit, with an inventory interface whose availability is derived from an append-only movement log and whose replaceability is pinned by a parameterised contract test. The commerce spine now needs the demand side: a request, a quote against it, and an order that pins a listing version and reserves stock.
+| Term | Means |
+|---|---|
+| `ARCHITECTURE COMPLETE` | The unit has a place, a layer and enforced boundaries. No code. |
+| `CONTRACT COMPLETE` | A written, precise contract exists. No working implementation. |
+| `IMPLEMENTATION COMPLETE` | Code exists and does the thing. |
+| `TESTED` | Unit tests pass. |
+| `INTEGRATION TESTED` | Proven against live PostgreSQL, or over a real socket. |
+| `UI-READY` | A person could use it, if a screen existed. |
+| `PRODUCTION-READY` | Deployable: authenticated, authorised, rate-limited, backed up, observable. |
+| `EXTERNALLY BLOCKED` | Cannot proceed without a credential or decision from outside this repository. |
+
+Nothing in this repository is `PRODUCTION-READY`. See the deployment blockers in the matrix.
 
 ---
 
-## COMPLETED MODULES
+## Gates, and their last result
 
-These modules have a contract and a working library foundation. They are **not** production-complete vertical slices yet (no API/UI), but they pass unit and integration tests.
+Every one of these runs locally and passes at HEAD. **None of them runs automatically** — see BL-10.
 
-| ID | Module | Evidence |
+| Gate | Command | Last result |
 |---|---|---|
-| K-05 | Configuration | `kernel/configuration/`, migration 0003, outbox 0013, 120+ tests |
-| K-08 | Event Infrastructure | `kernel/event-infrastructure/`, migration 0004, outbox-to-event adapter, 84+ tests |
-| K-09 | Audit Foundation | `kernel/audit-foundation/`, migration 0005, outbox-to-audit adapter, 83+ tests |
-| K-01 | Identity | `kernel/identity/`, migration 0006, 80+ tests |
-| K-03 | Accounts | `kernel/accounts/`, migration 0007, 82 tests |
-| K-02 | Authentication | `kernel/authentication/`, migration 0008, 95 tests; `MockVerifier` added in `kernel/authentication/verifiers/` with 12 tests |
-| K-04 | Permissions | `kernel/permissions/`, migration 0009, 104 tests (no callers) |
-| K-07 | Feature Flags | `kernel/feature-flags/`, migration 0010, outbox 0015, 95+ tests |
-| K-06 | Policy Engine | `kernel/policy-engine/`, migration 0011, outbox 0014, 90+ tests |
-| K-11 | Commerce Unit Registry | `kernel/commerce-unit-registry/`, migration 0012, outbox 0016, 8 test files |
-| FND-003d | Outbox Relay | `platform/outbox/relay.ts`, `platform/outbox/postgres-source.ts`, migrations 0013–0016, 70+ integration tests |
-| Cross-cutting | Outbox Consumption | `kernel/event-infrastructure/outbox-publisher.ts`, `kernel/audit-foundation/outbox-recorder.ts`, `tests/integration/outbox-relay-consumers.integration.ts` |
-| K-10 | Ledger Foundation | `kernel/ledger-foundation/`, migration 0017, 30 unit tests, 5 live PostgreSQL integration tests |
-| K-12 | Conversation Foundation | `kernel/conversation-foundation/`, migration 0018, 43 unit tests, 28 repository tests, 4 live PostgreSQL integration tests |
-| K-13 | AI Gateway | `kernel/ai-gateway/`, migration 0019, mock provider adapter, 80 unit tests, 5 live PostgreSQL integration tests |
-| K-14 | Notifications | `kernel/notifications/`, migration 0020, in-app provider, 60+ unit tests, 5 live PostgreSQL integration tests |
-| K-15 | Search Foundation | `kernel/search-foundation/`, migration 0021, PostgreSQL full-text search, 50+ unit tests, 5 live PostgreSQL integration tests |
-| M-01 | Universal Account | `modules/universal-account/`, migration 0024, **the first module-owned schema**, 32 unit tests, 6 live PostgreSQL integration tests |
-| M-02 | Capability & Verification | `modules/capability-verification/`, migration 0025, ordered levels, evidence held as an opaque reference only, 42 unit tests, 7 live PostgreSQL integration tests |
-| M-04 | Universal Listing | `modules/universal-listing/`, migrations 0026 and 0027, versioned offers that are never edited, bigint money, inventory availability derived from an append-only movement log with `CHECK (reserved <= on_hand)`, 52 unit tests (12 of them a parameterised contract suite), 14 live PostgreSQL integration tests |
+| Types | `npm run typecheck` | Pass |
+| Lint | `npm run lint` | Pass |
+| Format | `npm run format:check` | Pass |
+| Build | `npm run build` | Pass |
+| Boundaries | `npm run check:boundaries` | Pass — 264 files, 1060 imports, 0 violations |
+| Migrations | `npm run check:migrations` | Pass — 94 files, 0 violations |
+| Fixtures | `npm run check:fixtures` | Pass |
+| Unit tests | `npm test` | **2,032 pass, 0 fail** |
+| Integration | `npm run test:integration` | Live PostgreSQL 16, sequential |
+
+The integration suite must run with `--test-concurrency=1`; it derives scratch databases and two
+runners racing on `CREATE DATABASE` is not a recoverable state. Running two suites at once produces
+`duplicate key value violates unique constraint "pg_database_datname_index"`, which is the harness
+being correct rather than a defect.
 
 ---
 
-## IN-PROGRESS MODULES
+## Blockers
 
-| Priority | Module | Task |
-|---|---|---|
-| P0 | M-03 | Commerce Request (Need Engine) |
-| P0 | M-11 | Orders — pins a listing version and reserves stock |
-| P2 | M-36 | User Cockpit shell |
-
----
-
-## FAILED TESTS
-
-None.
-
-- Unit tests: 1,756 pass / 0 fail
-- Integration tests: 118 pass / 0 fail / 0 skipped (last completed run, live PostgreSQL 16)
-
----
-
-## BLOCKERS
-
-| ID | Blocker | Impact | Action |
+| ID | Blocker | What it stops | Position |
 |---|---|---|---|
-| BL-10 | GitHub Workflows permission missing | Cannot push CI | Create workflow files; request permission when convenient |
-| BL-04 | No AI provider credentials | Live AI adapters | Build mock adapters first; defer live providers |
-| BL-05 | No payment provider sandbox | Live payments | Build MockPaymentProvider first |
-| BL-07 | No email/SMS provider credentials | Live notifications | Build in-app notifications first |
-| BL-01 | No staging/cloud account | Deployment | Document; defer |
-| BL-02 | No production/cloud account | Deployment | Document; defer |
+| BL-10 | The repository credential lacks the Workflows permission | Nothing under `.github/workflows/` can be pushed, so no gate runs automatically | Every gate runs locally and passes. Needs a permission from the owner |
+| BL-05 | No payment gateway sandbox | Every capture succeeds against a mock. The platform can take an order and never take the money | `main.ts` refuses to start in production unless the operator acknowledges it |
+| BL-04 | No AI provider credentials | No model has ever been called; every AI capability is a mock | K-13's port and authority ceiling are real and tested |
+| BL-07 | No email/SMS/WhatsApp credentials | Only the in-app notification provider ships | — |
+| BL-01/BL-02 | No staging or production environment | Nothing is deployed anywhere | — |
+| — | No object storage | No image, document or delivery evidence can be stored | Blocks image Need and dispute evidence |
 
-None of the blockers stop autonomous development.
-
----
-
-## EXTERNAL CREDENTIALS REQUIRED
-
-| Service | Needed For | When |
-|---|---|---|
-| PostgreSQL live instance | Integration tests, local dev | **Available** — running on port 5434 due to local 5432/5433 conflict |
-| AI provider (OpenAI/Anthropic/Kimi/etc.) | K-13 live adapters | Phase 14+ |
-| Payment gateway (Stripe/local bank) | M-12 live adapters | Phase 7+ |
-| Email/SMS/WhatsApp provider | K-14 live adapters | Phase 10+ |
-| Maps provider | M-43 Location | Phase 10+ |
-| Object storage (S3/MinIO) | File uploads | Phase 14+ |
-| Singha API | M-36 Singha Connector | Phase 13 |
-| Yaanadiri API | M-40 Yaanadiri Connector | Phase 10 |
+None of these stops development. All of them stop deployment.
 
 ---
 
-## IMPORTANT ARCHITECTURAL DECISIONS
+## Standing constraints
 
-| Date | Decision | Reason | Document |
-|---|---|---|---|
-| 2026-08-24 | Preserve existing Claude-built foundation | Toolchain, boundaries, and tests are high quality and aligned with modular monolith approach | `docs/JAYA_EXISTING_SYSTEM_AUDIT.md` |
-| 2026-08-24 | Reconcile 83-module brief with existing 62-unit map | Existing map is already layered and acyclic; brief expands it rather than replacing it | `docs/JAYA_MASTER_ARCHITECTURE.md` §4 |
-| 2026-08-24 | Continue build order from K-11 onward | B-0/B-1/B-2 complete; B-3 open with K-06 and K-11 | `docs/JAYA_MODULE_MAP.md` §4 |
-| 2026-08-24 | AI Gateway is the sole provider boundary | Enforces provider neutrality and financial authority zone | `docs/JAYA_MASTER_ARCHITECTURE.md` §2.5 |
-| 2026-08-24 | Build mock adapters for every external dependency | Avoids credential blockers | `docs/JAYA_INTEGRATION_REGISTRY.md` |
-| 2026-08-24 | Run integration tests sequentially | Test database is derived to a single `_test` name; parallel file execution creates drop/create races | `docs/JAYA_DECISION_LOG.md` |
-| 2026-08-24 | Add `target` option to `migrateUp` | Lets tests migrate to a specific version without rolling back later migrations first | `docs/JAYA_DECISION_LOG.md` |
-| 2026-08-24 | MockVerifier is the first K-02 verifier adapter | Provides a deterministic, credential-less verifier for development and tests | `docs/JAYA_INTEGRATION_REGISTRY.md` |
-| 2026-08-24 | Module-owned outbox tables for K-05, K-06, K-07, K-11 | Each producing module owns its outbox schema so it can publish atomically without opening other modules' transactions | `docs/JAYA_DECISION_LOG.md` D-016 |
-| 2026-08-24 | Relay integration test against live PostgreSQL | Proves the platform relay can dispatch real outbox rows, mark them processed, and remain idempotent | `tests/integration/outbox-relay.integration.ts` |
-| 2026-08-24 | K-08/K-09 outbox-to-consumer adapters | The relay stays pure; kernel components provide their own adapters that forward payloads to EventService and AuditService | `kernel/event-infrastructure/outbox-publisher.ts`, `kernel/audit-foundation/outbox-recorder.ts` |
+Decisions that bind future work, kept here because breaking one silently is easy.
 
----
-
-## LATEST COMMIT
-
-`c730fda` — *Apply Claude session changes (iteration 104)*
-
-Uncommitted work in progress:
-- `feat(kernel): add K-10 Ledger Foundation with double-entry primitives`
-- `feat(kernel): add K-12 Conversation Foundation`
-- `feat(kernel): add K-13 AI Gateway with mock provider and task router`
-- `feat(kernel): add K-14 Notifications in-app channel`
-- `feat(kernel): add K-15 Search Foundation with PostgreSQL full-text search`
-- `fix(kernel): align K-10 identifier rules with platform standard and fix migration rollback`
-- `fix(kernel): correct K-10 PostgreSQL transaction decoder for sealed entries`
-- `fix(tests): use valid opaque identifiers in K-10 live integration tests`
-- `docs: update JAYA autonomous status and decision log`
-
-Next commits should use conventional commit messages, e.g.:
-- `feat(module): add M-01 Universal Account / M-02 Capability & Verification`
-- `feat(module): build M-36 User Cockpit shell`
-- `feat(module): add M-03 Need Engine first end-to-end request creation`
+- **Determinism.** Modules read no clock and generate no identifiers. The caller supplies every
+  identifier and every instant; the HTTP request context is the one place nondeterminism enters. A
+  test asserts modules contain no `Date.now`, `new Date`, `Math.random` or `crypto.randomUUID`.
+- **Money is `bigint` minor units**, and crosses the wire as a decimal string. `JSON.stringify`
+  throws on a bigint, so the pipeline converts them — a response carrying an order total would
+  otherwise fail *after* the work committed. No `double precision`, `real`, `float` or `money`
+  column may exist, and a check enforces it.
+- **The financial authority zone may never import K-13 AI Gateway.** Orders, payments, the ledgers,
+  commission, settlements and payouts. A boundary check fails the build.
+- **`is_opaque_identifier` is byte-identical in every schema** that carries it, enforced by test. It
+  refuses emails, telephone numbers, national identifiers, IBANs and anything credential-shaped.
+- **No PAN, CVV or equivalent is ever persisted.** What a client sends is a provider token; M-12
+  refuses an instrument by name.
+- **Internal JAYA value never goes through an external payment provider.** Rewards, cashback,
+  merchant credit, promotional credit, delivery credit and community credit settle in M-13, and
+  `assertSettlementAsset` refuses them at the boundary.
+- **Same-layer modules communicate by event, never by import.** Downward imports only; `platform`
+  sits below `kernel` and may not import it.
 
 ---
 
-## NEXT 10 TASKS
+## How to continue from a new session
 
-1. Begin M-01 Universal Account / M-02 Capability & Verification.
-2. Build M-36 User Cockpit shell.
-3. Implement M-03 Need Engine first end-to-end request creation.
-4. Implement M-04 Universal Listing / Inventory Interface.
-5. Implement M-06 Search & Discovery aggregation.
-6. Implement M-07 Matching Engine.
-7. Implement M-09 RFQ / Reverse Marketplace foundation.
-8. Implement M-11 Orders foundation.
-9. Implement M-12 Payments foundation.
-10. Implement M-13 Financial Ledger / M-14 Commission Rules.
+1. `git status` and `git log --oneline -5`.
+2. Read this file, then `JAYA_REMAINING_BACKLOG.md` for what is next.
+3. `npm run db:up && npm run db:ready` if the database is not running.
+4. `npm run verify` to confirm the foundation is green before changing anything.
+5. Take the first unstruck item from the backlog's P0 table.
 
----
-
-## HOW TO CONTINUE FROM A NEW SESSION
-
-1. Run `git status` and `git log --oneline -5` to see where you are.
-2. Read this file.
-3. Read `docs/JAYA_MASTER_ARCHITECTURE.md` and `docs/JAYA_MODULE_MAP.md`.
-4. Read `docs/JAYA_DECISION_LOG.md`.
-5. Start the database if needed: `npm run db:up && npm run db:ready` (uses port 5434).
-6. Run `npm run verify` and `npm run test:integration` to confirm the foundation is green.
-7. Pick the first non-blocked task from **Next 10 Tasks** above.
+Work in vertical slices: one slice leaves every gate green and is committed on its own. Do not mark
+anything done without named implementation files and a named test that passes — a README statement
+is not proof, an interface is not proof, a mock alone is not proof, and a generated test that has
+never run is not proof.

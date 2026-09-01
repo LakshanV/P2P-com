@@ -1,8 +1,12 @@
 # JAYA — Remaining Backlog
 
-**Derived from** `JAYA_REQUIREMENTS_TRACEABILITY_MATRIX.md` at commit `6a129c3`.  
+**Derived from** `JAYA_REQUIREMENTS_TRACEABILITY_MATRIX.md`, last reconciled at commit `e0b7761`.  
 **Status:** this is the authoritative development backlog. Work proceeds down it in order unless the
 owner says otherwise.
+
+Struck-through rows are done and are **kept rather than deleted**, so the list stays a record of what
+was decided as well as what remains. An item is struck only when it has named implementation files
+and a named test that passes.
 
 Complexity: **S** ≤ 1 slice · **M** 2–3 slices · **L** 4–8 slices · **XL** a module plus its schema,
 adapter, contract suite and integration proof.
@@ -16,8 +20,10 @@ this repository has used throughout.
 
 Three rules decide the order, in this precedence:
 
-1. **Nothing user-facing is built on an open door.** Authentication and authorisation come first
-   because every screen and every route built before them has to be revisited afterwards.
+1. **Nothing user-facing is built on an open door.** Authentication and authorisation came first
+   because every screen and every route built before them would have had to be revisited afterwards.
+   That is now done; what remains of it is rate limiting and a durable credential store, which stay
+   at the top for the same reason.
 2. **Close the spine before widening it.** The transaction path exists in pieces that have never been
    joined. Joining them is cheaper than building the next module, and it is what turns proven
    mechanisms into a working product.
@@ -29,10 +35,12 @@ Three rules decide the order, in this precedence:
 
 | # | Module | Requirement | Deps | Complexity | Parallel? | Deploy-blocking | UI-blocking | External dep | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | K-02 | **A real authentication verifier** | Owner decision on method | L | No | **Yes** | **Yes** | Possibly (OIDC/SMS) | K-02's core is done and integration tested. What is missing is one verifier. Password + argon2id needs no third party and can ship first; OTP or OIDC can be added behind the same port |
-| 2 | apps/api | **Authenticate every request** | 1 | M | No | **Yes** | **Yes** | No | Session token → principal, on the pipeline. `/v1/health` stays open |
-| 3 | apps/api + K-04 | **Authorise every route** | 2 | L | No | **Yes** | **Yes** | No | Publish a first policy version; call `authorize` before every handler. Fixes AC-03, AC-04, AC-06 together. **Today `GET /v1/accounts/{anyone}/money` returns anyone's balances** |
-| 4 | apps/api | **Rate limits** | 2 | M | Yes | **Yes** | No | No | Per-principal and per-IP. Needs a store; PostgreSQL is adequate at first |
+| ~~1~~ | K-02 | ~~**A real authentication verifier**~~ | — | L | — | — | — | No | **DONE.** `kernel/authentication/verifiers/password-hash.ts` and `password-verifier.ts`: scrypt at OWASP interactive parameters, parameters stored with the hash, timing-safe comparison, decoy hash so an unknown account costs the same as a wrong password. 20 tests. The owner decision was not needed after all — a password needs no third party, and OTP or OIDC can still be added behind the same port |
+| ~~2~~ | apps/api | ~~**Authenticate every request**~~ | — | M | — | — | — | No | **DONE.** `PipelineOptions.authorize` runs after routing and before every handler; `apps/api/access.ts` resolves the session through K-02 and the account through K-03 |
+| ~~3~~ | apps/api + K-04 | ~~**Authorise every route**~~ | — | L | — | — | — | No | **DONE.** `apps/api/policy.ts` is the published V1 policy; `ACCESS_POLICY` is exhaustive and fails closed, with a test that makes an unguarded route a failing build. Closed AC-03, AC-04, AC-05 and AC-06. 18 tests in `tests/api-access.test.ts` |
+| ~~3a~~ | apps/api | ~~**Verify webhook signatures**~~ | — | M | — | — | — | No | **DONE, and it was not on this list.** Found while doing #3: the route read `signatureVerified` out of the request body, so anybody could post a delivery claiming a payment had been captured. Now HMAC-SHA256 over the raw bytes with the timestamp inside the signed payload. Closed AC-12 |
+| **4** | apps/api | **Rate limits** | — | M | Yes | **Yes** | No | No | **Now the first item, and more urgent than when it was written.** Sign-in is reachable and scrypt is expensive by design, so an unthrottled login endpoint is both a credential-stuffing surface and a way to exhaust the server with work that looks legitimate. Per-principal and per-IP; PostgreSQL is an adequate store at first |
+| **4a** | K-02 | **A durable password credential store** | — | M | Yes | **Yes** | No | No | Passwords are in memory, so a restart locks everyone out; `main.ts` refuses to start in production because of it, with no acknowledgement flag. Needs a schema of its own — K-02's own migration promises that a dump of `kernel_authentication` yields nobody's credential, and that promise is worth keeping |
 | 5 | platform/db | **Backup and restore, proven by a restore test** | — | M | Yes | **Yes** | No | No | An untested restore is not a backup. Script + a test that restores into a scratch database and reads a row back |
 | 6 | — | **Consumer: `payment.captured` → `settleExternalLeg`** | — | S | Yes | No | No | No | **The single highest value item in this table.** Every piece exists; nothing joins them. Turns the mixed-value proof into a real settlement |
 | 7 | M-11 + M-04 | **Reserve inventory when an order is placed** | — | M | Yes | No | No | No | Both sides exist and are integration tested; nothing calls across. Same shape as #6 |
@@ -101,7 +109,7 @@ graph · Singha and Yaanadiri connectors.
 | Live payment gateway (J-20) | **BL-05** | Sandbox credentials for a Sri Lankan processor | Every capture succeeds against nothing. The platform can take an order and never take the money |
 | CI (AG-13) | **BL-10** | Workflows permission on the repository credential | Every gate passes locally and none runs automatically |
 | Live AI adapter (Z-03…Z-05) | — | An API key for Kimi, Claude or OpenAI | No model has ever been called; every AI capability is a mock |
-| Authentication method (AC-01) | — | **A decision**, not a credential: password policy, OTP over SMS, or an OIDC provider | No real person can log in |
+| ~~Authentication method (AC-01)~~ | — | ~~A decision: password, OTP or OIDC~~ | **Resolved by building.** A password verifier needs no third party and no decision from anybody, so it shipped; OTP and OIDC remain available behind the same port whenever the owner wants them |
 | Notification provider (39) | — | Email/SMS/WhatsApp credentials | Only the in-app provider ships |
 | Object storage (19) | — | A bucket and credentials | No image, document or evidence can be stored |
 

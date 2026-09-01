@@ -517,18 +517,18 @@ absent. What exists is the gateway they would be registered with.
 
 | ID | Requirement | Status | % | Notes |
 |---|---|---|---|---|
-| AC-01 | Authentication | `EXTERNALLY BLOCKED` | 15% | K-02 exists: sessions, bindings, evidence, MFA floor, SHA-256 secrets, absolute and idle expiry — all integration tested. **It ships only `mock-verifier.ts`.** No real person can authenticate. Needs an owner decision (password policy / OTP / OIDC) |
-| AC-02 | MFA readiness | `PARTIAL` | 50% | Factor categories and a per-provider floor that may be raised and never lowered exist and are tested. No second factor ships |
-| AC-03 | RBAC | `CONTRACT ONLY` | 20% | K-04 has publish/grant/revoke/authorise, integration tested. **Nothing anywhere calls `authorize`** |
-| AC-04 | Object-level permissions | `NOT STARTED` | 0% | **`GET /v1/accounts/{anyone}/money` returns anyone's balances** |
-| AC-05 | Organisation isolation | `NOT STARTED` | 0% | No organisation model |
-| AC-06 | IDOR protection | `NOT STARTED` | 0% | Every route is vulnerable by construction — see AC-04 |
+| AC-01 | Authentication | `INTEGRATION TESTED` | 80% | K-02 ships a real verifier: scrypt at OWASP's interactive parameters, the parameters stored **with** the hash so the cost can be raised without invalidating a credential, timing-safe comparison, and a decoy hash so an unknown account costs the same as a wrong password. A person signs in and calls the API in `tests/api-access.test.ts`. **Not higher:** the credential store is in memory — K-02's schema deliberately holds no credential, so a durable one needs a schema of its own — and `main.ts` refuses to start in production because of it |
+| AC-02 | MFA readiness | `PARTIAL` | 55% | Factor categories and a per-provider floor that may be raised and never lowered exist and are tested. The password verifier reports `single-factor` honestly rather than claiming more, which is what keeps the floor meaningful. No second factor ships |
+| AC-03 | RBAC | `INTEGRATION TESTED` | 85% | `apps/api/access.ts` calls `authorize` before every handler; `apps/api/policy.ts` is the published V1 policy. A buyer cannot capture or refund, a seller cannot create an order, and a session holding no grant reaches nothing. **Not higher:** grant *conditions* are unused, so a seller's authority is bounded by object ownership rather than by a predicate inside the grant |
+| AC-04 | Object-level permissions | `INTEGRATION TESTED` | 90% | The `OWNERS` table resolves who may reach each object, by resource type. K-04 structurally cannot do this — who owns order X is M-11's fact — so without it a legitimate "you may read orders" grant read everybody's. `GET /v1/accounts/{anyone}/money` now answers only that account |
+| AC-05 | Organisation isolation | `INTEGRATION TESTED` | 75% | The **account** is the isolation boundary: K-04 grants never span accounts, the account is resolved from the session and never read from the request, and `cross-account-access` is refused before any grant is loaded. Proven at the HTTP edge. **Not higher:** there is still no multi-member organisation model — one subject, one account |
+| AC-06 | IDOR protection | `INTEGRATION TESTED` | 90% | Absent and forbidden are answered identically, and a test asserts the two responses are indistinguishable — a 403 for one and a 404 for the other is an oracle for enumerating identifiers. Every route that names an object is covered |
 | AC-07 | CSRF | `NOT STARTED` | 0% | No cookies yet, so no surface yet |
 | AC-08 | XSS | `NOT STARTED` | 0% | No UI yet |
 | AC-09 | SQL injection | `IMPLEMENTATION COMPLETE` | 95% | Every statement is parameterised. Table names are constants, never interpolated from input |
-| AC-10 | Rate limits | `NOT STARTED` | 0% | **Deployment blocking** |
+| AC-10 | Rate limits | `NOT STARTED` | 0% | **Deployment blocking, and now the highest security gap.** Sign-in is reachable and scrypt is expensive *by design*, so an unthrottled login endpoint is both a credential-stuffing surface and a way to exhaust the server with legitimate-looking work |
 | AC-11 | Private uploads | `NOT STARTED` | 0% | No object storage at all |
-| AC-12 | Webhook verification | `PARTIAL` | 60% | M-12 **refuses** an unverified delivery and a test proves it. The transport that would verify the signature does not exist |
+| AC-12 | Webhook verification | `INTEGRATION TESTED` | 90% | **A real defect, found and closed.** The route read `signatureVerified` out of the request body, so anybody who could reach the port could post a delivery claiming a payment had been captured — M-12 refused correctly, but the caller was supplying the answer. It is now HMAC-SHA256 over the raw bytes, the timestamp inside the signed payload so it cannot be moved forward, a five-minute window each way, timing-safe comparison, and a body that still claims the field refused by name. **Not higher:** no live provider's scheme has been implemented against (BL-05) |
 | AC-13 | Replay protection | `INTEGRATION TESTED` | 100% | `UNIQUE (provider, provider_event_id)` |
 | AC-14 | Secrets | `PARTIAL` | 40% | Connection strings are redacted in driver errors and tested. No secret manager, no rotation |
 | AC-15 | PII in logs | `PARTIAL` | 60% | Unclassified errors go to the observer and a **generic** message to the client; a test asserts a leaked key does not reach a response. No systematic PII scrubbing |
@@ -604,10 +604,11 @@ working software is not, and the two are scored separately so the first cannot f
 | **Logistics** | **0%** | Nothing |
 | **Cockpit backend** | **12%** | 3 of 8 sections, buyer only, no role adaptation |
 | **Final UI/UX** | **0%** | Nothing. One README |
-| **Deployment readiness** | **18%** | Migrations and health are real. No CI, no auth, no monitoring, no backups, no staging |
-| **Overall original JAYA vision** | **≈ 13%** | See below |
+| **Security** | **58%** | Was not scored separately before, and should have been — it is the dimension that decides whether anything else may be deployed. Authentication, authorisation, object-level access, account isolation, IDOR and webhook verification are all real and tested at the HTTP edge. Rate limits, secret management, backups and consent are not |
+| **Deployment readiness** | **22%** | Migrations, health and now a closed front door are real. No CI, no rate limits, no monitoring, no backups, no staging, and passwords are not yet durable |
+| **Overall original JAYA vision** | **≈ 15%** | See below |
 
-### Why 13% and not 40%
+### Why 15% and not 40%
 
 A naive average of the rows above gives something near 25%. That would be dishonest, for three
 reasons:
@@ -615,33 +616,50 @@ reasons:
 1. **The bulk of the original vision is the Need → sourcing → RFQ → quote path**, and none of it
    exists. That is not one requirement; it is five sections and the reason the platform is
    differentiated.
-2. **Nothing is reachable by a user.** There is no UI and no authentication. Every capability
-   described above is reachable only by a test.
+2. **Nothing is reachable by a person who is not a developer.** There is now authentication and
+   authorisation, so a real user *could* be signed in — but there is no UI, no registration route,
+   and no durable password store, so in practice every capability above is still reached only by a
+   test.
 3. **Contracts and architecture were weighted down deliberately.** They are 85% and 45% complete and
    they are worth having, but a customer cannot buy anything with a boundary check.
 
-What *is* worth stating plainly: the 13% that exists is unusually solid. The financial core has
+The movement from 13% to 15% is two points and no more, and the reason is worth being explicit
+about: closing the front door does not add a feature. It converts a system that could not be
+deployed at all into one that could be deployed to people it does not yet have anything to show. It
+was still the right thing to do first, because every screen and every route built before it would
+have had to be revisited afterwards.
+
+What *is* worth stating plainly: the 15% that exists is unusually solid. The financial core has
 invariants enforced in the database, not just in code; the concurrency cases are proven against a
-real server; and several defects were caught by tests that a less careful suite would have missed.
+real server; and several defects — the webhook that trusted its caller among them — were caught by
+tests that a less careful suite would have missed.
 
 ---
 
 ## 6. Deployment blockers
 
-In order. The first two are not engineering problems.
+In order.
 
-1. **AC-01 Authentication** — K-02 ships only a mock verifier. No real person can log in. Needs an
-   owner decision on method.
-2. **AC-03/AC-04 Authorisation** — nothing calls K-04. `GET /v1/accounts/{anyone}/money` returns
-   anyone's balances and `POST /v1/payments/{id}/capture` moves money for anyone who can reach the
-   port.
+**Closed since the last revision, and no longer blocking:**
+
+- ~~AC-01 Authentication~~ — a real scrypt verifier ships and a person signs in.
+- ~~AC-03/AC-04/AC-05/AC-06 Authorisation~~ — every route is guarded, every object is checked
+  against its owner, and a test makes an unguarded route a failing build.
+- ~~AC-12 Webhook verification~~ — the route no longer takes the caller's word for it.
+
+**Still blocking:**
+
+1. **AC-10 Rate limits** — none. The most urgent of these, and more urgent than it was: sign-in is
+   now reachable, and scrypt is deliberately expensive, so an unthrottled login endpoint is a
+   credential-stuffing surface *and* a way to exhaust the server with work that looks legitimate.
+2. **A durable password store** — passwords are held in memory, so a restart locks everyone out.
+   `main.ts` refuses to start in production for this reason, with no acknowledgement flag.
 3. **AG-07/AG-08 Backups and restore** — none. Unacceptable for a system holding a ledger.
-4. **AC-10 Rate limits** — none.
-5. **J-20 Live payment gateway** — `EXTERNALLY BLOCKED` on BL-05. The platform can take an order and
+4. **J-20 Live payment gateway** — `EXTERNALLY BLOCKED` on BL-05. The platform can take an order and
    never take the money.
-6. **AG-13 CI** — `EXTERNALLY BLOCKED` on BL-10.
-7. **AG-02 Staging** — none.
-8. **AF UI** — nothing to deploy for a user.
+5. **AG-13 CI** — `EXTERNALLY BLOCKED` on BL-10.
+6. **AG-02 Staging** — none.
+7. **AF UI** — nothing to deploy for a user.
 
 ---
 
@@ -663,6 +681,10 @@ Stated precisely, because the point of this audit is that the list is short and 
   keep each module's own refusal code.
 - **MY MONEY** shows a holder's positions per asset type, with withdrawability and issuer beside the
   number, and refuses to invent a single total.
+- **A person can sign in** with a password verified against a scrypt hash, and every subsequent
+  request is authenticated, authorised against a published policy, and checked against the object it
+  names. One customer cannot read another's order, balance or payment; a buyer cannot capture or
+  refund; a session holding no grant reaches nothing at all.
 
 Everything else in this document is either partial, absent, or blocked.
 
@@ -670,11 +692,15 @@ Everything else in this document is either partial, absent, or blocked.
 
 ## 8. Current critical path
 
-1. Authentication and authorisation — every other user-facing thing is built on an open door.
-2. The Need engine (§B) — the entry point of the original product.
-3. Sourcing and RFQ (§E, §G) — the differentiated middle.
-4. Wire the spine end to end: Need → order → payment → `payment.captured` → `settleExternalLeg`.
-   Every piece of that chain exists except the consumer that joins the last two.
-5. A first UI.
+1. ~~Authentication and authorisation~~ — **done.** Every other user-facing thing was going to be
+   built on an open door, and now is not.
+2. Rate limits, then a durable password store — the two things that stand between the front door
+   being closed and its being safe to open to the public.
+3. Wire the spine end to end: order → inventory reservation → payment → `payment.captured` →
+   `settleExternalLeg` → fulfilment → completion. Every piece of that chain exists except the
+   consumers that join them, which is why it is the cheapest large gain available.
+4. The Need engine (§B) — the entry point of the original product.
+5. Sourcing and RFQ (§E, §G) — the differentiated middle.
+6. A first UI, once the journey above is proven end to end and not before.
 
 See `JAYA_REMAINING_BACKLOG.md` for the ordered work.
