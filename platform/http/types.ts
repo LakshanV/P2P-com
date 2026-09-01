@@ -29,6 +29,15 @@ export interface HttpRequest {
   /** Path parameters, filled in by the router from the matched route. */
   readonly params: Readonly<Record<string, string>>;
   readonly body: unknown;
+  /**
+   * The body exactly as it arrived, before parsing. Null when there was none.
+   *
+   * Kept because a signature is over **bytes**, not over meaning. Re-serialising the parsed body to
+   * check an HMAC would compare a signature against a different string — key order, whitespace and
+   * number formatting are all free to differ — so the check would fail for honest senders and, worse,
+   * tempt somebody into relaxing it until it passed.
+   */
+  readonly rawBody: string | null;
 }
 
 export interface HttpResponse {

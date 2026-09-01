@@ -37,10 +37,39 @@ export interface PipelineOptions {
    * than the pipeline choosing a logger for it.
    */
   readonly observe?: (record: RequestRecord) => void;
+  /**
+   * Called after routing and before the handler. Throwing refuses the request.
+   *
+   * The pipeline knows nothing about *what* is being decided — no sessions, no accounts, no roles.
+   * It knows only that the application gets to see the matched route before the handler does, and
+   * that a throw here is classified by `describe` like any other refusal. That is enough for an
+   * application to authorise every request in one place, and it keeps the substrate free of an
+   * authority model it has no business holding.
+   *
+   * It is placed here rather than left to each handler because a check every handler must remember
+   * is a check one handler will forget, and the forgetting is silent.
+   */
+  readonly authorize?: (
+    request: HttpRequest,
+    route: MatchedRoute,
+    correlationId: string,
+  ) => Promise<void>;
   /** Correlation id for a request that did not bring one. */
   readonly correlationFor: (request: RawRequest) => string;
   /** Largest body accepted, in bytes. */
   readonly maxBodyBytes?: number;
+}
+
+/**
+ * The route a request matched, as the authorisation hook needs it.
+ *
+ * The **registered** path — `/v1/orders/:orderId`, not `/v1/orders/ord_123`. An application keying
+ * an access policy off the concrete path would need one entry per identifier, which is another way
+ * of saying it would have none.
+ */
+export interface MatchedRoute {
+  readonly method: string;
+  readonly path: string;
 }
 
 export interface RawRequest {
@@ -167,9 +196,17 @@ export async function handleRequest(
     query,
     params: matched.params ?? {},
     body,
+    rawBody: raw.body,
   };
 
   try {
+    if (options.authorize !== undefined && matched.route !== undefined) {
+      await options.authorize(
+        request,
+        { method: matched.route.method, path: matched.route.path },
+        correlationId,
+      );
+    }
     const response = await (matched.route?.handler(request) ??
       Promise.resolve(
         problem({ status: 500, code: 'no-handler', detail: 'unreachable', correlationId }),

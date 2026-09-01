@@ -45,6 +45,12 @@ import {
 import { UserCockpitService } from '../modules/user-cockpit/index.ts';
 import { buildApi, type ApiServices } from '../apps/api/app.ts';
 import { CLASSIFIED_CODES } from '../apps/api/errors.ts';
+import {
+  SIGNATURE_HEADER,
+  webhookSecrets,
+  webhookSignatureHeader,
+} from '../apps/api/webhook-signature.ts';
+import { identityStack, type IdentityStack, type SignedIn } from './helpers/api-identity.ts';
 import { handleRequest, type RequestRecord } from '../platform/http/pipeline.ts';
 import type { HttpResponse } from '../platform/http/types.ts';
 
@@ -52,6 +58,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const BUYER = 'acct_01HR0API0buyer1';
 const SELLER = 'acct_01HR0API0sellr1';
 const NOW = '2026-07-01T09:00:00.000000Z';
+/** The mock provider's webhook signing secret, shared between this suite and the API it builds. */
+const WEBHOOK_SECRET = 'a-signing-secret-only-the-provider-and-this-deployment-hold';
 
 interface Harness {
   readonly call: (
@@ -62,6 +70,9 @@ interface Harness {
   ) => Promise<HttpResponse>;
   readonly observed: RequestRecord[];
   readonly services: ApiServices;
+  readonly identity: IdentityStack;
+  readonly buyer: SignedIn;
+  readonly seller: SignedIn;
 }
 
 /**
@@ -107,8 +118,31 @@ async function build(): Promise<Harness> {
   };
 
   const observed: RequestRecord[] = [];
+
+  // A real identity stack, and two real people. Every request in this file is now made *by*
+  // somebody: K-01 minted the subject, K-03 opened the account the fixtures trade within, K-02
+  // issued the session and K-04 evaluated a grant before the handler ran.
+  //
+  // The buyer holds both roles. This suite is about the API layer — statuses, idempotency,
+  // serialisation — and making every capture switch tokens would bury that under authorisation
+  // plumbing. Which roles may do what is the subject of `tests/api-access.test.ts`, where the two
+  // parties are kept apart on purpose.
+  const identity = await identityStack(NOW);
+  const buyer = await identity.register({
+    handle: 'api-buyer',
+    accountId: BUYER,
+    roles: ['CUSTOMER', 'SUPPLIER'],
+  });
+  const seller = await identity.register({
+    handle: 'api-seller',
+    accountId: SELLER,
+    roles: ['SUPPLIER', 'CUSTOMER'],
+  });
+
   const api = buildApi({
     services,
+    access: identity,
+    webhookSecrets: webhookSecrets({ mock: WEBHOOK_SECRET }),
     // Pinned, so every assertion in this file is about the API rather than about the clock.
     clock: () => NOW,
     generateCorrelationId: () => 'corr_01HR0APIGENERATED',
@@ -126,12 +160,14 @@ async function build(): Promise<Harness> {
       target,
       headers: {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        // Overridable, so a test can present no session, a stranger's, or the seller's.
+        authorization: `Bearer ${buyer.token}`,
         ...headers,
       },
       body: body === undefined ? null : JSON.stringify(body),
     });
 
-  return { call, observed, services };
+  return { call, observed, services, identity, buyer, seller };
 }
 
 /** A write with an idempotency key, which is what every write needs. */
@@ -574,48 +610,113 @@ test('a payment can be requested, authorised, captured and refunded over HTTP', 
   );
 });
 
-test('a webhook is accepted, and the caller’s signature answer is passed through honestly', async () => {
+/**
+ * The webhook route, which is the only door into this platform that a stranger can knock on.
+ *
+ * The defect these cases exist to keep closed: the route used to read `signatureVerified` out of the
+ * request body. M-12 refuses `unverified-webhook` correctly, but the caller was supplying the
+ * answer, so `{"signatureVerified": true, "assertedStatus": "captured"}` from anybody at all moved a
+ * payment. The check is now computed here, from a secret the caller does not hold.
+ */
+const HOOK_BODY = {
+  providerEventId: 'evt_api_0001',
+  paymentId: null,
+  kind: 'charge.captured',
+  assertedStatus: null,
+  assertedAmountMinor: null,
+  failureCode: null,
+  payload: { note: 'from the gateway' },
+};
+
+/** Sign a body the way the provider would, at the pinned instant this suite runs at. */
+function signed(
+  body: unknown,
+  secret = WEBHOOK_SECRET,
+  atSeconds?: number,
+): Record<string, string> {
+  const raw = JSON.stringify(body);
+  const seconds = atSeconds ?? Math.floor(Date.parse(NOW) / 1000);
+  return { [SIGNATURE_HEADER]: webhookSignatureHeader(secret, seconds, raw) };
+}
+
+test('an unsigned webhook is refused before M-12 is asked anything', async () => {
   const { call } = await build();
 
-  const unverified = await call(
-    'POST',
-    '/v1/payments/webhooks/mock',
-    {
-      providerEventId: 'evt_api_0001',
-      paymentId: null,
-      kind: 'charge.captured',
-      signatureVerified: false,
-      assertedStatus: null,
-      assertedAmountMinor: null,
-      failureCode: null,
-      payload: { note: 'from the gateway' },
-    },
-    keyed('idem_api_hook_bad'),
-  );
-  assert.equal(
-    unverified.status,
-    401,
-    'a webhook nobody verified is an instruction from a stranger to move money',
-  );
-  assert.equal(codeOf(unverified), 'unverified-webhook');
+  const response = await call('POST', '/v1/payments/webhooks/mock', HOOK_BODY, {
+    ...keyed('idem_api_hook_unsigned'),
+  });
 
-  const verified = await call(
-    'POST',
-    '/v1/payments/webhooks/mock',
-    {
-      providerEventId: 'evt_api_0002',
-      paymentId: null,
-      kind: 'charge.captured',
-      signatureVerified: true,
-      assertedStatus: null,
-      assertedAmountMinor: null,
-      failureCode: null,
-      payload: { note: 'from the gateway' },
-    },
-    keyed('idem_api_hook_ok'),
+  assert.equal(response.status, 401, 'an unsigned delivery is an instruction from a stranger');
+  assert.equal(codeOf(response), 'unsigned-webhook');
+});
+
+test('a webhook signed with the wrong secret is refused', async () => {
+  const { call } = await build();
+
+  const response = await call('POST', '/v1/payments/webhooks/mock', HOOK_BODY, {
+    ...keyed('idem_api_hook_wrong'),
+    ...signed(HOOK_BODY, 'a-secret-this-deployment-does-not-hold'),
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal(codeOf(response), 'bad-webhook-signature');
+  assert.ok(
+    !(response.body as { detail: string }).detail.includes('does not hold'),
+    'the refusal must not repeat the secret it was given',
   );
+});
+
+test('a webhook signed for an unconfigured provider is refused the same way', async () => {
+  // Deliberately indistinguishable from a wrong signature. A different code here would answer
+  // "which gateways does this deployment integrate with?" for anybody who asked.
+  const { call } = await build();
+
+  const response = await call('POST', '/v1/payments/webhooks/stripe', HOOK_BODY, {
+    ...keyed('idem_api_hook_unknown'),
+    ...signed(HOOK_BODY),
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal(codeOf(response), 'bad-webhook-signature');
+});
+
+test('a webhook whose timestamp is outside the window is refused, even correctly signed', async () => {
+  const { call } = await build();
+
+  const anHourAgo = Math.floor(Date.parse(NOW) / 1000) - 3600;
+  const response = await call('POST', '/v1/payments/webhooks/mock', HOOK_BODY, {
+    ...keyed('idem_api_hook_stale'),
+    ...signed(HOOK_BODY, WEBHOOK_SECRET, anHourAgo),
+  });
+
+  assert.equal(response.status, 401, 'a signature with no expiry can be replayed for ever');
+  assert.equal(codeOf(response), 'stale-webhook');
+});
+
+test('a body that claims the signature was checked is refused by name', async () => {
+  const { call } = await build();
+  const claiming = { ...HOOK_BODY, signatureVerified: true };
+
+  const response = await call('POST', '/v1/payments/webhooks/mock', claiming, {
+    ...keyed('idem_api_hook_claim'),
+    // Correctly signed, so the *only* reason this fails is the field itself.
+    ...signed(claiming),
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(codeOf(response), 'caller-asserted-verification');
+});
+
+test('a genuinely signed webhook is accepted', async () => {
+  const { call } = await build();
+
+  const response = await call('POST', '/v1/payments/webhooks/mock', HOOK_BODY, {
+    ...keyed('idem_api_hook_ok'),
+    ...signed(HOOK_BODY),
+  });
+
   assert.equal(
-    verified.status,
+    response.status,
     202,
     'a provider retrying on anything but 2xx would retry a stale event for ever',
   );
@@ -789,9 +890,12 @@ test('every request is observed with its status and code', async () => {
 });
 
 test('an unclassified failure tells the caller nothing and the observer everything', async () => {
-  const { observed } = await build();
+  const { observed, identity, buyer } = await build();
   const secret = new Error('connection to 10.0.0.4:5432 refused for user "jaya_app"');
 
+  // `getOrder` is called twice on this path: once by the ownership check and once by the handler.
+  // Both must fail the same way — an ownership check that swallowed a driver error would answer
+  // 404 for a database that is merely down, which is a lie about whether the order exists.
   const api = buildApi({
     services: {
       orders: {
@@ -801,6 +905,7 @@ test('an unclassified failure tells the caller nothing and the observer everythi
       ledger: {} as unknown as ApiServices['ledger'],
       cockpit: {} as unknown as ApiServices['cockpit'],
     },
+    access: identity,
     clock: () => NOW,
     generateCorrelationId: () => 'corr_01HR0APIGENERATED',
     observe: (record) => observed.push(record),
@@ -809,7 +914,7 @@ test('an unclassified failure tells the caller nothing and the observer everythi
   const response = await handleRequest(api, {
     method: 'GET',
     target: '/v1/orders/ord_01HR0APIboom001',
-    headers: {},
+    headers: { authorization: `Bearer ${buyer.token}` },
     body: null,
   });
 
@@ -869,6 +974,10 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
     new K10LedgerPort(kernelLedger),
   );
 
+  const identity = await identityStack(NOW);
+  const buyer = await identity.register({ handle: 'drift-buyer', accountId: BUYER });
+  await identity.register({ handle: 'drift-seller', accountId: SELLER });
+
   let tick = 0;
   const api = buildApi({
     services: {
@@ -877,6 +986,7 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
       ledger,
       cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
     },
+    access: identity,
     // A different instant and a different correlation id on each request, as production gives.
     clock: () => `2026-07-01T09:00:0${String(tick++)}.000000Z`,
     generateCorrelationId: () => `corr_01HR0APIGEN${String(tick).padStart(4, '0')}`,
@@ -886,7 +996,11 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
     handleRequest(api, {
       method: 'POST',
       target: '/v1/orders',
-      headers: { 'content-type': 'application/json', 'idempotency-key': 'idem_api_drift_01' },
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': 'idem_api_drift_01',
+        authorization: `Bearer ${buyer.token}`,
+      },
       body: JSON.stringify({
         buyerAccountId: BUYER,
         sellerAccountId: SELLER,

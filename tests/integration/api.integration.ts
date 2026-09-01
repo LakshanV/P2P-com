@@ -17,6 +17,10 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
+import { PostgresAccountRepository } from '../../kernel/accounts/index.ts';
+import { PostgresAuthenticationRepository } from '../../kernel/authentication/index.ts';
+import { PostgresIdentityRepository } from '../../kernel/identity/index.ts';
+import { PostgresPermissionRepository } from '../../kernel/permissions/index.ts';
 import { LedgerService, PostgresLedgerRepository } from '../../kernel/ledger-foundation/index.ts';
 import {
   FinancialLedgerService,
@@ -31,6 +35,8 @@ import {
 } from '../../modules/payments/index.ts';
 import { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import { buildApi } from '../../apps/api/app.ts';
+import { webhookSecrets } from '../../apps/api/webhook-signature.ts';
+import { identityStack } from '../helpers/api-identity.ts';
 import type { Database } from '../../platform/db/client.ts';
 import { createHttpServer } from '../../platform/http/server.ts';
 import { migrateUp } from '../../platform/db/runner.ts';
@@ -39,6 +45,15 @@ import { liveTestOptions, withTestDatabase } from './harness.ts';
 
 const BUYER = 'acct_live_apibuyer1';
 const SELLER = 'acct_live_apisellr1';
+const LIVE_WEBHOOK_SECRET = 'a-live-signing-secret-only-the-provider-and-this-deployment-hold';
+
+/**
+ * Distinguishes one server's identifiers from the next.
+ *
+ * These tests share one database, and a subject id derived from a handle alone would collide the
+ * second time `withServer` ran. K-01 refuses a duplicate, correctly.
+ */
+let namespaceCounter = 0;
 
 interface Client {
   readonly call: (
@@ -61,6 +76,29 @@ async function withServer(
     new PostgresFinancialLedgerRepository(database),
     new K10LedgerPort(journal),
   );
+  // The whole identity stack against the same database. Every request below carries a session that
+  // was issued by K-02, stored in PostgreSQL and read back over a socket, and a grant K-04 evaluated
+  // from a policy version that is a row rather than a fixture. Nothing about the guard is in memory.
+  const identity = await identityStack({
+    namespace: `live:${String(namespaceCounter++)}`,
+    repositories: {
+      identity: new PostgresIdentityRepository(database),
+      accounts: new PostgresAccountRepository(database),
+      authentication: new PostgresAuthenticationRepository(database),
+      permissions: new PostgresPermissionRepository(database),
+    },
+  });
+  const buyer = await identity.register({
+    handle: 'live-buyer',
+    accountId: BUYER,
+    roles: ['CUSTOMER', 'SUPPLIER'],
+  });
+  await identity.register({
+    handle: 'live-seller',
+    accountId: SELLER,
+    roles: ['SUPPLIER', 'CUSTOMER'],
+  });
+
   const api = buildApi({
     services: {
       orders,
@@ -68,6 +106,8 @@ async function withServer(
       ledger,
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
+    access: identity,
+    webhookSecrets: webhookSecrets({ mock: LIVE_WEBHOOK_SECRET }),
   });
 
   const server = createHttpServer(api);
@@ -79,6 +119,8 @@ async function withServer(
       method,
       headers: {
         ...(payload === undefined ? {} : { 'content-type': 'application/json' }),
+        // Overridable, so a test can present none.
+        authorization: `Bearer ${buyer.token}`,
         ...headers,
       },
       ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),

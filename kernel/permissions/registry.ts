@@ -71,6 +71,11 @@ export const ACTIONS: Readonly<Record<string, string>> = Object.freeze({
   update: 'change a resource that already exists',
   delete: 'remove a resource, where the owning component permits removal at all',
   approve: 'accept something for which a human decision is required',
+  // Separate verbs rather than "update a payment", because the parties differ. A buyer creates and
+  // authorises; taking the money and giving it back are the seller's, and collapsing all four into
+  // one action would mean any grant that let a buyer pay also let them refund themselves.
+  capture: 'take money that was authorised, which is the moment a payment becomes real',
+  refund: 'return money that was captured, in whole or in part',
   export: 'take a copy of data out of the platform',
   impersonate: 'act as another party, which nothing currently grants',
   'grant-permission': 'change who may do what — the authority over authority itself',
@@ -89,6 +94,9 @@ export const RESOURCE_TYPES: Readonly<Record<string, string>> = Object.freeze({
   order: 'a commerce transaction record',
   listing: 'an offer of something for sale or hire',
   payment: 'a movement of money, owned by the payments module when it exists',
+  wallet: 'a balance in one asset, held by one account. M-13 owns it; K-10 holds the journal',
+  'value-plan':
+    'how one amount is to be settled across several kinds of value at once, owned by M-13',
   'ledger-entry': 'a financial record. AI is never authoritative over one (v3 §38)',
   permission: 'authority itself: roles, grants and policy',
   'audit-record': 'a K-09 audit record',
@@ -126,6 +134,11 @@ export const AI_FORBIDDEN_RESOURCES: readonly string[] = Object.freeze([
   'permission',
   'ledger-entry',
   'payment',
+  // A wallet and a value plan are financial records in every sense that matters — a balance and an
+  // instruction to move value. Listing `ledger-entry` while leaving these out would have made the
+  // rule a rule about a table name rather than about money.
+  'wallet',
+  'value-plan',
 ]);
 
 /**

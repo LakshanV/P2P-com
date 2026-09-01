@@ -6,14 +6,34 @@
  * process. It is the only file here that reads an environment variable, opens a connection or binds
  * a port, which is why nothing above it needs a test that does any of those things.
  *
- * **It ships the mock payment provider, and says so.** BL-05 records that no payment sandbox exists,
- * so there is no live gateway adapter to wire. Starting with a mock in an environment that calls
- * itself production would be a way to take an order and never take the money, so this refuses to
- * start when `JAYA_ENV=production` unless the operator has explicitly acknowledged it.
+ * **It refuses to call itself production, twice over, and says why each time.**
+ *
+ * BL-05 records that no payment sandbox exists, so there is no live gateway adapter to wire.
+ * Starting with a mock in a live environment would be a way to take an order and never take the
+ * money, so this refuses unless the operator has explicitly acknowledged it.
+ *
+ * And passwords are held in memory, because K-02's schema deliberately holds no credential and the
+ * durable store has not been built. That refusal has no acknowledgement flag: locking every customer
+ * out on the next deployment is not a trade-off somebody can accept their way past.
+ *
+ * A composition root that starts anyway and logs a warning is a composition root whose warning
+ * nobody reads.
  *
  * Owned by: apps/api.
  */
 
+import { randomInt } from 'node:crypto';
+
+import { AccountService, PostgresAccountRepository } from '../../kernel/accounts/index.ts';
+import {
+  AuthenticationService,
+  InMemoryPasswordCredentialStore,
+  PasswordVerifier,
+  PostgresAuthenticationRepository,
+  ProviderRegistry,
+} from '../../kernel/authentication/index.ts';
+import { IdentityService, PostgresIdentityRepository } from '../../kernel/identity/index.ts';
+import { PermissionService, PostgresPermissionRepository } from '../../kernel/permissions/index.ts';
 import { PostgresDatabase } from '../../platform/db/postgres.ts';
 import { createHttpServer } from '../../platform/http/server.ts';
 import type { RequestRecord } from '../../platform/http/pipeline.ts';
@@ -31,7 +51,8 @@ import {
   resolveMockProvider,
 } from '../../modules/payments/index.ts';
 
-import { buildApi, type ApiServices } from './app.ts';
+import { buildApi, type ApiAccess, type ApiServices } from './app.ts';
+import { webhookSecrets, type WebhookSecrets } from './webhook-signature.ts';
 
 /** Read a variable, or fail with a message that says what to set. */
 function required(name: string): string {
@@ -80,6 +101,90 @@ export interface StartOptions {
   readonly environment: string;
 }
 
+/**
+ * The identity stack: who is calling, and what they may do.
+ *
+ * K-01, K-02, K-03 and K-04, all against PostgreSQL, wired to each other exactly as their ports
+ * describe — `AuthenticationService` *is* K-04's session validator and `AccountService` *is* its
+ * account lookup, with no adapter in between.
+ *
+ * **The password credential store is in memory, and that is why this process refuses to call itself
+ * production.** K-02's schema deliberately holds no credential of any kind — its own migration says
+ * a dump of `kernel_authentication` yields nobody's password — so a durable store needs a schema of
+ * its own, and writing one is a slice with a migration and an ownership decision in it. Until then
+ * every password is forgotten on restart. That is survivable in a staging environment and
+ * indefensible in a live one, so `start` refuses rather than letting somebody discover it.
+ */
+export function accessFor(database: PostgresDatabase, clock: () => string): ApiAccess {
+  const identity = new IdentityService(new PostgresIdentityRepository(database));
+  const accounts = new AccountService(new PostgresAccountRepository(database), identity);
+
+  let assertions = 0;
+  const passwords = new PasswordVerifier({
+    store: new InMemoryPasswordCredentialStore(),
+    now: clock,
+    newAssertionId: () => {
+      assertions += 1;
+      return `asrt_${randomOpaque(18)}${String(assertions).padStart(4, '0')}`;
+    },
+  });
+
+  const authentication = new AuthenticationService({
+    repository: new PostgresAuthenticationRepository(database),
+    providers: new ProviderRegistry([
+      { provider: 'password', description: 'A password, verified against a scrypt hash by K-02.' },
+    ]),
+    verifiers: [passwords],
+    subjects: identity,
+    clock: { now: clock },
+    entropy: { token: () => randomOpaque(43) },
+  });
+
+  const permissions = new PermissionService({
+    repository: new PostgresPermissionRepository(database),
+    sessions: authentication,
+    accounts,
+    clock: { now: clock },
+    // No bootstrap authority. Publishing the first policy is an operator act performed out of band,
+    // not something an HTTP process may do to itself on startup.
+  });
+
+  return { permissions, sessions: authentication, accounts };
+}
+
+/**
+ * Webhook signing secrets, from the environment.
+ *
+ * `JAYA_WEBHOOK_SECRET_<PROVIDER>` — so `JAYA_WEBHOOK_SECRET_MOCK` configures the `mock` provider.
+ * A provider with no variable set has no secret, and every delivery claiming to be from it is
+ * refused. Reading them here rather than anywhere else keeps the one file that touches the
+ * environment the one file that touches the environment.
+ */
+function webhookSecretsFromEnvironment(): WebhookSecrets {
+  const prefix = 'JAYA_WEBHOOK_SECRET_';
+  const found: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (!name.startsWith(prefix) || value === undefined || value === '') continue;
+    found[name.slice(prefix.length).toLowerCase()] = value;
+  }
+  return webhookSecrets(found);
+}
+
+/** The current instant, in the microsecond-width form every validator in this repository accepts. */
+function nowMicros(): string {
+  return new Date().toISOString().replace(/\.(\d{3})Z$/, '.$1000Z');
+}
+
+/** A random opaque handle K-01's rules accept: no long digit runs, no natural identifier. */
+function randomOpaque(length: number): string {
+  const alphabet = 'ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz0123456789';
+  let out = '';
+  for (let index = 0; index < length; index += 1) {
+    out += alphabet[randomInt(alphabet.length)] ?? 'A';
+  }
+  return out;
+}
+
 export function servicesFor(databaseUrl: string): ApiServices {
   const database = new PostgresDatabase(databaseUrl);
 
@@ -106,8 +211,24 @@ export function start(options: StartOptions): ReturnType<typeof createHttpServer
         'JAYA_ACKNOWLEDGE_MOCK_PROVIDER=yes to say you know.',
     );
   }
+  if (options.environment === 'production') {
+    // No acknowledgement flag for this one. A password store that forgets everything on restart is
+    // not a thing an operator can accept their way past: locking every customer out on the next
+    // deployment is not a trade-off, it is an outage.
+    throw new Error(
+      'Refusing to start in production: passwords are held in memory. K-02 stores no credential ' +
+        'by design, and the durable credential store has not been built yet, so every password ' +
+        'would be forgotten on restart and nobody could sign in again.',
+    );
+  }
 
-  const api = buildApi({ services: servicesFor(options.databaseUrl), observe: logRequest });
+  const database = new PostgresDatabase(options.databaseUrl);
+  const api = buildApi({
+    services: servicesFor(options.databaseUrl),
+    access: accessFor(database, nowMicros),
+    webhookSecrets: webhookSecretsFromEnvironment(),
+    observe: logRequest,
+  });
   const server = createHttpServer(api);
 
   // Cooperative shutdown: stop accepting, let in-flight requests finish, then exit. A process that

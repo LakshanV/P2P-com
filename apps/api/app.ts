@@ -20,16 +20,28 @@
  */
 
 import { assertOpaqueIdentifier } from '../../kernel/identity/index.ts';
+import type {
+  AccountLookup,
+  PermissionService,
+  SessionValidator,
+} from '../../kernel/permissions/index.ts';
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
 import type { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import { requestContext, type RequestContext } from '../../platform/http/context.ts';
-import type { PipelineOptions, RawRequest, RequestRecord } from '../../platform/http/pipeline.ts';
+import type {
+  MatchedRoute,
+  PipelineOptions,
+  RawRequest,
+  RequestRecord,
+} from '../../platform/http/pipeline.ts';
 import { Router } from '../../platform/http/router.ts';
 import { json, type HttpRequest } from '../../platform/http/types.ts';
 
+import { accessFor, guard } from './access.ts';
 import { ApiError, describeApiError } from './errors.ts';
+import { NO_WEBHOOK_SECRETS, type WebhookSecrets } from './webhook-signature.ts';
 import { addCockpitRoutes } from './routes/cockpit.ts';
 import { addLedgerRoutes } from './routes/ledger.ts';
 import { addOrderRoutes } from './routes/orders.ts';
@@ -43,8 +55,32 @@ export interface ApiServices {
   readonly cockpit: UserCockpitService;
 }
 
+/**
+ * What the API needs to decide who is calling and what they may do.
+ *
+ * **Required, not optional.** An optional access field is a field somebody leaves out, and leaving
+ * it out would silently reopen every route. Building an API therefore means deciding this, and a
+ * suite that wants to exercise a handler has to authenticate like a client does — which is the only
+ * way the suites prove the routes work *with* the guard rather than only without it.
+ */
+export interface ApiAccess {
+  readonly permissions: PermissionService;
+  /** K-02. `AuthenticationService` satisfies it. */
+  readonly sessions: SessionValidator;
+  /** K-03. `AccountService` satisfies it. */
+  readonly accounts: AccountLookup;
+}
+
 export interface ApiOptions {
   readonly services: ApiServices;
+  readonly access: ApiAccess;
+  /**
+   * Per-provider webhook signing secrets.
+   *
+   * Optional, and the default refuses every delivery. Optional is safe *here* — unlike `access` —
+   * because leaving it out closes the route rather than opening it.
+   */
+  readonly webhookSecrets?: WebhookSecrets;
   /** Overridable so a suite can pin the clock and the generated ids. Defaults to the real ones. */
   readonly clock?: () => string;
   readonly generateCorrelationId?: () => string;
@@ -111,7 +147,13 @@ export function buildApi(options: ApiOptions): PipelineOptions {
   });
 
   addOrderRoutes(router, { orders: options.services.orders, contextFor });
-  addPaymentRoutes(router, { payments: options.services.payments, contextFor });
+  addPaymentRoutes(router, {
+    payments: options.services.payments,
+    contextFor,
+    // Fails closed. A deployment that configures no secret accepts no webhook, rather than
+    // accepting every webhook because there was nothing to check one against.
+    webhookSecrets: options.webhookSecrets ?? NO_WEBHOOK_SECRETS,
+  });
   addLedgerRoutes(router, { ledger: options.services.ledger, contextFor });
   addCockpitRoutes(router, { cockpit: options.services.cockpit, contextFor });
 
@@ -130,9 +172,43 @@ export function buildApi(options: ApiOptions): PipelineOptions {
       ),
   });
 
+  const guardOptions = {
+    permissions: options.access.permissions,
+    sessions: options.access.sessions,
+    accounts: options.access.accounts,
+    services: options.services,
+  };
+
+  /**
+   * Every request, before every handler.
+   *
+   * A route with no entry in `ACCESS_POLICY` is a **500**, not a 403: it is the API's own defect
+   * rather than the caller's mistake, and answering 403 would let the defect sit there looking like
+   * a working refusal. A test asserts the table and the router agree, so this should be unreachable
+   * in a build that passed — but "should be unreachable" is not a reason to fail open.
+   */
+  const authorize = async (
+    request: HttpRequest,
+    route: MatchedRoute,
+    correlationId: string,
+  ): Promise<void> => {
+    const access = accessFor(route.method, route.path);
+    if (access === undefined) {
+      throw new ApiError(
+        500,
+        'no-access-policy',
+        `${route.method} ${route.path} has no entry in the access policy, so there is no rule ` +
+          'saying who may call it. It is refused rather than guessed at.',
+      );
+    }
+    if (access.anonymous === true) return;
+    await guard(guardOptions, request, access, correlationId);
+  };
+
   return {
     router,
     describe: describeApiError,
+    authorize,
     correlationFor: (raw: RawRequest) => correlationOf(raw.headers, generateCorrelationId),
     ...(options.observe === undefined ? {} : { observe: options.observe }),
   };

@@ -4,10 +4,16 @@
  * Two of these are worth reading closely.
  *
  * **The webhook route is the only one that accepts an instruction from outside the platform**, and
- * it is the only one where `signatureVerified` matters. This layer does not verify the signature —
- * the transport in front of it holds the signing secret — but it passes the caller's answer through
- * honestly, and M-12 refuses to act on a delivery nobody verified. A route that hardcoded `true`
- * would be the single worst line in this repository.
+ * it is the only one that authenticates with a signature rather than a session. It verifies that
+ * signature **here**, over the raw bytes, against a secret only the provider shares — see
+ * `webhook-signature.ts`.
+ *
+ * It did not always. An earlier revision read `signatureVerified` out of the request body and passed
+ * it to M-12, which meant anybody who could reach the port could post
+ * `{"signatureVerified": true, "assertedStatus": "captured"}` and move a payment. M-12 was doing its
+ * part — it refuses `unverified-webhook` outright — but the layer above was letting the attacker
+ * supply the answer. A body that still claims the field is now refused by name, for the same reason
+ * K-04 refuses a caller who says `allowed: true`: whoever asserts the check has not done it.
  *
  * **No route accepts an instrument.** There is no field for a card number here, and M-12 refuses one
  * by name if a client invents it. What a client sends is a provider token, and the opacity rule
@@ -26,22 +32,18 @@ import type { Route, Router } from '../../../platform/http/router.ts';
 import { json, type HttpRequest, type HttpResponse } from '../../../platform/http/types.ts';
 
 import { ApiError } from '../errors.ts';
-import {
-  readAmount,
-  readBoolean,
-  readInteger,
-  readObject,
-  readOptionalString,
-  readString,
-} from '../reading.ts';
+import { readAmount, readInteger, readObject, readOptionalString, readString } from '../reading.ts';
+import { verifyWebhookSignature, type WebhookSecrets } from '../webhook-signature.ts';
 
 export interface PaymentRoutesOptions {
   readonly payments: PaymentService;
   readonly contextFor: (request: HttpRequest) => RequestContext;
+  /** Per-provider signing secrets. A deployment that configures none accepts no webhook at all. */
+  readonly webhookSecrets: WebhookSecrets;
 }
 
 export function paymentRoutes(options: PaymentRoutesOptions): readonly Route[] {
-  const { payments, contextFor } = options;
+  const { payments, contextFor, webhookSecrets } = options;
 
   return [
     {
@@ -148,15 +150,34 @@ export function paymentRoutes(options: PaymentRoutesOptions): readonly Route[] {
       summary: 'Record a provider delivery, and apply it if it is still relevant.',
       handler: async (request: HttpRequest): Promise<HttpResponse> => {
         const context = contextFor(request);
+        const provider = request.params.provider ?? '';
+
+        // Refused by name, before anything else is read. A caller that supplies this field is
+        // asserting the outcome of the very check this route exists to perform, and accepting it
+        // "because it was probably the gateway" is how the earlier hole worked.
+        assertDoesNotAssertVerification(request.body);
+
+        // Throws on anything but a good signature over the exact bytes received, inside the
+        // replay window. There is no path past it: the value below is a constant precisely because
+        // reaching that line means the check passed.
+        verifyWebhookSignature({
+          provider,
+          rawBody: request.rawBody,
+          headers: request.headers,
+          secrets: webhookSecrets,
+          now: context.now,
+        });
+
         const result = await payments.recordWebhook({
           receiptId: context.derivedId('whk', 'receipt'),
-          provider: request.params.provider ?? '',
+          provider,
           providerEventId: readString(request.body, 'providerEventId'),
           paymentId: readOptionalString(request.body, 'paymentId'),
           kind: readString(request.body, 'kind'),
-          // Passed through from the transport that actually holds the signing secret. Hardcoding
-          // this to true would make every webhook route an unauthenticated way to move money.
-          signatureVerified: readBoolean(request.body, 'signatureVerified'),
+          // True because `verifyWebhookSignature` did not throw, and for no other reason. This is
+          // the one place in the repository where that flag may be set, and it is set from a
+          // computation rather than from input.
+          signatureVerified: true,
           assertedStatus: readOptionalString(request.body, 'assertedStatus'),
           assertedAmountMinor:
             readOptionalString(request.body, 'assertedAmountMinor') === null
@@ -237,6 +258,28 @@ function readFailureCode(body: unknown): FailureCode | null {
     );
   }
   return value as FailureCode;
+}
+
+/**
+ * Refuse a body that claims the signature has already been checked.
+ *
+ * The same principle K-04 applies to `allowed: true`: a field that states the outcome of a check is
+ * a field the checker must not read. Refused by name and with the reason, so a client that inherited
+ * the old shape is told what changed rather than left guessing why its delivery stopped working.
+ */
+function assertDoesNotAssertVerification(body: unknown): void {
+  if (typeof body !== 'object' || body === null) return;
+  for (const field of ['signatureVerified', 'signature_verified', 'verified', 'trusted']) {
+    if (field in (body as Record<string, unknown>)) {
+      throw new ApiError(
+        400,
+        'caller-asserted-verification',
+        `"${field}" is not a field a caller may send. Whether a delivery is genuine is computed ` +
+          'here, from the signature over the bytes you sent; a sender who could assert it would be ' +
+          'a sender who never had to sign anything.',
+      );
+    }
+  }
 }
 
 export function addPaymentRoutes(router: Router, options: PaymentRoutesOptions): Router {
