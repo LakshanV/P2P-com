@@ -12,6 +12,7 @@
  * Owned by: platform substrate.
  */
 
+import { toJsonSafe } from './json.ts';
 import { internalError, problem } from './problem.ts';
 import { splitTarget, type Router } from './router.ts';
 import { HTTP_METHODS, type HttpMethod, type HttpRequest, type HttpResponse } from './types.ts';
@@ -93,9 +94,17 @@ export async function handleRequest(
   ): HttpResponse => {
     record = { ...record, status: response.status, code, unclassified };
     options.observe?.(record);
-    // Every response carries the correlation id, success or failure. A client that can only quote
-    // one thing when something goes wrong should be able to quote it whatever happened.
-    return { ...response, headers: { ...response.headers, 'x-correlation-id': correlationId } };
+    return {
+      ...response,
+      // Every response carries the correlation id, success or failure. A client that can only quote
+      // one thing when something goes wrong should be able to quote it whatever happened.
+      headers: { ...response.headers, 'x-correlation-id': correlationId },
+      // Every bigint becomes its decimal string here rather than at the socket, so a test that
+      // calls this function sees exactly what a client receives. `JSON.stringify` throws on a
+      // bigint, so without this a response carrying an order total would fail *after* the work had
+      // been committed — a 500 for a request that succeeded.
+      body: toJsonSafe(response.body),
+    };
   };
 
   const refuse = (status: number, code: string, detail: string): HttpResponse =>

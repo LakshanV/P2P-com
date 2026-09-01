@@ -1192,6 +1192,19 @@ function assertPlanTransition(plan: ValuePlan, to: PlanStatus): void {
   }
 }
 
+/**
+ * Whether two records describe the same request.
+ *
+ * **Neither the instant nor the correlation id is compared.** Idempotency is about *what* the caller
+ * asked for. A retry arrives later than the original by definition, and it carries a fresh
+ * correlation id unless the client happened to reuse one — so comparing either would make every real
+ * retry a conflict and the whole mechanism useless. Both used to be compared, and only a live test
+ * with a real clock caught it: the unit suites pin the clock and the id generator, so the two
+ * attempts agreed and the divergence was invisible.
+ *
+ * What is compared is the business content. A retry that changes an amount, a party or an asset is
+ * not a retry, and `idempotency-key-reuse` is the right answer for it.
+ */
 function walletEquals(left: Wallet, right: Wallet): boolean {
   return (
     left.walletId === right.walletId &&
@@ -1199,7 +1212,6 @@ function walletEquals(left: Wallet, right: Wallet): boolean {
     left.assetTypeId === right.assetTypeId &&
     left.purpose === right.purpose &&
     left.ledgerAccountId === right.ledgerAccountId &&
-    left.correlationId === right.correlationId &&
     left.idempotencyKey === right.idempotencyKey
   );
 }
@@ -1213,7 +1225,6 @@ function planEquals(left: ValuePlan, right: ValuePlan): boolean {
     left.payeeAccountId === right.payeeAccountId &&
     left.settlementAssetTypeId === right.settlementAssetTypeId &&
     left.targetAmountMinor === right.targetAmountMinor &&
-    left.correlationId === right.correlationId &&
     left.idempotencyKey === right.idempotencyKey
   );
 }

@@ -1134,6 +1134,19 @@ function assertTransitionPermitted(
   }
 }
 
+/**
+ * Whether two records describe the same request.
+ *
+ * **Neither the instant nor the correlation id is compared.** Idempotency is about *what* the caller
+ * asked for. A retry arrives later than the original by definition, and it carries a fresh
+ * correlation id unless the client happened to reuse one — so comparing either would make every real
+ * retry a conflict and the whole mechanism useless. Both used to be compared, and only a live test
+ * with a real clock caught it: the unit suites pin the clock and the id generator, so the two
+ * attempts agreed and the divergence was invisible.
+ *
+ * What is compared is the business content. A retry that changes an amount, a party or an asset is
+ * not a retry, and `idempotency-key-reuse` is the right answer for it.
+ */
 function paymentEquals(left: Payment, right: Payment): boolean {
   return (
     left.paymentId === right.paymentId &&
@@ -1146,7 +1159,6 @@ function paymentEquals(left: Payment, right: Payment): boolean {
     left.assetCode === right.assetCode &&
     left.assetScale === right.assetScale &&
     left.amountMinor === right.amountMinor &&
-    left.correlationId === right.correlationId &&
     left.idempotencyKey === right.idempotencyKey
   );
 }

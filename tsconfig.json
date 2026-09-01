@@ -25,6 +25,6 @@
 
     "noEmit": true
   },
-  "include": ["platform/**/*.ts", "tests/**/*.ts"],
+  "include": ["platform/**/*.ts", "apps/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist", "tests/fixtures"]
 }

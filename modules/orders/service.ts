@@ -1452,13 +1452,24 @@ function isTerminal(status: OrderStatus): boolean {
   return status === 'completed' || status === 'cancelled';
 }
 
+/**
+ * Whether two orders are the same request.
+ *
+ * **The instant is deliberately not compared.** Idempotency is about what the caller asked for, not
+ * about when they asked: a retry arrives later than the original by definition, so comparing
+ * `createdAt` would make every real retry a conflict and the whole mechanism useless. It used to,
+ * and only a live test with a real clock caught it — the unit suites pin the clock, so both attempts
+ * carried the same instant and the two agreed.
+ *
+ * What is compared is the business content. A retry that changes the buyer, the seller or the
+ * currency is not a retry, and `idempotency-key-reuse` is the right answer for it.
+ */
 function orderEquals(a: Order, b: Order): boolean {
   return (
     a.orderId === b.orderId &&
     a.buyerAccountId === b.buyerAccountId &&
     a.sellerAccountId === b.sellerAccountId &&
-    a.currency === b.currency &&
-    a.createdAt === b.createdAt
+    a.currency === b.currency
   );
 }
 
@@ -1478,6 +1489,19 @@ function itemEquals(a: OrderItem, b: OrderItem): boolean {
   );
 }
 
+/**
+ * Whether two records describe the same request.
+ *
+ * **Neither the instant nor the correlation id is compared.** Idempotency is about *what* the caller
+ * asked for. A retry arrives later than the original by definition, and it carries a fresh
+ * correlation id unless the client happened to reuse one — so comparing either would make every real
+ * retry a conflict and the whole mechanism useless. Both used to be compared, and only a live test
+ * with a real clock caught it: the unit suites pin the clock and the id generator, so the two
+ * attempts agreed and the divergence was invisible.
+ *
+ * What is compared is the business content. A retry that changes an amount, a party or an asset is
+ * not a retry, and `idempotency-key-reuse` is the right answer for it.
+ */
 function eventEquals(a: OrderEvent, b: OrderEvent): boolean {
   return (
     a.eventId === b.eventId &&
@@ -1486,8 +1510,6 @@ function eventEquals(a: OrderEvent, b: OrderEvent): boolean {
     a.fromStatus === b.fromStatus &&
     a.toStatus === b.toStatus &&
     a.reason === b.reason &&
-    a.occurredAt === b.occurredAt &&
-    a.correlationId === b.correlationId &&
     a.idempotencyKey === b.idempotencyKey
   );
 }
