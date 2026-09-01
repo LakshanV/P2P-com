@@ -96,6 +96,23 @@ export { InMemoryPaymentRepository } from './repository.ts';
 export type { PaymentGuard, PaymentRepository, PaymentTransaction } from './repository.ts';
 
 export {
+  EnlistedPaymentRepository,
+  OUTBOX_TABLE,
+  PAYMENTS_SCHEMA,
+  PAYMENT_ATTEMPT_TABLE,
+  PAYMENT_TABLE,
+  PostgresPaymentRepository,
+  REFUND_TABLE,
+  TIMESTAMP_COLUMNS,
+  WEBHOOK_RECEIPT_TABLE,
+  enlistedClient,
+  toPayment,
+  toPaymentAttempt,
+  toRefund,
+  toWebhookReceipt,
+} from './postgres-repository.ts';
+
+export {
   PAYMENT_AUTHORISED_ACTION,
   PAYMENT_AUTHORISED_EVENT,
   PAYMENT_CANCELLED_ACTION,
