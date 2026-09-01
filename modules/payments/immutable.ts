@@ -79,3 +79,32 @@ export function sealWebhookReceipts(
 ): readonly WebhookReceipt[] {
   return Object.freeze(receipts.map(sealWebhookReceipt));
 }
+
+/**
+ * Whether a record has been through the seal.
+ *
+ * Used by tests and by the contract suite to assert the boundary actually holds, rather than
+ * trusting that every path remembered to call it.
+ */
+export function isPaymentSealed(payment: Payment): boolean {
+  return Object.isFrozen(payment);
+}
+
+export function isPaymentAttemptSealed(attempt: PaymentAttempt): boolean {
+  return Object.isFrozen(attempt);
+}
+
+export function isRefundSealed(refund: Refund): boolean {
+  return Object.isFrozen(refund);
+}
+
+/** A receipt is sealed only when its payload is frozen too, all the way down. */
+export function isWebhookReceiptSealed(receipt: WebhookReceipt): boolean {
+  return Object.isFrozen(receipt) && isDeeplyFrozen(receipt.payload);
+}
+
+function isDeeplyFrozen(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return true;
+  if (!Object.isFrozen(value)) return false;
+  return Object.values(value).every(isDeeplyFrozen);
+}

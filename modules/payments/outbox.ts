@@ -24,7 +24,7 @@ import type {
   PayloadField,
 } from '../../kernel/event-infrastructure/registry.ts';
 
-import type { Payment, PaymentAttempt, Refund } from './types.ts';
+import type { Payment, PaymentAttempt, Refund, WebhookReceipt } from './types.ts';
 
 const PAYMENT_EVENT_FIELDS = [
   { name: 'payment_id', kind: 'string', required: true, description: 'The payment identifier.' },
@@ -43,7 +43,12 @@ const PAYMENT_EVENT_FIELDS = [
   },
   { name: 'status', kind: 'string', required: true, description: 'The status after the change.' },
   { name: 'provider', kind: 'string', required: true, description: 'The provider adapter.' },
-  { name: 'rail', kind: 'string', required: true, description: 'How the value crossed the boundary.' },
+  {
+    name: 'rail',
+    kind: 'string',
+    required: true,
+    description: 'How the value crossed the boundary.',
+  },
   {
     name: 'asset_code',
     kind: 'string',
@@ -249,7 +254,11 @@ export const PAYMENT_REFUNDED_ACTION: AuditActionDefinition = {
 };
 
 /** The business payload every payment event shares. */
-function paymentPayload(payment: Payment, occurredAt: string, idempotencyKey: string): Record<string, string> {
+function paymentPayload(
+  payment: Payment,
+  occurredAt: string,
+  idempotencyKey: string,
+): Record<string, string> {
   return {
     payment_id: payment.paymentId,
     order_id: payment.orderId,
@@ -377,8 +386,7 @@ export function makeAttemptEvent(
   attempt: PaymentAttempt,
   definition: EventTypeDefinition,
 ): OutboxEntry {
-  const extra =
-    attempt.failureCode === null ? {} : { failure_code: attempt.failureCode };
+  const extra = attempt.failureCode === null ? {} : { failure_code: attempt.failureCode };
   return paymentEventEntry(
     payment,
     attempt.attemptId,
@@ -396,8 +404,7 @@ export function makeAttemptAction(
   attempt: PaymentAttempt,
   definition: AuditActionDefinition,
 ): OutboxEntry {
-  const extra =
-    attempt.failureCode === null ? {} : { failure_code: attempt.failureCode };
+  const extra = attempt.failureCode === null ? {} : { failure_code: attempt.failureCode };
   return paymentAuditEntry(
     payment,
     attempt.attemptId,
@@ -439,5 +446,48 @@ export function makeRefundAction(payment: Payment, refund: Refund): OutboxEntry 
       refund_id: refund.refundId,
       refund_amount_minor: String(refund.amountMinor),
     },
+  );
+}
+
+/**
+ * The event for a status a provider asserted over a webhook rather than in a call response.
+ *
+ * The fact id is the receipt, for the same reason an attempt-driven fact uses the attempt: one
+ * payment receives many webhooks, and an id derived from the payment would collide on the second.
+ */
+export function makeReceiptEvent(
+  payment: Payment,
+  receipt: WebhookReceipt,
+  definition: EventTypeDefinition,
+  failureCode: string | null,
+): OutboxEntry {
+  const extra = failureCode === null ? {} : { failure_code: failureCode };
+  return paymentEventEntry(
+    payment,
+    receipt.receiptId,
+    definition,
+    receipt.receivedAt,
+    receipt.idempotencyKey,
+    receipt.correlationId,
+    extra,
+  );
+}
+
+/** The audit record for a webhook M-12 acted on. */
+export function makeReceiptAction(
+  payment: Payment,
+  receipt: WebhookReceipt,
+  definition: AuditActionDefinition,
+  failureCode: string | null,
+): OutboxEntry {
+  const extra = failureCode === null ? {} : { failure_code: failureCode };
+  return paymentAuditEntry(
+    payment,
+    receipt.receiptId,
+    definition,
+    receipt.receivedAt,
+    receipt.idempotencyKey,
+    receipt.correlationId,
+    extra,
   );
 }

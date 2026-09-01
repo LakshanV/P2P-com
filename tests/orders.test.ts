@@ -230,7 +230,7 @@ test('every cancellation reason in the vocabulary is accepted, and nothing else 
   assert.equal(
     await codeOf(() =>
       harness.service.cancelOrder(
-        cancelRequest(orderId, { cancellationReason: 'changed-my-mind' as never }),
+        cancelRequest(orderId, { cancellationReason: 'changed-my-mind' }),
       ),
     ),
     'unknown-cancellation-reason',

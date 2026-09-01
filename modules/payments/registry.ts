@@ -124,19 +124,24 @@ export function assertPaymentRail(value: unknown, field: string): PaymentRail {
  * legs against the universal ledger; M-12 orchestrates only the externally settled leg.
  */
 export function assertSettlementAsset(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !/^[A-Z0-9]{3,12}$/.test(value)) {
-    throw new PaymentError(
-      'malformed-asset-code',
-      `${field} is "${String(value)}"; expected 3-12 uppercase letters or digits — a settlement ` +
-        'asset such as LKR, USD, BTC or USDC, not necessarily an ISO-4217 code',
-    );
-  }
-  if ((INTERNAL_VALUE_CODES as readonly string[]).includes(value)) {
+  // The internal-value check comes **first**, and the order is load-bearing. Every JAYA value code
+  // carries an underscore and some exceed twelve characters, so a shape check placed ahead of this
+  // one would refuse them all as malformed and this refusal would never reach a caller. The
+  // difference matters: "malformed-asset-code" tells somebody to fix their string, where what they
+  // have actually done is try to settle a restricted credit through a bank.
+  if (typeof value === 'string' && (INTERNAL_VALUE_CODES as readonly string[]).includes(value)) {
     throw new PaymentError(
       'internal-value-not-settleable',
       `${field} is "${value}", which is value JAYA issues itself. No external provider can settle ` +
         'it, and treating it as cash would convert a restricted credit into money. M-13 allocates ' +
         'internal value against the universal ledger; M-12 settles only external rails',
+    );
+  }
+  if (typeof value !== 'string' || !/^[A-Z0-9]{3,12}$/.test(value)) {
+    throw new PaymentError(
+      'malformed-asset-code',
+      `${field} is "${String(value)}"; expected 3-12 uppercase letters or digits — a settlement ` +
+        'asset such as LKR, USD, BTC or USDC, not necessarily an ISO-4217 code',
     );
   }
   return value;
@@ -165,7 +170,10 @@ export function assertOptionalFailureCode(value: unknown, field: string): Failur
   if (typeof value !== 'string' || !(FAILURE_CODES as readonly string[]).includes(value)) {
     throw new PaymentError(
       'unknown-failure-code',
-      `${field} is "${String(value)}"; expected one of ${FAILURE_CODES.join(', ')}`,
+      // Described by type rather than stringified: `value` here is anything but null, and calling
+      // String() on an object yields "[object Object]", which tells a reader nothing.
+      `${field} is ${typeof value === 'string' ? `"${value}"` : typeof value}; expected one of ` +
+        FAILURE_CODES.join(', '),
     );
   }
   return value as FailureCode;

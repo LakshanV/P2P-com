@@ -19,6 +19,10 @@
  *     ...unavailable...   → failed, provider-unavailable
  *     anything else       → succeeded
  *
+ * A trigger can be scoped to one operation by naming it — `capture-timeout`, `refund-decline` —
+ * so a payment can authorise cleanly and then fail at capture, which is the sequence that matters
+ * most and the one a bare trigger cannot express.
+ *
  * A successful reference is derived from the idempotency key, so retrying one logical operation
  * returns the same reference — which is what lets the reconciliation trail line up after a timeout.
  *
@@ -46,9 +50,34 @@ const FAILURE_TRIGGERS: readonly (readonly [string, FailureCode])[] = [
   ['risk', 'risk-rejected'],
 ];
 
-/** The failure this token asks for, or null when it asks for success. */
-function failureFor(instrumentToken: string): FailureCode | null {
+/** The operations a trigger can be scoped to. */
+const KINDS: readonly string[] = ['auth', 'capture', 'cancel', 'refund'];
+
+/**
+ * The failure this token asks for at this step, or null when it asks for success.
+ *
+ * A bare trigger — `tok_decline_1` — fails every operation, which is what most tests want. A
+ * **stage-scoped** trigger — `tok_capture-timeout_1` — fails only the operation it names and lets
+ * the others through. Without that, a payment could never authorise successfully and then time out
+ * at capture, and that is precisely the sequence a payment platform has to survive: the money may
+ * have moved, nobody knows, and the retry must not take it twice.
+ */
+function failureFor(kind: string, instrumentToken: string): FailureCode | null {
   const token = instrumentToken.toLowerCase();
+
+  let scoped: FailureCode | null = null;
+  let anyScoped = false;
+  for (const [needle, code] of FAILURE_TRIGGERS) {
+    for (const candidate of KINDS) {
+      if (!token.includes(`${candidate}-${needle}`)) continue;
+      anyScoped = true;
+      if (candidate === kind && scoped === null) scoped = code;
+    }
+  }
+  // A token carrying any stage-scoped trigger is read as scoped throughout: the bare needle inside
+  // `capture-timeout` must not also fail the authorise.
+  if (anyScoped) return scoped;
+
   for (const [needle, code] of FAILURE_TRIGGERS) {
     if (token.includes(needle)) return code;
   }
@@ -69,7 +98,7 @@ function settle(
   kind: string,
   request: { instrumentToken: string; idempotencyKey: string },
 ): ProviderResult {
-  const failureCode = failureFor(request.instrumentToken);
+  const failureCode = failureFor(kind, request.instrumentToken);
   if (failureCode !== null) {
     // A declined authorisation has no provider reference: nothing was created to refer to.
     return Object.freeze({ outcome: 'failed' as const, providerReference: null, failureCode });

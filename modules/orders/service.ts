@@ -11,6 +11,7 @@
  * Owned by: M-11 Orders.
  */
 
+import type { OutboxEntry } from '../../platform/outbox/types.ts';
 import { InvalidInstantError, parseInstant } from '../../platform/time/instant.ts';
 
 import { FOREIGN_FIELDS, assertCancellationReason, assertOrderIdentifier } from './registry.ts';
@@ -226,6 +227,23 @@ export interface SplitOrderResult {
   readonly order: Order;
   readonly children: readonly Order[];
   readonly replayed: boolean;
+}
+
+/**
+ * What every status transition supplies, whatever it calls its own timestamp.
+ *
+ * `confirmOrder`, `startFulfilment` and `completeOrder` share one implementation, and this is the
+ * shape that implementation may rely on. Its own instant is passed as a value rather than looked up
+ * by name, so the helper never needs to index a request by string — which is what previously forced
+ * it to treat the request as a bag of unknowns and cast every field back out.
+ */
+interface TransitionRequest {
+  readonly orderId: string;
+  readonly eventId: string;
+  readonly updatedAt: string;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+  readonly reason: string;
 }
 
 const SPLIT_ORDER_KEYS: readonly string[] = [
@@ -676,6 +694,7 @@ export class OrderService {
       operation: 'confirmOrder',
       fromStatus: 'placed',
       toStatus: 'confirmed',
+      timestampValue: request.confirmedAt,
       timestampField: 'confirmedAt',
       orderTimestampField: 'confirmedAt',
       makeEvent: makeOrderConfirmedEvent,
@@ -695,6 +714,7 @@ export class OrderService {
       operation: 'startFulfilment',
       fromStatus: 'confirmed',
       toStatus: 'fulfilling',
+      timestampValue: request.fulfillingAt,
       timestampField: 'fulfillingAt',
       orderTimestampField: null,
       makeEvent: makeOrderFulfillingEvent,
@@ -707,17 +727,14 @@ export class OrderService {
    *
    * `fulfilling` → `completed`. Terminal.
    */
-  completeOrder(request: CompleteOrderRequest): Promise<CompleteOrderResult>;
-  completeOrder(request: Record<string, unknown>): Promise<CompleteOrderResult>;
-  async completeOrder(
-    request: CompleteOrderRequest | Record<string, unknown>,
-  ): Promise<CompleteOrderResult> {
+  async completeOrder(request: CompleteOrderRequest): Promise<CompleteOrderResult> {
     return this.#transition({
-      request: request as CompleteOrderRequest,
+      request,
       permittedKeys: COMPLETE_ORDER_KEYS,
       operation: 'completeOrder',
       fromStatus: 'fulfilling',
       toStatus: 'completed',
+      timestampValue: request.completedAt,
       timestampField: 'completedAt',
       orderTimestampField: 'completedAt',
       makeEvent: makeOrderCompletedEvent,
@@ -755,13 +772,9 @@ export class OrderService {
    *
    * Any non-terminal status → `cancelled`. Terminal.
    */
-  cancelOrder(request: CancelOrderRequest): Promise<CancelOrderResult>;
-  cancelOrder(request: Record<string, unknown>): Promise<CancelOrderResult>;
-  async cancelOrder(
-    request: CancelOrderRequest | Record<string, unknown>,
-  ): Promise<CancelOrderResult> {
+  async cancelOrder(request: CancelOrderRequest): Promise<CancelOrderResult> {
     assertNoForeignConcerns(request, CANCEL_ORDER_KEYS, 'cancelOrder');
-    const typed = request as CancelOrderRequest;
+    const typed = request;
     assertOrderIdentifier(typed.orderId, 'orderId');
     assertOrderIdentifier(typed.eventId, 'eventId');
     const cancellationReason = assertCancellationReason(
@@ -898,9 +911,9 @@ export class OrderService {
    * `allocation-currency-mismatch` and — the central rule — `allocation-mismatch` when the summed
    * child quantities do not equal the parent's ordered quantity for every pinned listing version.
    */
-  async splitOrder(request: Record<string, unknown>): Promise<SplitOrderResult> {
+  async splitOrder(request: SplitOrderRequest): Promise<SplitOrderResult> {
     assertNoForeignConcerns(request, SPLIT_ORDER_KEYS, 'splitOrder');
-    const typed = request as unknown as SplitOrderRequest;
+    const typed = request;
     assertOrderIdentifier(typed.parentOrderId, 'parentOrderId');
     assertOrderIdentifier(typed.eventId, 'eventId');
     const occurredAt = parseAndCheckInstant(typed.occurredAt, 'occurredAt');
@@ -1184,22 +1197,25 @@ export class OrderService {
     });
   }
 
-  async #transition<T extends { readonly orderId: string; readonly eventId: string }>(options: {
+  async #transition<T extends TransitionRequest>(options: {
     readonly request: T;
     readonly permittedKeys: readonly string[];
     readonly operation: string;
     readonly fromStatus: OrderStatus;
     readonly toStatus: OrderStatus;
+    /**
+     * The transition's own instant, taken from the request by the caller.
+     *
+     * Passed as a value rather than looked up by name, because every operation names its timestamp
+     * differently — `confirmedAt`, `fulfillingAt`, `completedAt` — and reading it by string index
+     * would mean typing the request as a bag of unknowns, which is how the casts got here.
+     */
+    readonly timestampValue: string;
+    /** The field's name, for the wording of a refusal. */
     readonly timestampField: string;
-    readonly orderTimestampField: keyof Order | null;
-    readonly makeEvent: (
-      order: Order,
-      event: OrderEvent,
-    ) => import('../../platform/outbox/types.ts').OutboxEntry;
-    readonly makeAction: (
-      order: Order,
-      event: OrderEvent,
-    ) => import('../../platform/outbox/types.ts').OutboxEntry;
+    readonly orderTimestampField: 'confirmedAt' | 'completedAt' | null;
+    readonly makeEvent: (order: Order, event: OrderEvent) => OutboxEntry;
+    readonly makeAction: (order: Order, event: OrderEvent) => OutboxEntry;
     /**
      * An extra rule checked inside the transaction, after the order is loaded and before anything
      * is written. A parent order uses it to refuse completion while a child is still in flight;
@@ -1207,18 +1223,15 @@ export class OrderService {
      */
     readonly guard?: (order: Order, tx: OrderTransaction) => Promise<void>;
   }): Promise<{ readonly order: Order; readonly replayed: boolean }> {
-    const request = options.request as Record<string, unknown>;
+    const request = options.request;
     assertNoForeignConcerns(request, options.permittedKeys, options.operation);
-    assertOrderIdentifier(request.orderId as string, 'orderId');
-    assertOrderIdentifier(request.eventId as string, 'eventId');
-    const occurredAt = parseAndCheckInstant(
-      request[options.timestampField] as string,
-      options.timestampField,
-    );
-    const updatedAt = parseAndCheckInstant(request.updatedAt as string, 'updatedAt');
+    assertOrderIdentifier(request.orderId, 'orderId');
+    assertOrderIdentifier(request.eventId, 'eventId');
+    const occurredAt = parseAndCheckInstant(options.timestampValue, options.timestampField);
+    const updatedAt = parseAndCheckInstant(request.updatedAt, 'updatedAt');
 
     return this.#repository.withTransaction(async (tx) => {
-      const existingEvent = await tx.findEventByIdempotencyKey(request.idempotencyKey as string);
+      const existingEvent = await tx.findEventByIdempotencyKey(request.idempotencyKey);
       if (existingEvent !== null) {
         const expected = buildTransitionEventFromRequest(
           request,
@@ -1233,11 +1246,11 @@ export class OrderService {
             `idempotency key "${request.idempotencyKey}" has already been used for a different event`,
           );
         }
-        const order = await requireOrder(tx, request.orderId as string);
+        const order = await requireOrder(tx, request.orderId);
         return { order: sealOrder(order), replayed: true };
       }
 
-      const existingEventId = await tx.findEventById(request.eventId as string);
+      const existingEventId = await tx.findEventById(request.eventId);
       if (existingEventId !== null) {
         const expected = buildTransitionEventFromRequest(
           request,
@@ -1252,11 +1265,11 @@ export class OrderService {
             `event ${request.eventId} already exists with different content`,
           );
         }
-        const order = await requireOrder(tx, request.orderId as string);
+        const order = await requireOrder(tx, request.orderId);
         return { order: sealOrder(order), replayed: true };
       }
 
-      const order = await requireOrder(tx, request.orderId as string);
+      const order = await requireOrder(tx, request.orderId);
       if (order.status !== options.fromStatus) {
         throw new OrderError(
           'illegal-transition',
@@ -1269,28 +1282,31 @@ export class OrderService {
       const event = sealOrderEvent(
         validateOrderEvent(
           {
-            eventId: request.eventId as string,
+            eventId: request.eventId,
             orderId: order.orderId,
             kind: options.toStatus as OrderEventKind,
             fromStatus: options.fromStatus,
             toStatus: options.toStatus,
-            reason: request.reason as string,
+            reason: request.reason,
             occurredAt,
-            correlationId: request.correlationId as string,
-            idempotencyKey: request.idempotencyKey as string,
+            correlationId: request.correlationId,
+            idempotencyKey: request.idempotencyKey,
           },
           'request',
         ),
       );
 
-      const updated = sealOrder({
-        ...order,
-        status: options.toStatus,
-        ...(options.orderTimestampField !== null
-          ? { [options.orderTimestampField]: occurredAt }
-          : {}),
-        updatedAt,
-      } as unknown as Order);
+      // Written out rather than computed from a key, because a computed key widens the record to a
+      // string-indexed bag and the only way back is a cast — which is what let a wrong field name
+      // through the compiler in the first place. Two statuses stamp a timestamp; both are named.
+      const moved: Order = { ...order, status: options.toStatus, updatedAt };
+      const updated = sealOrder(
+        options.orderTimestampField === 'confirmedAt'
+          ? { ...moved, confirmedAt: occurredAt }
+          : options.orderTimestampField === 'completedAt'
+            ? { ...moved, completedAt: occurredAt }
+            : moved,
+      );
 
       await tx.updateOrder(updated);
       await tx.insertEvent(event);
@@ -1508,7 +1524,7 @@ function buildPlacedEventFromRequest(request: PlaceOrderRequest, stored: OrderEv
 }
 
 function buildTransitionEventFromRequest(
-  request: Record<string, unknown>,
+  request: TransitionRequest,
   stored: OrderEvent,
   fromStatus: OrderStatus,
   toStatus: OrderStatus,
@@ -1520,10 +1536,10 @@ function buildTransitionEventFromRequest(
     kind: toStatus as OrderEventKind,
     fromStatus,
     toStatus,
-    reason: request.reason as string,
+    reason: request.reason,
     occurredAt,
-    correlationId: request.correlationId as string,
-    idempotencyKey: request.idempotencyKey as string,
+    correlationId: request.correlationId,
+    idempotencyKey: request.idempotencyKey,
   };
 }
 
