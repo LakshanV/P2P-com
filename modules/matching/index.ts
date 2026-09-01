@@ -24,6 +24,22 @@ export type {
 
 export { NOT_CONFIGURED } from './ports.ts';
 export { catalogueRung } from './rungs/catalogue-rung.ts';
+export { knownSupplierRung, verifiedSupplierRung } from './rungs/supplier-rungs.ts';
+export type {
+  SupplierDirectory,
+  SupplierProfile,
+  SupplierRungOptions,
+} from './rungs/supplier-rungs.ts';
+export {
+  externalDiscoveryRung,
+  failingExternalDiscovery,
+  mockExternalDiscovery,
+} from './rungs/external-discovery.ts';
+export type {
+  ExternalDiscoveryOptions,
+  ExternalSupplierDiscoveryProvider,
+  SupplierLead,
+} from './rungs/external-discovery.ts';
 export type {
   CatalogueEntry,
   CatalogueRungOptions,
