@@ -45,6 +45,10 @@ import {
   K10LedgerPort,
   PostgresFinancialLedgerRepository,
 } from '../../modules/financial-ledger/index.ts';
+import {
+  CommerceRequestService,
+  PostgresCommerceRequestRepository,
+} from '../../modules/commerce-request/index.ts';
 import { OrderService, PostgresOrderRepository } from '../../modules/orders/index.ts';
 import {
   PostgresUniversalListingRepository,
@@ -281,7 +285,9 @@ export function servicesFor(databaseUrl: string): ApiServices {
 
   const listings = new UniversalListingService(new PostgresUniversalListingRepository(database));
 
-  return { orders, payments, ledger, cockpit, listings };
+  const needs = new CommerceRequestService(new PostgresCommerceRequestRepository(database));
+
+  return { orders, payments, ledger, cockpit, listings, needs };
 }
 
 export function start(options: StartOptions): ReturnType<typeof createHttpServer> {

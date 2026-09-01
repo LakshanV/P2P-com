@@ -27,6 +27,7 @@ import type {
 } from '../../kernel/permissions/index.ts';
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
+import type { CommerceRequestService } from '../../modules/commerce-request/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
 import type { UniversalListingService } from '../../modules/universal-listing/index.ts';
 import type { UserCockpitService } from '../../modules/user-cockpit/index.ts';
@@ -46,6 +47,7 @@ import { buildThrottle, type ThrottleOptions } from './throttle.ts';
 import { NO_WEBHOOK_SECRETS, type WebhookSecrets } from './webhook-signature.ts';
 import { addCockpitRoutes } from './routes/cockpit.ts';
 import { addLedgerRoutes } from './routes/ledger.ts';
+import { addNeedRoutes } from './routes/needs.ts';
 import { addOrderRoutes } from './routes/orders.ts';
 import { addPaymentRoutes } from './routes/payments.ts';
 
@@ -57,6 +59,8 @@ export interface ApiServices {
   readonly cockpit: UserCockpitService;
   /** M-04, for the stock reservation an order line needs before it can claim any. */
   readonly listings: UniversalListingService;
+  /** M-03: what somebody asked for, in their own words. The entry point of the product. */
+  readonly needs: CommerceRequestService;
 }
 
 /**
@@ -203,6 +207,7 @@ export function buildApi(options: ApiOptions): PipelineOptions {
     webhookSecrets: options.webhookSecrets ?? NO_WEBHOOK_SECRETS,
   });
   addLedgerRoutes(router, { ledger: options.services.ledger, contextFor });
+  addNeedRoutes(router, { needs: options.services.needs, contextFor, accountFor });
   addCockpitRoutes(router, { cockpit: options.services.cockpit, contextFor });
 
   router.add({

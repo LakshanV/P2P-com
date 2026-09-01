@@ -47,6 +47,10 @@ import {
   requiresReservation,
   type InventoryMode,
 } from '../modules/universal-listing/index.ts';
+import {
+  CommerceRequestService,
+  InMemoryCommerceRequestRepository,
+} from '../modules/commerce-request/index.ts';
 import { UserCockpitService } from '../modules/user-cockpit/index.ts';
 import { buildApi } from '../apps/api/app.ts';
 import { verifyPresentedReservation } from '../apps/api/reservation.ts';
@@ -148,6 +152,7 @@ async function build(): Promise<Harness> {
       payments,
       ledger,
       listings,
+      needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,

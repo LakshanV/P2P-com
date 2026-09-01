@@ -46,6 +46,10 @@ import {
   InMemoryUniversalListingRepository,
   UniversalListingService,
 } from '../modules/universal-listing/index.ts';
+import {
+  CommerceRequestService,
+  InMemoryCommerceRequestRepository,
+} from '../modules/commerce-request/index.ts';
 import { UserCockpitService } from '../modules/user-cockpit/index.ts';
 import { buildApi, type ApiServices } from '../apps/api/app.ts';
 import { CLASSIFIED_CODES } from '../apps/api/errors.ts';
@@ -160,6 +164,7 @@ async function build(): Promise<Harness> {
     payments,
     ledger,
     listings,
+    needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
     cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
   };
 
@@ -949,6 +954,7 @@ test('an unclassified failure tells the caller nothing and the observer everythi
       ledger: {} as unknown as ApiServices['ledger'],
       cockpit: {} as unknown as ApiServices['cockpit'],
       listings: {} as unknown as ApiServices['listings'],
+      needs: {} as unknown as ApiServices['needs'],
     },
     access: identity,
     clock: () => NOW,
@@ -1030,6 +1036,7 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
       payments,
       ledger,
       listings: new UniversalListingService(new InMemoryUniversalListingRepository()),
+      needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
     },
     access: identity,

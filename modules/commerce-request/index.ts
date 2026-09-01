@@ -75,6 +75,16 @@ export type {
 } from './service.ts';
 
 export { InMemoryCommerceRequestRepository } from './repository.ts';
+export {
+  COMMERCE_REQUEST_SCHEMA,
+  EnlistedCommerceRequestRepository,
+  PostgresCommerceRequestRepository,
+  enlistedClient,
+  toCommerceRequest,
+  toInterpretation,
+  toRequestEvent,
+  toRequestMedia,
+} from './postgres-repository.ts';
 export type { CommerceRequestRepository, CommerceRequestTransaction } from './repository.ts';
 
 export {

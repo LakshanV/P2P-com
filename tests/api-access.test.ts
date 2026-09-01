@@ -47,6 +47,10 @@ import {
   InMemoryUniversalListingRepository,
   UniversalListingService,
 } from '../modules/universal-listing/index.ts';
+import {
+  CommerceRequestService,
+  InMemoryCommerceRequestRepository,
+} from '../modules/commerce-request/index.ts';
 import { UserCockpitService } from '../modules/user-cockpit/index.ts';
 import { ACCESS_POLICY } from '../apps/api/access.ts';
 import { buildApi } from '../apps/api/app.ts';
@@ -129,6 +133,7 @@ async function build(): Promise<Harness> {
       payments,
       ledger,
       listings: new UniversalListingService(new InMemoryUniversalListingRepository()),
+      needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,

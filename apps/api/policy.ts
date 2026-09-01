@@ -60,6 +60,12 @@ export const JAYA_V1_ROLES: readonly RoleCapabilities[] = Object.freeze([
   {
     role: 'CUSTOMER',
     capabilities: Object.freeze([
+      // A Need is the entry point of the product, so a customer creates, reads and corrects
+      // their own. Nobody else reads one: a supplier sees a sourcing request derived from it,
+      // never the words.
+      { action: 'create', resourceType: 'commerce-request' },
+      { action: 'read', resourceType: 'commerce-request' },
+      { action: 'update', resourceType: 'commerce-request' },
       { action: 'create', resourceType: 'order' },
       { action: 'read', resourceType: 'order' },
       { action: 'update', resourceType: 'order' },

@@ -91,6 +91,8 @@ export const ACTIONS: Readonly<Record<string, string>> = Object.freeze({
 export const RESOURCE_TYPES: Readonly<Record<string, string>> = Object.freeze({
   account: 'a K-03 universal account and the data hanging off it',
   conversation: 'a conversation between parties, or between a party and the platform',
+  'commerce-request':
+    'a Need: what somebody asked for, in their own words, before it is anything else',
   order: 'a commerce transaction record',
   listing: 'an offer of something for sale or hire',
   payment: 'a movement of money, owned by the payments module when it exists',

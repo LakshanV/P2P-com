@@ -26,6 +26,7 @@
  * Owned by: apps/api.
  */
 
+import type { CommerceRequestService } from '../../modules/commerce-request/index.ts';
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
@@ -83,6 +84,7 @@ export interface OwnershipServices {
   readonly orders: OrderService;
   readonly payments: PaymentService;
   readonly ledger: FinancialLedgerService;
+  readonly needs: CommerceRequestService;
 }
 
 const param =
@@ -148,6 +150,17 @@ const OWNERS: Readonly<Record<string, OwnerResolver>> = Object.freeze({
     } catch {
       return [];
     }
+  },
+  /**
+   * A Need has exactly one party: whoever asked.
+   *
+   * Unlike an order, where a buyer and a seller both legitimately reach the record, a Need is one
+   * person saying what they want. Nobody else may read it — including a supplier, who sees a
+   * sourcing request derived from it rather than the words themselves.
+   */
+  'commerce-request': async (services, id) => {
+    const need = await services.needs.getNeed(id);
+    return need === null ? [] : [need.accountId];
   },
   /** An account addresses itself. The object *is* the account. */
   account: (_services, id) => Promise.resolve([id]),
@@ -348,6 +361,52 @@ export const ACCESS_POLICY: Readonly<Record<string, RouteAccess>> = Object.freez
     action: 'read',
     resourceType: 'value-plan',
     resourceId: param('planId'),
+  },
+
+  // Needs. The entry point of the product, and the first routes a customer uses as themselves.
+  'POST /v1/needs': { action: 'create', resourceType: 'commerce-request' },
+  // No resourceId: the handler scopes the list to the caller's own account by construction, so
+  // there is no identifier to get wrong and nothing to check ownership against.
+  'GET /v1/needs': { action: 'read', resourceType: 'commerce-request' },
+  'GET /v1/needs/:requestId': {
+    action: 'read',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'POST /v1/needs/:requestId/interpretations': {
+    action: 'update',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'GET /v1/needs/:requestId/interpretations': {
+    action: 'read',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'POST /v1/needs/:requestId/media': {
+    action: 'update',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'GET /v1/needs/:requestId/media': {
+    action: 'read',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'POST /v1/needs/:requestId/readiness': {
+    action: 'update',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'POST /v1/needs/:requestId/cancellation': {
+    action: 'update',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'GET /v1/needs/:requestId/history': {
+    action: 'read',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
   },
 
   // Cockpit. Every one addresses an account, and the account is the object.

@@ -37,6 +37,10 @@ import {
   PostgresUniversalListingRepository,
   UniversalListingService,
 } from '../../modules/universal-listing/index.ts';
+import {
+  CommerceRequestService,
+  PostgresCommerceRequestRepository,
+} from '../../modules/commerce-request/index.ts';
 import { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import { buildApi } from '../../apps/api/app.ts';
 import { webhookSecrets } from '../../apps/api/webhook-signature.ts';
@@ -109,6 +113,7 @@ async function withServer(
       payments,
       ledger,
       listings: new UniversalListingService(new PostgresUniversalListingRepository(database)),
+      needs: new CommerceRequestService(new PostgresCommerceRequestRepository(database)),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,
