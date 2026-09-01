@@ -129,3 +129,20 @@ export type {
   SettleExternalLegRequest,
   SettleExternalLegResult,
 } from './service.ts';
+
+export {
+  EnlistedFinancialLedgerRepository,
+  FINANCIAL_LEDGER_SCHEMA,
+  OUTBOX_TABLE,
+  PostgresFinancialLedgerRepository,
+  TIMESTAMP_COLUMNS,
+  VALUE_LEG_TABLE,
+  VALUE_PLAN_TABLE,
+  WALLET_STATE_TABLE,
+  WALLET_TABLE,
+  enlistedClient,
+  toValueLeg,
+  toValuePlan,
+  toWallet,
+  toWalletState,
+} from './postgres-repository.ts';

@@ -2,7 +2,8 @@
 
 **Status:** foundation delivered.  
 **Owner:** M-13, `modules/financial-ledger/`.  
-**Layer:** L5. **Schema:** `module_financial_ledger` — **not yet created**; see §10.  
+**Layer:** L5. **Schema:** `module_financial_ledger`, created by
+[`0032_create_module_financial_ledger_schema.up.sql`](../../db/migrations/0032_create_module_financial_ledger_schema.up.sql).  
 **Depends on:** K-03 Accounts (identifier rules), K-10 Ledger Foundation (the journal), K-08 Event
 Infrastructure, K-09 Audit Foundation.
 
@@ -219,13 +220,33 @@ fits on one screen. `K10LedgerPort` is the adapter.
 The port exists mainly so the implementation that matters for §7 — one that enlists in M-13's own
 transaction — can be dropped in without changing the service.
 
+
 ---
 
-## 10. What this module does not do yet
+## 10. The database enforces the arithmetic too
 
-- **There is no `module_financial_ledger` schema and no PostgreSQL adapter.** The in-memory
-  repository is the only implementation, so **nothing here has been proved against a real database**
-  and no CHECK constraint enforces the allocation invariant. This is the largest gap.
+Migration 0032 creates `module_financial_ledger` and puts two of this module's rules where code
+cannot quietly drop them.
+
+`value_leg_rate_is_exact` is the no-rounding rule as a CHECK, written as a multiplication rather
+than a division, so a rate that does not divide evenly cannot be stored at all.
+
+`value_plan_legs_sum_to_target` is a **deferred constraint trigger**, because the invariant spans
+rows and no CHECK can express it. It fires at commit, so a transaction may write the plan and its
+legs in any order and still be judged on the whole picture — and a plan that under-covers or
+over-covers its obligation is refused by the database, not only by the service.
+
+Alongside them: a partial unique index giving one live plan per obligation while leaving cancelled
+attempts out of the way, `wallet_position_unique`, `wallet_ledger_account_unique` (two wallets
+naming one K-10 account would each report the whole balance as their own), the status/timestamp
+agreement CHECKs, and an append-only trigger on the wallet history.
+
+**There is still no balance column anywhere in the schema, and there never may be.**
+
+---
+
+## 11. What this module does not do yet
+
 - **Nothing calls it.** No HTTP surface, no UI, and no unit consumes M-12's `payment.captured` to
   drive `settleExternalLeg`, so no mixed-value purchase has been settled end to end outside a test.
 - **No relay dispatches the outbox.** Entries are written transactionally and nothing reads them.
