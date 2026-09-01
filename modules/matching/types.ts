@@ -47,10 +47,16 @@ export type SourcingRung = (typeof SOURCING_RUNGS)[number];
  *   separately from `empty`, because "there is some but it is wrong" and "there is none" lead a
  *   human to different next steps.
  * `empty` — nothing at all.
- * `unavailable` — the rung could not run: no adapter configured, or the one configured failed.
- *   Distinct from `empty` on purpose: a rung that could not look has not established that there is
- *   nothing there, and treating the two the same would let a broken supplier directory quietly turn
- *   every Need into an RFQ.
+ * `unavailable` — no adapter is wired for this rung. A **configuration** fact: this deployment
+ *   was never going to answer here, nobody is paged, and the ladder is working as configured.
+ * `lookup-failed` — the adapter was called and it broke. An **operational** fact: somebody should
+ *   be paged, and until they are, every Need is escalating for a reason that has nothing to do with
+ *   supply.
+ *
+ *   Both are distinct from `empty`, because neither establishes anything about the world — treating
+ *   them as "nothing there" would let a broken supplier directory quietly turn every Need into an
+ *   RFQ. And they are distinct from **each other**, because a broken directory that looks like a
+ *   deployment choice is an outage nobody is alerted to.
  * `skipped` — the ladder stopped before reaching it. Recorded so the run reads as a sequence rather
  *   than as a set of unexplained gaps.
  */
@@ -59,6 +65,7 @@ export const RUNG_OUTCOMES = [
   'insufficient',
   'empty',
   'unavailable',
+  'lookup-failed',
   'skipped',
 ] as const;
 export type RungOutcome = (typeof RUNG_OUTCOMES)[number];

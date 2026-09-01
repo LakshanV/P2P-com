@@ -196,12 +196,12 @@ export class MatchingService {
       try {
         found = await port.find(query);
       } catch (error) {
-        // A rung that could not look has established nothing. Recorded as `unavailable` with the
-        // reason, so a broken directory shows up as a broken directory rather than as an absence of
-        // suppliers.
+        // Called, and it broke. Recorded as `lookup-failed` rather than `unavailable`: the first
+        // says somebody should be paged, the second says this deployment never wired the rung. A
+        // broken directory that looks like a configuration choice is an outage nobody is alerted to.
         attempts.push(
           this.#attempt(request, rung, position, {
-            outcome: 'unavailable',
+            outcome: 'lookup-failed',
             candidatesFound: 0,
             bestScorePerMille: null,
             reason:

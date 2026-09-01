@@ -293,17 +293,20 @@ test('a Need nothing can answer escalates, and every rung says why', async () =>
   }
 });
 
-test('a rung that could not look is not a rung that found nothing', async () => {
-  // The distinction that stops a broken supplier directory from silently turning every Need into a
-  // tender. `empty` is a claim about the world; `unavailable` is a claim about us.
+test('three different facts: found nothing, could not look, and never wired', async () => {
+  // `empty` is a claim about the world. `lookup-failed` and `unavailable` are claims about us, and
+  // they are not the same claim: the first means somebody should be paged, the second means this
+  // deployment chose not to wire the rung. A broken directory recorded as a configuration choice is
+  // an outage nobody is alerted to.
   const broken = brokenRung();
   const { service } = build({ catalogue: rung([]).port, known: broken.port });
 
   const result = await service.runLadder(ladderRequest());
 
-  const [catalogue, known] = result.attempts;
+  const [catalogue, known, verified] = result.attempts;
   assert.equal(catalogue?.outcome, 'empty', 'it looked, and there was nothing');
-  assert.equal(known?.outcome, 'unavailable', 'it could not look, which establishes nothing');
+  assert.equal(known?.outcome, 'lookup-failed', 'it was called and it broke');
+  assert.equal(verified?.outcome, 'unavailable', 'it was never wired, which is a different fact');
   assert.match(
     known?.reason ?? '',
     /could not be searched: the supplier directory is unreachable/,

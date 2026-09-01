@@ -23,6 +23,12 @@ export type {
 } from './types.ts';
 
 export { NOT_CONFIGURED } from './ports.ts';
+export { catalogueRung } from './rungs/catalogue-rung.ts';
+export type {
+  CatalogueEntry,
+  CatalogueRungOptions,
+  CatalogueSource,
+} from './rungs/catalogue-rung.ts';
 export type { RungCandidate, SourcingQuery, SourcingRungPort } from './ports.ts';
 
 export {
