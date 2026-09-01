@@ -1139,6 +1139,16 @@ test('the trigger inventory in §1 is the triggers on disk, not the count when i
     'forty-eight',
     'forty-nine',
     'fifty',
+    'fifty-one',
+    'fifty-two',
+    'fifty-three',
+    'fifty-four',
+    'fifty-five',
+    'fifty-six',
+    'fifty-seven',
+    'fifty-eight',
+    'fifty-nine',
+    'sixty',
   ];
 
   const migrations = path.join(REPO_ROOT, 'db', 'migrations');

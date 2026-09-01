@@ -65,7 +65,7 @@ const LISTING_COLUMNS =
 
 const VERSION_COLUMNS =
   '(version_id, listing_id, version_number, title, description, unit_price_minor, currency, ' +
-  'quantity_available, attributes, published_at, correlation_id, idempotency_key)';
+  'quantity_available, inventory_mode, attributes, published_at, correlation_id, idempotency_key)';
 
 const MEDIA_COLUMNS =
   '(media_id, listing_id, version_id, kind, reference, position, caption, added_at, ' +
@@ -86,7 +86,10 @@ function versionValues(
 ): string {
   return (
     `('${versionId}', '${listingId}', ${versionNumber}, 'A title', 'A description', 1000, ` +
-    `'LKR', 5, '{}', '2026-06-02T09:00:00Z', 'corr_live_${suffix}', 'idem_live_${suffix}')`
+    // `inventory_mode` has no default: publishing a version means deciding how it is fulfilled,
+    // and a default of 'tracked' would make the most restrictive behaviour the one nobody chose.
+    `'LKR', 5, 'tracked', '{}', '2026-06-02T09:00:00Z', 'corr_live_${suffix}', ` +
+    `'idem_live_${suffix}')`
   );
 }
 
@@ -262,7 +265,8 @@ test(
         database,
         `INSERT INTO module_universal_listing.listing_version ${VERSION_COLUMNS}
        VALUES ('ver_live_money_01', 'lst_live_money_01', 1, 'A title', 'A description', -1,
-               'LKR', 5, '{}', '2026-06-02T09:00:00Z', 'corr_live_m01', 'idem_live_m01');`,
+               'LKR', 5, 'tracked', '{}', '2026-06-02T09:00:00Z', 'corr_live_m01',
+               'idem_live_m01');`,
       );
       assert.ok(negative !== null, 'a negative price is not a discount');
       assert.match(negative, /unit_price_non_negative/);
@@ -271,7 +275,8 @@ test(
         database,
         `INSERT INTO module_universal_listing.listing_version ${VERSION_COLUMNS}
        VALUES ('ver_live_money_02', 'lst_live_money_01', 2, 'A title', 'A description', 1000,
-               'lkr', 5, '{}', '2026-06-02T09:00:00Z', 'corr_live_m02', 'idem_live_m02');`,
+               'lkr', 5, 'tracked', '{}', '2026-06-02T09:00:00Z', 'corr_live_m02',
+               'idem_live_m02');`,
       );
       assert.ok(currency !== null, 'a lowercase currency is not ISO-4217');
       assert.match(currency, /currency_well_formed/);
