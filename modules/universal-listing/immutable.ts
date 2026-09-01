@@ -46,6 +46,7 @@ export function sealListingVersion(version: ListingVersion): ListingVersion {
     unitPriceMinor: version.unitPriceMinor,
     currency: version.currency,
     quantityAvailable: version.quantityAvailable,
+    inventoryMode: version.inventoryMode,
     attributes: sealRecord(version.attributes) as Readonly<Record<string, unknown>>,
     publishedAt: version.publishedAt,
     correlationId: version.correlationId,

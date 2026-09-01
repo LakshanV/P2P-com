@@ -773,6 +773,9 @@ function buildM04Harness(): InventoryHarness {
         unitPriceMinor: 100n,
         currency: 'LKR',
         quantityAvailable: 0n,
+        // The contract suite is about inventory movements, so its listings are the kind that has
+        // inventory. A mode with no stock would make every reservation case vacuous.
+        inventoryMode: 'tracked',
         attributes: {},
         publishedAt: '2026-06-01T08:01:00Z',
         correlationId: 'corr_setup_0002',

@@ -13,7 +13,9 @@
 
 export {
   DECLARATION_KINDS,
+  INVENTORY_MODES,
   LISTING_STATUSES,
+  requiresReservation,
   MEDIA_KINDS,
   MOVEMENT_KINDS,
   UniversalListingError,
@@ -26,6 +28,7 @@ export type {
   Listing,
   ListingDeclaration,
   ListingMedia,
+  InventoryMode,
   ListingStatus,
   ListingVersion,
   MediaKind,
@@ -37,6 +40,7 @@ export {
   FOREIGN_FIELDS,
   IDENTIFIER_REFUSALS,
   assertDeclarationKind,
+  assertInventoryMode,
   assertListingStatus,
   assertMediaKind,
   assertMovementKind,

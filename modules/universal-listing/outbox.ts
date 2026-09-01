@@ -86,6 +86,15 @@ export const LISTING_PUBLISHED_EVENT: EventTypeDefinition = {
       description: 'How many units are offered, as a string.',
     },
     {
+      name: 'inventory_mode',
+      kind: 'string',
+      required: true,
+      description:
+        'How fulfilment of this version relates to stock: tracked, untracked, external, ' +
+        'made-to-order or digital. Published so a consumer can tell whether an order line against ' +
+        'this version needs a reservation without reading M-04 back.',
+    },
+    {
       name: 'published_at',
       kind: 'string',
       required: true,
@@ -258,6 +267,13 @@ export const LISTING_PUBLISHED_ACTION: AuditActionDefinition = {
       required: true,
       classification: 'internal',
       description: 'How many units are offered, as a string.',
+    },
+    {
+      name: 'inventory_mode',
+      kind: 'string',
+      required: true,
+      classification: 'internal',
+      description: 'How fulfilment of this version relates to stock.',
     },
     {
       name: 'published_at',
@@ -621,6 +637,7 @@ export function makeListingPublishedEvent(
         unit_price_minor: String(version.unitPriceMinor),
         currency: version.currency,
         quantity_available: String(version.quantityAvailable),
+        inventory_mode: version.inventoryMode,
         published_at: version.publishedAt,
         idempotency_key: version.idempotencyKey,
       },
@@ -804,6 +821,7 @@ export function makeListingPublishedAction(
         unit_price_minor: String(version.unitPriceMinor),
         currency: version.currency,
         quantity_available: String(version.quantityAvailable),
+        inventory_mode: version.inventoryMode,
         published_at: version.publishedAt,
         idempotency_key: version.idempotencyKey,
       },

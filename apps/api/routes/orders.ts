@@ -10,24 +10,52 @@
  * what makes `POST /orders` safe to retry: the same key produces the same order id, so the second
  * attempt converges on the record the first created instead of opening a second order.
  *
+ * **Adding a line establishes its stock reservation; it does not accept one.** The route used to read
+ * `reservationId` out of the request body, so a client could send any string and M-11 would record
+ * it — an order line claiming stock that nothing was holding, then placed, paid for and fulfilled
+ * against inventory never set aside. The reservation is now made here against M-04, under an
+ * identifier derived from the request context, and a body that still carries the field is refused by
+ * name. See `reservation.ts`.
+ *
+ * Whether a line needs a reservation at all comes from the pinned version's `inventoryMode`, not
+ * from the request: a service, a made-to-order part, a supplier-direct machine and a digital
+ * entitlement hold no JAYA stock, and demanding a reservation for them would make the platform
+ * unable to sell them.
+ *
  * Owned by: apps/api.
  */
 
 import type { OrderService } from '../../../modules/orders/index.ts';
+import type { UniversalListingService } from '../../../modules/universal-listing/index.ts';
 import type { RequestContext } from '../../../platform/http/context.ts';
 import type { Route, Router } from '../../../platform/http/router.ts';
 import { json, type HttpRequest, type HttpResponse } from '../../../platform/http/types.ts';
 
 import { readAmount, readArray, readOptionalString, readString } from '../reading.ts';
+import { assertDoesNotAssertReservation, reserveForLine } from '../reservation.ts';
 
 export interface OrderRoutesOptions {
   readonly orders: OrderService;
+  /**
+   * M-04, for establishing the stock reservation a line needs.
+   *
+   * Required. An optional inventory service would be an inventory service somebody leaves out, and
+   * leaving it out reopens exactly the hole this closes.
+   */
+  readonly listings: UniversalListingService;
   /** Built once per request by the pipeline, from the correlation and idempotency headers. */
   readonly contextFor: (request: HttpRequest) => RequestContext;
+  /**
+   * The account the caller's session resolved to.
+   *
+   * Read from the guarded principal, never from the request. A reservation is scoped to whoever
+   * holds it, and a caller that could name its own account could attach anybody's.
+   */
+  readonly accountFor: (request: HttpRequest) => string;
 }
 
 export function orderRoutes(options: OrderRoutesOptions): readonly Route[] {
-  const { orders, contextFor } = options;
+  const { orders, listings, contextFor, accountFor } = options;
 
   return [
     {
@@ -61,22 +89,57 @@ export function orderRoutes(options: OrderRoutesOptions): readonly Route[] {
       summary: 'Add a line to a draft order.',
       handler: async (request: HttpRequest): Promise<HttpResponse> => {
         const context = contextFor(request);
+
+        // Refused before anything else is read. A caller supplying this is asserting the outcome of
+        // the check this route exists to perform, and accepting it "because it was probably ours"
+        // is precisely how the hole worked.
+        assertDoesNotAssertReservation(request.body);
+
+        const listingId = readString(request.body, 'listingId');
+        const versionId = readString(request.body, 'versionId');
+        const quantity = readAmount(request.body, 'quantity');
+
+        // Establishes the reservation against M-04, or determines that this offer holds no JAYA
+        // stock. Throws rather than returning a flag: there is no path past it that leaves the
+        // caller in charge of the answer.
+        const reservation = await reserveForLine({
+          listings,
+          orders,
+          accountId: accountFor(request),
+          listingId,
+          versionId,
+          quantity,
+          // Derived from the request context, so a retry converges on the same reservation rather
+          // than holding the stock twice.
+          reservationId: context.derivedId('rsv', 'reservation'),
+          movementId: context.derivedId('mov', 'reservation-movement'),
+          now: context.now,
+          correlationId: context.correlationId,
+          idempotencyKey: context.idempotencyKey,
+        });
+
         const result = await orders.addItem({
           itemId: context.derivedId('oit', 'item'),
           orderId: request.params.orderId ?? '',
-          listingId: readString(request.body, 'listingId'),
-          versionId: readString(request.body, 'versionId'),
+          listingId,
+          versionId,
           commerceUnitTypeId: readString(request.body, 'commerceUnitTypeId'),
-          quantity: readAmount(request.body, 'quantity'),
+          quantity,
           unitPriceMinor: readAmount(request.body, 'unitPriceMinor'),
           lineTotalMinor: readAmount(request.body, 'lineTotalMinor'),
           currency: readString(request.body, 'currency'),
-          reservationId: readOptionalString(request.body, 'reservationId'),
+          // Established above, or null because the offer holds no stock. Never from the body.
+          reservationId: reservation.reservationId,
           addedAt: context.now,
           correlationId: context.correlationId,
           idempotencyKey: context.idempotencyKey,
         });
-        return json(result.replayed ? 200 : 201, result);
+        return json(result.replayed ? 200 : 201, {
+          ...result,
+          // Said out loud, because "no reservation" and "reservation forgotten" look identical to a
+          // client otherwise, and the difference is whether the stock is there on delivery day.
+          inventoryMode: reservation.version.inventoryMode,
+        });
       },
     },
 

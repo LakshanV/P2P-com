@@ -33,7 +33,11 @@ import {
   makeListingWithdrawnAction,
   makeListingWithdrawnEvent,
 } from './outbox.ts';
-import { FOREIGN_FIELDS, assertUniversalListingIdentifier } from './registry.ts';
+import {
+  FOREIGN_FIELDS,
+  assertInventoryMode,
+  assertUniversalListingIdentifier,
+} from './registry.ts';
 import type { UniversalListingRepository, UniversalListingTransaction } from './repository.ts';
 import {
   sealInventoryMovement,
@@ -56,6 +60,7 @@ import {
 import {
   UniversalListingError,
   type InventoryAvailability,
+  type InventoryMode,
   type InventoryMovement,
   type InventorySnapshot,
   type Listing,
@@ -89,6 +94,13 @@ export interface PublishListingRequest {
   readonly unitPriceMinor: bigint;
   readonly currency: string;
   readonly quantityAvailable: bigint;
+  /**
+   * How fulfilment of this version relates to stock.
+   *
+   * Required, with no default. A default of `tracked` would make the most restrictive behaviour the
+   * one nobody chose, and would quietly demand a stock reservation for a service.
+   */
+  readonly inventoryMode: string;
   readonly attributes: Readonly<Record<string, unknown>>;
   readonly publishedAt: string;
   readonly correlationId: string;
@@ -273,6 +285,7 @@ const PUBLISH_LISTING_KEYS: readonly string[] = [
   'unitPriceMinor',
   'currency',
   'quantityAvailable',
+  'inventoryMode',
   'attributes',
   'publishedAt',
   'correlationId',
@@ -495,20 +508,21 @@ export class UniversalListingService {
       );
       if (listing === null) throw error;
 
-      const expected = buildVersion(
-        winner.versionId,
-        winner.listingId,
-        winner.versionNumber,
-        request.title,
-        request.description,
-        request.unitPriceMinor,
-        request.currency,
-        request.quantityAvailable,
-        request.attributes,
+      const expected = buildVersion({
+        versionId: winner.versionId,
+        listingId: winner.listingId,
+        versionNumber: winner.versionNumber,
+        title: request.title,
+        description: request.description,
+        unitPriceMinor: request.unitPriceMinor,
+        currency: request.currency,
+        quantityAvailable: request.quantityAvailable,
+        inventoryMode: assertInventoryMode(request.inventoryMode, 'inventoryMode'),
+        attributes: request.attributes,
         publishedAt,
-        request.correlationId,
-        request.idempotencyKey,
-      );
+        correlationId: request.correlationId,
+        idempotencyKey: request.idempotencyKey,
+      });
       if (!versionEquals(winner, expected)) throw error;
       return { listing: sealListing(listing), version: sealListingVersion(winner), replayed: true };
     }
@@ -572,6 +586,7 @@ export class UniversalListingService {
             unitPriceMinor: request.unitPriceMinor,
             currency: request.currency,
             quantityAvailable: request.quantityAvailable,
+            inventoryMode: request.inventoryMode,
             attributes: request.attributes,
             publishedAt: request.publishedAt,
             correlationId: request.correlationId,
@@ -1571,6 +1586,7 @@ function versionEquals(a: ListingVersion, b: ListingVersion): boolean {
     a.unitPriceMinor === b.unitPriceMinor &&
     a.currency === b.currency &&
     a.quantityAvailable === b.quantityAvailable &&
+    a.inventoryMode === b.inventoryMode &&
     JSON.stringify(a.attributes) === JSON.stringify(b.attributes) &&
     a.publishedAt === b.publishedAt
   );
@@ -1600,54 +1616,51 @@ function declarationEquals(a: ListingDeclaration, b: ListingDeclaration): boolea
   );
 }
 
-function buildVersion(
-  versionId: string,
-  listingId: string,
-  versionNumber: number,
-  title: string,
-  description: string,
-  unitPriceMinor: bigint,
-  currency: string,
-  quantityAvailable: bigint,
-  attributes: Readonly<Record<string, unknown>>,
-  publishedAt: string,
-  correlationId: string,
-  idempotencyKey: string,
-): ListingVersion {
-  return {
-    versionId,
-    listingId,
-    versionNumber,
-    title,
-    description,
-    unitPriceMinor,
-    currency,
-    quantityAvailable,
-    attributes,
-    publishedAt,
-    correlationId,
-    idempotencyKey,
-  };
+/**
+ * Assemble a version record.
+ *
+ * Takes an object rather than a positional list. It used to take twelve positional arguments, which
+ * is precisely the shape where adding a thirteenth lands it in the wrong slot and the compiler is
+ * happy because `bigint` and `bigint` look alike — the mode was added here, and this is what that
+ * near-miss cost.
+ */
+function buildVersion(fields: {
+  readonly versionId: string;
+  readonly listingId: string;
+  readonly versionNumber: number;
+  readonly title: string;
+  readonly description: string;
+  readonly unitPriceMinor: bigint;
+  readonly currency: string;
+  readonly quantityAvailable: bigint;
+  readonly inventoryMode: InventoryMode;
+  readonly attributes: Readonly<Record<string, unknown>>;
+  readonly publishedAt: string;
+  readonly correlationId: string;
+  readonly idempotencyKey: string;
+}): ListingVersion {
+  return { ...fields };
 }
 
 function buildVersionFromStored(
   stored: ListingVersion,
   request: PublishListingRequest,
 ): ListingVersion {
-  return buildVersion(
-    stored.versionId,
-    stored.listingId,
-    stored.versionNumber,
-    request.title,
-    request.description,
-    request.unitPriceMinor,
-    request.currency,
-    request.quantityAvailable,
-    request.attributes,
-    request.publishedAt,
-    request.correlationId,
-    request.idempotencyKey,
-  );
+  return buildVersion({
+    versionId: stored.versionId,
+    listingId: stored.listingId,
+    versionNumber: stored.versionNumber,
+    title: request.title,
+    description: request.description,
+    unitPriceMinor: request.unitPriceMinor,
+    currency: request.currency,
+    quantityAvailable: request.quantityAvailable,
+    inventoryMode: assertInventoryMode(request.inventoryMode, 'inventoryMode'),
+    attributes: request.attributes,
+    publishedAt: request.publishedAt,
+    correlationId: request.correlationId,
+    idempotencyKey: request.idempotencyKey,
+  });
 }
 
 function availabilityFromSnapshot(snapshot: InventorySnapshot | null): InventoryAvailability {
@@ -1662,6 +1675,21 @@ function availabilityFromSnapshot(snapshot: InventorySnapshot | null): Inventory
   };
 }
 
+/**
+ * Whether two movements are the same request, for idempotency.
+ *
+ * **Neither `correlationId` nor `occurredAt` is compared, and that is the whole point of this
+ * comment.** A retry is a different request that means the same thing: it arrives later, so its
+ * instant differs, and it carries a fresh correlation id by definition. Comparing either made the
+ * second attempt at an identical reservation fail as `idempotency-key-reuse` — so a client that
+ * retried a timed-out "add this line to my order" was told it had reused its key, and the honest
+ * fix from the client's side would have been to send a *new* key, which would have reserved the
+ * stock twice.
+ *
+ * M-11, M-12 and M-13 each shipped exactly this defect and each had it corrected; M-04 kept it
+ * until the reservation flow started retrying through the API. An idempotency check compares what
+ * the caller **meant**, never the trace it happened to arrive under.
+ */
 function inventoryMovementEquals(a: InventoryMovement, b: InventoryMovement): boolean {
   return (
     a.movementId === b.movementId &&
@@ -1671,8 +1699,6 @@ function inventoryMovementEquals(a: InventoryMovement, b: InventoryMovement): bo
     a.quantity === b.quantity &&
     a.reservationId === b.reservationId &&
     a.reason === b.reason &&
-    a.occurredAt === b.occurredAt &&
-    a.correlationId === b.correlationId &&
     a.idempotencyKey === b.idempotencyKey
   );
 }

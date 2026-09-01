@@ -42,6 +42,10 @@ import {
   PaymentService,
   resolveMockProvider,
 } from '../modules/payments/index.ts';
+import {
+  InMemoryUniversalListingRepository,
+  UniversalListingService,
+} from '../modules/universal-listing/index.ts';
 import { UserCockpitService } from '../modules/user-cockpit/index.ts';
 import { buildApi, type ApiServices } from '../apps/api/app.ts';
 import { CLASSIFIED_CODES } from '../apps/api/errors.ts';
@@ -59,6 +63,8 @@ const BUYER = 'acct_01HR0API0buyer1';
 const SELLER = 'acct_01HR0API0sellr1';
 const NOW = '2026-07-01T09:00:00.000000Z';
 /** The mock provider's webhook signing secret, shared between this suite and the API it builds. */
+const LISTING = 'lst_01HR0API000001';
+const VERSION = 'ver_01HR0API000001';
 const WEBHOOK_SECRET = 'a-signing-secret-only-the-provider-and-this-deployment-hold';
 
 interface Harness {
@@ -110,10 +116,50 @@ async function build(): Promise<Harness> {
     new InMemoryFinancialLedgerRepository(),
     new K10LedgerPort(kernelLedger),
   );
+  // A published listing with stock, because adding an order line now reserves against M-04 rather
+  // than believing a `reservationId` the client sent. TRACKED is the mode the ordering tests want:
+  // it is the one where a reservation is required and can therefore fail.
+  const listings = new UniversalListingService(new InMemoryUniversalListingRepository());
+  await listings.createListing({
+    listingId: LISTING,
+    accountId: SELLER,
+    commerceUnitTypeId: 'cut_01HR0API000001',
+    createdAt: NOW,
+    updatedAt: NOW,
+    correlationId: 'corr_01HR0APIsetup01',
+    idempotencyKey: 'idem_api_listing_01',
+    recordId: 'rec_01HR0APIsetup01',
+  });
+  await listings.publishListing({
+    versionId: VERSION,
+    listingId: LISTING,
+    title: 'Ceylon cinnamon, Alba grade, 500g',
+    description: 'Hand-rolled quills from a single estate in Matale.',
+    unitPriceMinor: 250n,
+    currency: 'LKR',
+    quantityAvailable: 500n,
+    inventoryMode: 'tracked',
+    attributes: {},
+    publishedAt: NOW,
+    correlationId: 'corr_01HR0APIsetup01',
+    idempotencyKey: 'idem_api_version_01',
+  });
+  await listings.receiveInventory({
+    movementId: 'mov_01HR0APIsetup01',
+    listingId: LISTING,
+    versionId: VERSION,
+    quantity: 500n,
+    reason: 'opening stock for the suite',
+    occurredAt: NOW,
+    correlationId: 'corr_01HR0APIsetup01',
+    idempotencyKey: 'idem_api_stock_01',
+  });
+
   const services: ApiServices = {
     orders,
     payments,
     ledger,
+    listings,
     cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
   };
 
@@ -308,14 +354,13 @@ test('an amount sent as a JSON number is refused, with the reason', async () => 
     'POST',
     `/v1/orders/${orderId}/items`,
     {
-      listingId: 'lst_01HR0API000001',
-      versionId: 'ver_01HR0API000001',
+      listingId: LISTING,
+      versionId: VERSION,
       commerceUnitTypeId: 'cut_01HR0API000001',
       quantity: '2',
       unitPriceMinor: 150,
       lineTotalMinor: '300',
       currency: 'LKR',
-      reservationId: null,
     },
     keyed('idem_api_num_item'),
   );
@@ -515,14 +560,13 @@ test('an order can be created, filled, placed and confirmed over HTTP', async ()
     'POST',
     `/v1/orders/${orderId}/items`,
     {
-      listingId: 'lst_01HR0API000001',
-      versionId: 'ver_01HR0API000001',
+      listingId: LISTING,
+      versionId: VERSION,
       commerceUnitTypeId: 'cut_01HR0API000001',
       quantity: '3',
       unitPriceMinor: '250',
       lineTotalMinor: '750',
       currency: 'LKR',
-      reservationId: null,
     },
     keyed('idem_api_flow_item'),
   );
@@ -904,6 +948,7 @@ test('an unclassified failure tells the caller nothing and the observer everythi
       payments: {} as unknown as ApiServices['payments'],
       ledger: {} as unknown as ApiServices['ledger'],
       cockpit: {} as unknown as ApiServices['cockpit'],
+      listings: {} as unknown as ApiServices['listings'],
     },
     access: identity,
     clock: () => NOW,
@@ -984,6 +1029,7 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
       orders,
       payments,
       ledger,
+      listings: new UniversalListingService(new InMemoryUniversalListingRepository()),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
     },
     access: identity,

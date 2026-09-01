@@ -33,6 +33,10 @@ import {
   PostgresPaymentRepository,
   resolveMockProvider,
 } from '../../modules/payments/index.ts';
+import {
+  PostgresUniversalListingRepository,
+  UniversalListingService,
+} from '../../modules/universal-listing/index.ts';
 import { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import { buildApi } from '../../apps/api/app.ts';
 import { webhookSecrets } from '../../apps/api/webhook-signature.ts';
@@ -104,6 +108,7 @@ async function withServer(
       orders,
       payments,
       ledger,
+      listings: new UniversalListingService(new PostgresUniversalListingRepository(database)),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,
@@ -177,7 +182,6 @@ test(
             unitPriceMinor: '250',
             lineTotalMinor: '1000',
             currency: 'LKR',
-            reservationId: null,
           },
           { 'idempotency-key': 'idem_live_api_itm1' },
         );

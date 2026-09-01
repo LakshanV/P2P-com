@@ -46,6 +46,10 @@ import {
   PostgresFinancialLedgerRepository,
 } from '../../modules/financial-ledger/index.ts';
 import { OrderService, PostgresOrderRepository } from '../../modules/orders/index.ts';
+import {
+  PostgresUniversalListingRepository,
+  UniversalListingService,
+} from '../../modules/universal-listing/index.ts';
 import { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import {
   PaymentService,
@@ -256,7 +260,9 @@ export function servicesFor(databaseUrl: string): ApiServices {
   );
   const cockpit = new UserCockpitService({ orders, payments, ledger, journal });
 
-  return { orders, payments, ledger, cockpit };
+  const listings = new UniversalListingService(new PostgresUniversalListingRepository(database));
+
+  return { orders, payments, ledger, cockpit, listings };
 }
 
 export function start(options: StartOptions): ReturnType<typeof createHttpServer> {

@@ -48,7 +48,7 @@ audit is for.
 - 97 unit test files, **1,989 tests, all passing**.
 - 27 integration suites, **42 tests against live PostgreSQL 16.10**.
 - 0 E2E tests. 0 UI files. `design-system/` contains one README.
-- 94 migration files (47 forward, 47 rollback).
+- 96 migration files (48 forward, 48 rollback).
 - Gates green: `typecheck`, `lint`, `format:check`, `check:boundaries` (259 files, 1,030 imports, 0
   violations), `check:migrations`, `check:fixtures`.
 
@@ -571,7 +571,7 @@ internal control tower, mobile, tablet, desktop, realtime states, loading/empty/
 
 | ID | Requirement | Status | % | Evidence / gap |
 |---|---|---|---|---|
-| AG-01 | Clean DB migration | `INTEGRATION TESTED` | 95% | 47 forward + 47 rollback, checksum reconciliation, advisory locking, per-migration atomicity. Every module's rollback is proven to leave no trace |
+| AG-01 | Clean DB migration | `INTEGRATION TESTED` | 95% | 48 forward + 48 rollback, checksum reconciliation, advisory locking, per-migration atomicity. Every module's rollback is proven to leave no trace |
 | AG-02 | Staging environment | `NOT STARTED` | 0% | None exists |
 | AG-03 | Production configuration | `PARTIAL` | 25% | `main.ts` reads `DATABASE_URL`, `PORT`, `JAYA_ENV`; **refuses to start in production with the mock payment provider** unless explicitly acknowledged. No config management |
 | AG-04 | Health endpoints | `TESTED` | 60% | `GET /v1/health` answers without touching a module. **No readiness probe, no dependency check** |

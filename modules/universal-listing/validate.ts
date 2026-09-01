@@ -11,6 +11,7 @@ import { formatInstant, InvalidInstantError, parseInstant } from '../../platform
 
 import {
   assertDeclarationKind,
+  assertInventoryMode,
   assertListingStatus,
   assertMediaKind,
   assertMovementKind,
@@ -111,6 +112,7 @@ const LISTING_VERSION_FIELDS: readonly string[] = [
   'unitPriceMinor',
   'currency',
   'quantityAvailable',
+  'inventoryMode',
   'attributes',
   'publishedAt',
   'correlationId',
@@ -145,6 +147,7 @@ function checkListingVersion(candidate: unknown, source: RecordSource): ListingV
     unitPriceMinor: assertNonNegativeBigint(fields.unitPriceMinor, 'unitPriceMinor'),
     currency: assertCurrency(fields.currency, 'currency'),
     quantityAvailable: assertNonNegativeQuantity(fields.quantityAvailable, 'quantityAvailable'),
+    inventoryMode: assertInventoryMode(fields.inventoryMode, 'inventoryMode'),
     attributes: assertJsonObject(fields.attributes, 'attributes'),
     publishedAt: checkInstant(fields.publishedAt, 'publishedAt', source),
     correlationId: assertUniversalListingIdentifier(fields.correlationId, 'correlationId'),

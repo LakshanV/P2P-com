@@ -43,6 +43,10 @@ import {
   PaymentService,
   resolveMockProvider,
 } from '../modules/payments/index.ts';
+import {
+  InMemoryUniversalListingRepository,
+  UniversalListingService,
+} from '../modules/universal-listing/index.ts';
 import { UserCockpitService } from '../modules/user-cockpit/index.ts';
 import { ACCESS_POLICY } from '../apps/api/access.ts';
 import { buildApi } from '../apps/api/app.ts';
@@ -124,6 +128,7 @@ async function build(): Promise<Harness> {
       orders,
       payments,
       ledger,
+      listings: new UniversalListingService(new InMemoryUniversalListingRepository()),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,

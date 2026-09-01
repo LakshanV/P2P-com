@@ -15,11 +15,13 @@ import { AccountError, assertAccountIdentifier } from '../../kernel/accounts/ind
 
 import {
   DECLARATION_KINDS,
+  INVENTORY_MODES,
   LISTING_STATUSES,
   MEDIA_KINDS,
   MOVEMENT_KINDS,
   UniversalListingError,
   type DeclarationKind,
+  type InventoryMode,
   type ListingStatus,
   type MediaKind,
   type MovementKind,
@@ -182,3 +184,21 @@ export const FOREIGN_FIELDS: Readonly<Record<string, string>> = Object.freeze({
   publishedAt: 'M-04 sets publishedAt on first publish',
   withdrawnAt: 'M-04 sets withdrawnAt on withdrawal',
 });
+
+/**
+ * Refuse an inventory mode that is not one M-04 recognises.
+ *
+ * There is no default. A version published without saying how its fulfilment relates to stock would
+ * have to be assumed `tracked`, which demands a stock reservation for a service, or `untracked`,
+ * which lets an order line for a real machine be placed against stock nobody is holding. Neither
+ * assumption is safe, so the caller says.
+ */
+export function assertInventoryMode(value: unknown, field: string): InventoryMode {
+  if (typeof value !== 'string' || !(INVENTORY_MODES as readonly string[]).includes(value)) {
+    throw new UniversalListingError(
+      'unknown-inventory-mode',
+      `${field} is "${String(value)}"; expected one of ${INVENTORY_MODES.join(', ')}`,
+    );
+  }
+  return value as InventoryMode;
+}

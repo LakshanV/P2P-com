@@ -73,6 +73,8 @@ export function publishRequest(
     unitPriceMinor: 249_500n,
     currency: 'LKR',
     quantityAvailable: 40n,
+    // Cinnamon on a shelf: ordinary physical stock. Fixtures that mean something else say so.
+    inventoryMode: 'tracked',
     attributes: { grade: 'alba', originDistrict: 'matale' },
     publishedAt: '2026-06-02T09:00:00Z',
     correlationId: `corr_01HQZXP${n}`,
@@ -182,6 +184,8 @@ export function versionRecord(overrides: Partial<ListingVersion> = {}): ListingV
     unitPriceMinor: 249_500n,
     currency: 'LKR',
     quantityAvailable: 40n,
+    // Cinnamon on a shelf: ordinary physical stock. Fixtures that mean something else say so.
+    inventoryMode: 'tracked',
     attributes: {},
     publishedAt: '2026-06-02T09:00:00Z',
     correlationId: `corr_01HQZXV${n}`,

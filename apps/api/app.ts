@@ -28,6 +28,7 @@ import type {
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
+import type { UniversalListingService } from '../../modules/universal-listing/index.ts';
 import type { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import { requestContext, type RequestContext } from '../../platform/http/context.ts';
 import type {
@@ -39,7 +40,7 @@ import type {
 import { Router } from '../../platform/http/router.ts';
 import { json, type HttpRequest } from '../../platform/http/types.ts';
 
-import { accessFor, guard } from './access.ts';
+import { accessFor, guard, type Principal } from './access.ts';
 import { ApiError, describeApiError } from './errors.ts';
 import { buildThrottle, type ThrottleOptions } from './throttle.ts';
 import { NO_WEBHOOK_SECRETS, type WebhookSecrets } from './webhook-signature.ts';
@@ -54,6 +55,8 @@ export interface ApiServices {
   readonly ledger: FinancialLedgerService;
   /** M-36: the buyer's own read-only screens. Owns no data and writes nothing. */
   readonly cockpit: UserCockpitService;
+  /** M-04, for the stock reservation an order line needs before it can claim any. */
+  readonly listings: UniversalListingService;
 }
 
 /**
@@ -147,6 +150,36 @@ export function buildApi(options: ApiOptions): PipelineOptions {
     return requestContext({ correlationId, idempotencyKey, now: clock(), validate });
   };
 
+  /**
+   * Who is making the request, from the guard, for the handlers that need it.
+   *
+   * A `WeakMap` keyed by the request object rather than a field on `HttpRequest`: the substrate
+   * builds that type and has no business holding an authority model, and a mutable field on it
+   * would be a field a handler could write. The guard is the only writer here, and an entry exists
+   * only for a request that has actually been authorised.
+   */
+  const principals = new WeakMap<HttpRequest, Principal>();
+
+  /**
+   * The caller's account, for a handler that needs it.
+   *
+   * Throws rather than returning null when there is no principal. That can only happen on an
+   * anonymous route, and an anonymous route reaching for the caller's account is a bug in this
+   * file — answering "" or null would let it become a bug in a module instead.
+   */
+  const accountFor = (request: HttpRequest): string => {
+    const principal = principals.get(request);
+    if (principal === undefined) {
+      throw new ApiError(
+        500,
+        'no-principal',
+        'This route asked who the caller is, and it was reached without authentication. That is a ' +
+          'mistake in the access policy rather than in the request.',
+      );
+    }
+    return principal.accountId;
+  };
+
   const router = new Router();
 
   router.add({
@@ -156,7 +189,12 @@ export function buildApi(options: ApiOptions): PipelineOptions {
     handler: () => Promise.resolve(json(200, { status: 'ok' })),
   });
 
-  addOrderRoutes(router, { orders: options.services.orders, contextFor });
+  addOrderRoutes(router, {
+    orders: options.services.orders,
+    listings: options.services.listings,
+    contextFor,
+    accountFor,
+  });
   addPaymentRoutes(router, {
     payments: options.services.payments,
     contextFor,
@@ -212,7 +250,7 @@ export function buildApi(options: ApiOptions): PipelineOptions {
       );
     }
     if (access.anonymous === true) return;
-    await guard(guardOptions, request, access, correlationId);
+    principals.set(request, await guard(guardOptions, request, access, correlationId));
   };
 
   return {

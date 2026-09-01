@@ -16,6 +16,54 @@
 export const LISTING_STATUSES = ['draft', 'published', 'suspended', 'withdrawn'] as const;
 export type ListingStatus = (typeof LISTING_STATUSES)[number];
 
+/**
+ * How fulfilment of a version relates to stock.
+ *
+ * A **policy**, not a Boolean. `tracksInventory: true | false` would answer today's question and
+ * force a migration of the whole order and inventory path the first time a supplier-direct machine,
+ * a made-to-order part or a digital entitlement arrived. Those are not "untracked" in the way a
+ * haircut is: each has different availability, reservation and fulfilment behaviour, and collapsing
+ * them loses precisely the distinction that will be needed.
+ *
+ * **It is not derived from the commerce unit type.** "Product means tracked, service means
+ * untracked" is the obvious shortcut and it is wrong in both directions: a physical part can be made
+ * to order, a service can hold bookable capacity, and a supplier-direct machine is a product whose
+ * stock JAYA does not own. Inventory behaviour belongs to the offer, not to the kind of thing.
+ *
+ * Widening this list is a CHECK constraint and an entry here. Nothing downstream branches on the
+ * whole set — the order path asks `requiresReservation`, which is the only question it has.
+ */
+export const INVENTORY_MODES = [
+  /** Ordinary physical stock. Stock must exist, a reservation is required, release and commit apply. */
+  'tracked',
+  /** A service. There is no stock, so there is nothing to reserve. */
+  'untracked',
+  /**
+   * Supplier-direct or drop-ship. JAYA does not own the stock ledger.
+   *
+   * Availability comes from the supplier, and there is no local reservation until an external
+   * reservation adapter exists. Deliberately distinct from `untracked`: stock exists, somebody else
+   * holds it, and an adapter can be added without every consumer changing.
+   */
+  'external',
+  /** Produced or procured after the order. Nothing to reserve; fulfilment still applies in full. */
+  'made-to-order',
+  /** An entitlement. No physical reservation; delivery behaviour is its own concern. */
+  'digital',
+] as const;
+export type InventoryMode = (typeof INVENTORY_MODES)[number];
+
+/**
+ * Whether an order line against this mode must hold a reservation before it can be placed.
+ *
+ * The **only** question the order path asks, which is why it is a function here rather than a
+ * comparison at each call site. When an external reservation adapter arrives, `external` starts
+ * returning true and no consumer changes.
+ */
+export function requiresReservation(mode: InventoryMode): boolean {
+  return mode === 'tracked';
+}
+
 /** Kinds of media a listing may attach to a version. */
 export const MEDIA_KINDS = ['image', 'video', 'document'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
@@ -83,6 +131,15 @@ export interface ListingVersion {
   readonly currency: string;
   /** How many units this version offers. */
   readonly quantityAvailable: bigint;
+  /**
+   * How fulfilment of this version relates to stock.
+   *
+   * On the version rather than the listing, because changing it changes the terms: somebody
+   * ordering from a `tracked` offer and somebody ordering from a `made-to-order` one are agreeing
+   * to different things about when they will get it. An order pins a version precisely so terms
+   * already agreed stay what they were.
+   */
+  readonly inventoryMode: InventoryMode;
   /** Unit-type-specific facts supplied by the caller. */
   readonly attributes: Readonly<Record<string, unknown>>;
   /** When the version was published, as a canonical UTC instant. */
@@ -248,6 +305,8 @@ export type UniversalListingErrorCode =
   | 'unknown-declaration-kind'
   /** The inventory movement kind is not one M-04 recognises. */
   | 'unknown-movement-kind'
+  /** The inventory mode is not one M-04 recognises. */
+  | 'unknown-inventory-mode'
   /** The title is malformed. */
   | 'malformed-title'
   /** The description is malformed. */

@@ -181,6 +181,7 @@ const LISTING_VERSION_COLUMNS = [
   'unit_price_minor',
   'currency',
   'quantity_available',
+  'inventory_mode',
   'attributes',
   'published_at',
   'correlation_id',
@@ -261,6 +262,7 @@ const LISTING_VERSION_PROJECTION = [
   'unit_price_minor',
   'currency',
   'quantity_available',
+  'inventory_mode',
   'attributes',
   utcText('published_at'),
   'correlation_id',
@@ -392,6 +394,7 @@ export function toListingVersion(row: Record<string, unknown>): ListingVersion {
         unitPriceMinor: row.unit_price_minor,
         currency: text(row.currency, 'currency'),
         quantityAvailable: row.quantity_available,
+        inventoryMode: row.inventory_mode,
         attributes: jsonObject(row.attributes, 'attributes'),
         publishedAt: text(row.published_at, 'published_at'),
         correlationId: text(row.correlation_id, 'correlation_id'),
@@ -721,7 +724,7 @@ class PostgresUniversalListingTransaction implements UniversalListingTransaction
     try {
       await this.#client.query(
         `INSERT INTO ${LISTING_VERSION_TABLE} (${LISTING_VERSION_COLUMNS.join(', ')})
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);`,
         [
           version.versionId,
           version.listingId,
@@ -731,6 +734,7 @@ class PostgresUniversalListingTransaction implements UniversalListingTransaction
           version.unitPriceMinor,
           version.currency,
           version.quantityAvailable,
+          version.inventoryMode,
           JSON.stringify(version.attributes),
           version.publishedAt,
           version.correlationId,
