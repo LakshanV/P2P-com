@@ -25,6 +25,7 @@
 import { FinancialLedgerError } from '../../modules/financial-ledger/index.ts';
 import { OrderError } from '../../modules/orders/index.ts';
 import { PaymentError } from '../../modules/payments/index.ts';
+import { UserCockpitError } from '../../modules/user-cockpit/index.ts';
 import type { DescribeError } from '../../platform/http/pipeline.ts';
 
 /** Codes shared by every module, because they come from the same K-03 identifier rules. */
@@ -62,8 +63,18 @@ const ORDERS: Readonly<Record<string, number>> = Object.freeze({
   'unknown-cancellation-reason': 400,
   'total-mismatch': 422,
   'currency-mismatch': 422,
-  'no-items': 422,
   'negative-amount': 400,
+  // Vocabulary words the client got wrong: a malformed request, not a domain refusal.
+  'unknown-event-kind': 400,
+  'unknown-fulfilment-role': 400,
+  'malformed-currency': 400,
+  'negative-quantity': 400,
+  // States the order is in that make the request impossible. Well formed, and refused.
+  'order-not-draft': 422,
+  'order-empty': 422,
+  'order-terminal': 422,
+  // The arithmetic does not hold: quantity times unit price is not the line total.
+  'line-total-mismatch': 422,
 });
 
 const PAYMENTS: Readonly<Record<string, number>> = Object.freeze({
@@ -124,6 +135,23 @@ const LEDGER: Readonly<Record<string, number>> = Object.freeze({
 });
 
 /**
+ * The cockpit's own refusals.
+ *
+ * It reads rather than writes, so its whole vocabulary is about being unable to answer honestly. A
+ * wallet naming a K-10 account that does not exist, or an asset type K-10 does not know, is a
+ * **defect in this platform** rather than a client mistake — showing a zero instead would be
+ * inventing a balance, so it is a 500 and it is loud.
+ */
+const COCKPIT: Readonly<Record<string, number>> = Object.freeze({
+  'malformed-identifier': 400,
+  'natural-identifier': 400,
+  'secret-bearing-input': 400,
+  'malformed-instant': 400,
+  'dangling-wallet': 500,
+  'unknown-asset-type': 500,
+});
+
+/**
  * Classify a refusal.
  *
  * Returns null for anything unrecognised, which the pipeline turns into a 500 and hands to the
@@ -138,7 +166,9 @@ export const describeError: DescribeError = (error) => {
         ? PAYMENTS
         : error instanceof FinancialLedgerError
           ? LEDGER
-          : null;
+          : error instanceof UserCockpitError
+            ? COCKPIT
+            : null;
 
   if (table === null) return null;
 
@@ -154,6 +184,7 @@ export const CLASSIFIED_CODES: Readonly<Record<string, readonly string[]>> = Obj
   orders: Object.freeze(Object.keys(ORDERS)),
   payments: Object.freeze(Object.keys(PAYMENTS)),
   'financial-ledger': Object.freeze(Object.keys(LEDGER)),
+  'user-cockpit': Object.freeze(Object.keys(COCKPIT)),
 });
 
 /**

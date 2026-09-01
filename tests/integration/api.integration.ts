@@ -29,6 +29,7 @@ import {
   PostgresPaymentRepository,
   resolveMockProvider,
 } from '../../modules/payments/index.ts';
+import { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import { buildApi } from '../../apps/api/app.ts';
 import type { Database } from '../../platform/db/client.ts';
 import { createHttpServer } from '../../platform/http/server.ts';
@@ -53,14 +54,19 @@ async function withServer(
   database: Database,
   body: (client: Client) => Promise<void>,
 ): Promise<void> {
+  const journal = new LedgerService(new PostgresLedgerRepository(database));
+  const orders = new OrderService(new PostgresOrderRepository(database));
+  const payments = new PaymentService(new PostgresPaymentRepository(database), resolveMockProvider);
+  const ledger = new FinancialLedgerService(
+    new PostgresFinancialLedgerRepository(database),
+    new K10LedgerPort(journal),
+  );
   const api = buildApi({
     services: {
-      orders: new OrderService(new PostgresOrderRepository(database)),
-      payments: new PaymentService(new PostgresPaymentRepository(database), resolveMockProvider),
-      ledger: new FinancialLedgerService(
-        new PostgresFinancialLedgerRepository(database),
-        new K10LedgerPort(new LedgerService(new PostgresLedgerRepository(database))),
-      ),
+      orders,
+      payments,
+      ledger,
+      cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
   });
 

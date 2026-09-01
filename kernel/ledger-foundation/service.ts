@@ -19,7 +19,7 @@
 import { sealAssetType } from './immutable.ts';
 import { makeLedgerTransactionPostedAction, makeLedgerTransactionPostedEvent } from './outbox.ts';
 import type { LedgerRepository } from './repository.ts';
-import { assertOpaqueIdentifier } from './registry.ts';
+import { assertAssetTypeId, assertOpaqueIdentifier } from './registry.ts';
 import { validateAccount, validateAssetType, validateTransaction } from './validate.ts';
 import {
   LedgerError,
@@ -364,6 +364,23 @@ export class LedgerService {
   async findTransaction(transactionId: string): Promise<LedgerTransaction | null> {
     assertOpaqueIdentifier(transactionId, 'transactionId');
     return this.#repository.withTransaction((tx) => tx.findTransactionById(transactionId));
+  }
+
+  /**
+   * Look up one asset type, or null.
+   *
+   * K-10 records what a value *is* — its issuer, whether it may be withdrawn or transferred, what
+   * it expires after, what it is restricted to — and until now provided no way to read any of it
+   * back. That made the metadata unusable by the units that need it most: a screen showing somebody
+   * a reward balance has to be able to say the value cannot be withdrawn, and the honest place to
+   * say so is next to the number. Without this it would either omit the fact or hardcode it, and
+   * both are how a holder finds out at the till.
+   */
+  async findAssetType(assetTypeId: string): Promise<AssetType | null> {
+    // Held to K-10's own id rule rather than the opaque-identifier rule: an asset type id is
+    // lower_snake_case and public, not an opaque handle.
+    assertAssetTypeId(assetTypeId, 'assetTypeId');
+    return this.#repository.withTransaction((tx) => tx.findAssetTypeById(assetTypeId));
   }
 }
 

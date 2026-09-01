@@ -23,12 +23,14 @@ import { assertOpaqueIdentifier } from '../../kernel/identity/index.ts';
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
+import type { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import { requestContext, type RequestContext } from '../../platform/http/context.ts';
 import type { PipelineOptions, RawRequest, RequestRecord } from '../../platform/http/pipeline.ts';
 import { Router } from '../../platform/http/router.ts';
 import { json, type HttpRequest } from '../../platform/http/types.ts';
 
 import { ApiError, describeApiError } from './errors.ts';
+import { addCockpitRoutes } from './routes/cockpit.ts';
 import { addLedgerRoutes } from './routes/ledger.ts';
 import { addOrderRoutes } from './routes/orders.ts';
 import { addPaymentRoutes } from './routes/payments.ts';
@@ -37,6 +39,8 @@ export interface ApiServices {
   readonly orders: OrderService;
   readonly payments: PaymentService;
   readonly ledger: FinancialLedgerService;
+  /** M-36: the buyer's own read-only screens. Owns no data and writes nothing. */
+  readonly cockpit: UserCockpitService;
 }
 
 export interface ApiOptions {
@@ -109,6 +113,7 @@ export function buildApi(options: ApiOptions): PipelineOptions {
   addOrderRoutes(router, { orders: options.services.orders, contextFor });
   addPaymentRoutes(router, { payments: options.services.payments, contextFor });
   addLedgerRoutes(router, { ledger: options.services.ledger, contextFor });
+  addCockpitRoutes(router, { cockpit: options.services.cockpit, contextFor });
 
   router.add({
     method: 'GET',

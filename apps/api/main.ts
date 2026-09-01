@@ -24,6 +24,7 @@ import {
   PostgresFinancialLedgerRepository,
 } from '../../modules/financial-ledger/index.ts';
 import { OrderService, PostgresOrderRepository } from '../../modules/orders/index.ts';
+import { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import {
   PaymentService,
   PostgresPaymentRepository,
@@ -82,16 +83,18 @@ export interface StartOptions {
 export function servicesFor(databaseUrl: string): ApiServices {
   const database = new PostgresDatabase(databaseUrl);
 
+  const journal = new LedgerService(new PostgresLedgerRepository(database));
   const orders = new OrderService(new PostgresOrderRepository(database));
   // The mock provider. There is no live adapter: BL-05 records that no payment sandbox exists, and
   // decision D-006 requires a port and a mock before any live one.
   const payments = new PaymentService(new PostgresPaymentRepository(database), resolveMockProvider);
   const ledger = new FinancialLedgerService(
     new PostgresFinancialLedgerRepository(database),
-    new K10LedgerPort(new LedgerService(new PostgresLedgerRepository(database))),
+    new K10LedgerPort(journal),
   );
+  const cockpit = new UserCockpitService({ orders, payments, ledger, journal });
 
-  return { orders, payments, ledger };
+  return { orders, payments, ledger, cockpit };
 }
 
 export function start(options: StartOptions): ReturnType<typeof createHttpServer> {

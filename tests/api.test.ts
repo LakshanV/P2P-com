@@ -25,7 +25,10 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   FinancialLedgerService,
@@ -39,11 +42,13 @@ import {
   PaymentService,
   resolveMockProvider,
 } from '../modules/payments/index.ts';
+import { UserCockpitService } from '../modules/user-cockpit/index.ts';
 import { buildApi, type ApiServices } from '../apps/api/app.ts';
 import { CLASSIFIED_CODES } from '../apps/api/errors.ts';
 import { handleRequest, type RequestRecord } from '../platform/http/pipeline.ts';
 import type { HttpResponse } from '../platform/http/types.ts';
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUYER = 'acct_01HR0API0buyer1';
 const SELLER = 'acct_01HR0API0sellr1';
 const NOW = '2026-07-01T09:00:00.000000Z';
@@ -94,7 +99,12 @@ async function build(): Promise<Harness> {
     new InMemoryFinancialLedgerRepository(),
     new K10LedgerPort(kernelLedger),
   );
-  const services: ApiServices = { orders, payments, ledger };
+  const services: ApiServices = {
+    orders,
+    payments,
+    ledger,
+    cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
+  };
 
   const observed: RequestRecord[] = [];
   const api = buildApi({
@@ -408,15 +418,43 @@ test('a gateway refusal is 502, because it is neither the client’s fault nor o
   assert.equal(codeOf(response), 'provider-failed');
 });
 
-test('every refusal code a module can raise is classified', () => {
-  // A code missing from the tables produces a 500 rather than a status a client can act on, so the
-  // tables are the thing to keep honest — and this is what keeps them honest.
-  assert.ok(CLASSIFIED_CODES.orders?.includes('illegal-transition'));
-  assert.ok(CLASSIFIED_CODES.payments?.includes('provider-failed'));
-  assert.ok(CLASSIFIED_CODES['financial-ledger']?.includes('allocation-mismatch'));
+/**
+ * Every code a module's error type declares, read from its own source.
+ *
+ * Derived rather than listed, so a module that adds a refusal code cannot quietly acquire a 500:
+ * the check fails until somebody decides what status the new code deserves.
+ */
+function declaredCodes(moduleDir: string): readonly string[] {
+  const source = readFileSync(path.join(REPO_ROOT, 'modules', moduleDir, 'types.ts'), 'utf8');
+  const union = /export type \w*ErrorCode =([\s\S]*?);\r?\n/.exec(source);
+  assert.ok(union !== null, `${moduleDir} declares no error-code union`);
+  return [...String(union[1]).matchAll(/\|\s*'([a-z-]+)'/g)].map((match) => String(match[1]));
+}
+
+test('every refusal code a module can raise has a status', () => {
+  // A code missing from the tables produces a 500 rather than something a client can act on. This
+  // reads each module's own union from disk, so the tables cannot fall behind the modules.
+  const modules: Readonly<Record<string, string>> = {
+    orders: 'orders',
+    payments: 'payments',
+    'financial-ledger': 'financial-ledger',
+    'user-cockpit': 'user-cockpit',
+  };
+
+  for (const [key, dir] of Object.entries(modules)) {
+    const classified = new Set(CLASSIFIED_CODES[key] ?? []);
+    const missing = declaredCodes(dir).filter((code) => !classified.has(code));
+    assert.deepEqual(
+      missing,
+      [],
+      `${dir} can refuse with ${missing.join(', ')}, and the API has no status for ${
+        missing.length === 1 ? 'it' : 'them'
+      }. An unclassified refusal reaches the client as a 500`,
+    );
+  }
 
   for (const [module, codes] of Object.entries(CLASSIFIED_CODES)) {
-    assert.ok(codes.length > 10, `${module} has suspiciously few classified codes`);
+    assert.ok(codes.length > 0, `${module} classifies nothing`);
     assert.equal(new Set(codes).size, codes.length, `${module} lists a code twice`);
   }
 });
@@ -761,6 +799,7 @@ test('an unclassified failure tells the caller nothing and the observer everythi
       } as unknown as ApiServices['orders'],
       payments: {} as unknown as ApiServices['payments'],
       ledger: {} as unknown as ApiServices['ledger'],
+      cockpit: {} as unknown as ApiServices['cockpit'],
     },
     clock: () => NOW,
     generateCorrelationId: () => 'corr_01HR0APIGENERATED',
@@ -832,7 +871,12 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
 
   let tick = 0;
   const api = buildApi({
-    services: { orders, payments, ledger },
+    services: {
+      orders,
+      payments,
+      ledger,
+      cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
+    },
     // A different instant and a different correlation id on each request, as production gives.
     clock: () => `2026-07-01T09:00:0${String(tick++)}.000000Z`,
     generateCorrelationId: () => `corr_01HR0APIGEN${String(tick).padStart(4, '0')}`,
@@ -864,4 +908,43 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
     (first.body as { order: { orderId: string } }).order.orderId,
     (second.body as { order: { orderId: string } }).order.orderId,
   );
+});
+
+test('MY MONEY is served over HTTP, and never as one total', async () => {
+  const { call } = await build();
+
+  await call(
+    'POST',
+    '/v1/wallets',
+    {
+      ownerAccountId: BUYER,
+      assetTypeId: 'jaya_reward',
+      purpose: 'spending',
+      normalBalance: 'credit',
+    },
+    keyed('idem_api_ckpt_wal'),
+  );
+
+  const response = await call('GET', `/v1/accounts/${BUYER}/money`);
+  assert.equal(response.status, 200);
+
+  const view = response.body as {
+    holdings: { symbol: string; total: unknown; positions: { withdrawable: boolean }[] }[];
+    empty: boolean;
+    asOf: string;
+  };
+
+  assert.equal(view.empty, false);
+  assert.equal(view.holdings.length, 1);
+  assert.equal(view.holdings[0]?.symbol, 'JAYAREWARD');
+  assert.equal(
+    view.holdings[0]?.positions[0]?.withdrawable,
+    false,
+    'the screen is told this is not cash, next to the number rather than in a footnote',
+  );
+  assert.ok(
+    !Object.keys(view).includes('total'),
+    'there is no single total across asset types, and there must not be',
+  );
+  assert.ok(view.asOf.length > 0, 'every figure is derived, so the instant is stated');
 });
