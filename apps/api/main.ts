@@ -32,6 +32,7 @@ import {
   PostgresAuthenticationRepository,
   ProviderRegistry,
 } from '../../kernel/authentication/index.ts';
+import type { EventService } from '../../kernel/event-infrastructure/index.ts';
 import { IdentityService, PostgresIdentityRepository } from '../../kernel/identity/index.ts';
 import { PermissionService, PostgresPermissionRepository } from '../../kernel/permissions/index.ts';
 import { PostgresDatabase } from '../../platform/db/postgres.ts';
@@ -53,6 +54,13 @@ import {
 } from '../../modules/payments/index.ts';
 
 import { buildApi, type ApiAccess, type ApiServices } from './app.ts';
+import {
+  PAYMENT_SETTLEMENT_SUBSCRIPTION,
+  paymentSettlementHandler,
+  settlementAssets,
+  type SettlementAssets,
+  type SettlementOutcome,
+} from './consumers/payment-settlement.ts';
 import { webhookSecrets, type WebhookSecrets } from './webhook-signature.ts';
 
 /** Read a variable, or fail with a message that says what to set. */
@@ -154,6 +162,27 @@ export function accessFor(database: PostgresDatabase, clock: () => string): ApiA
 }
 
 /**
+ * Which K-10 asset type each payment asset settles into.
+ *
+ * `JAYA_SETTLEMENT_ASSET_<CODE>_<SCALE>` — so `JAYA_SETTLEMENT_ASSET_LKR_2=lkr_cash` says a payment
+ * in LKR at scale 2 posts against the `lkr_cash` asset type. Undeclared pairings are refused by the
+ * settlement consumer rather than assumed to match by string equality, which happens to work for
+ * `LKR` and quietly posts the wrong unit for everything else.
+ */
+function settlementAssetsFromEnvironment(): SettlementAssets {
+  const prefix = 'JAYA_SETTLEMENT_ASSET_';
+  const found: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (!name.startsWith(prefix) || value === undefined || value === '') continue;
+    const suffix = name.slice(prefix.length);
+    const split = suffix.lastIndexOf('_');
+    if (split <= 0) continue;
+    found[`${suffix.slice(0, split)}:${suffix.slice(split + 1)}`] = value;
+  }
+  return settlementAssets(found);
+}
+
+/**
  * Webhook signing secrets, from the environment.
  *
  * `JAYA_WEBHOOK_SECRET_<PROVIDER>` — so `JAYA_WEBHOOK_SECRET_MOCK` configures the `mock` provider.
@@ -184,6 +213,33 @@ function randomOpaque(length: number): string {
     out += alphabet[randomInt(alphabet.length)] ?? 'A';
   }
   return out;
+}
+
+/**
+ * Register the cross-module consumers on K-08.
+ *
+ * The application is the only place these can live. M-12 and M-13 are the same layer, so neither may
+ * import the other; the join between "a payment was captured" and "this obligation is now met" has
+ * to be made from above both, and this is above both.
+ *
+ * Returns the subscription definitions the caller must have registered with K-08's
+ * `SubscriptionRegistry` — K-08 refuses to claim work for a subscription it does not know, which is
+ * the right refusal: claiming work with nothing to run it burns attempts and dead-letters events
+ * that were never actually delivered.
+ */
+export function registerConsumers(options: {
+  readonly events: EventService;
+  readonly ledger: FinancialLedgerService;
+  readonly observe?: (outcome: SettlementOutcome) => void;
+}): void {
+  options.events.register(
+    PAYMENT_SETTLEMENT_SUBSCRIPTION,
+    paymentSettlementHandler({
+      ledger: options.ledger,
+      assets: settlementAssetsFromEnvironment(),
+      ...(options.observe === undefined ? {} : { observe: options.observe }),
+    }),
+  );
 }
 
 export function servicesFor(databaseUrl: string): ApiServices {
