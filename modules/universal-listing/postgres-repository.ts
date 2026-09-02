@@ -26,7 +26,11 @@ import {
   sealListingMedia,
   sealListingVersion,
 } from './immutable.ts';
-import type { UniversalListingRepository, UniversalListingTransaction } from './repository.ts';
+import type {
+  PublishedVersion,
+  UniversalListingRepository,
+  UniversalListingTransaction,
+} from './repository.ts';
 import {
   UniversalListingError,
   type UniversalListingErrorCode,
@@ -267,6 +271,30 @@ const LISTING_VERSION_PROJECTION = [
   utcText('published_at'),
   'correlation_id',
   'idempotency_key',
+].join(', ');
+
+/**
+ * The same version columns, qualified for a join.
+ *
+ * Written out rather than derived from `LISTING_VERSION_PROJECTION` by prefixing, because that
+ * projection already contains a `to_char(...)` expression and prefixing it would produce
+ * `v.to_char(...)`, which is not SQL. Two lists that must agree is a cost; a query that silently
+ * stopped compiling would be a larger one.
+ */
+const QUALIFIED_VERSION_PROJECTION = [
+  'v.version_id',
+  'v.listing_id',
+  'v.version_number',
+  'v.title',
+  'v.description',
+  'v.unit_price_minor',
+  'v.currency',
+  'v.quantity_available',
+  'v.inventory_mode',
+  'v.attributes',
+  `to_char(v.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS published_at`,
+  'v.correlation_id',
+  'v.idempotency_key',
 ].join(', ');
 
 const LISTING_MEDIA_PROJECTION = [
@@ -718,6 +746,38 @@ class PostgresUniversalListingTransaction implements UniversalListingTransaction
     );
     const row = result.rows[0];
     return row === undefined ? null : toListingVersion(row);
+  }
+
+  /**
+   * Every published listing's current version, newest first.
+   *
+   * One statement rather than a listing query followed by a version query per row: the N+1 version
+   * of this would open a connection round trip per listing, and a recall step that costs a round
+   * trip per candidate is a recall step nobody will run.
+   *
+   * The version columns are aliased through the projection, so `supplier_account_id` is given a name
+   * that cannot collide with one of them.
+   */
+  async findPublishedVersions(limit: number): Promise<readonly PublishedVersion[]> {
+    const result = await this.#client.query<Record<string, unknown>>(
+      `SELECT ${QUALIFIED_VERSION_PROJECTION},
+              l.account_id AS supplier_account_id
+         FROM ${LISTING_VERSION_TABLE} v
+         JOIN ${LISTING_TABLE} l
+           ON l.listing_id = v.listing_id
+          AND l.current_version = v.version_number
+        WHERE l.status = 'published'
+        ORDER BY v.published_at DESC, v.version_id
+        LIMIT $1;`,
+      [limit],
+    );
+
+    return Object.freeze(
+      result.rows.map((row) => ({
+        version: toListingVersion(row),
+        supplierAccountId: text(row.supplier_account_id, 'supplier_account_id'),
+      })),
+    );
   }
 
   async insertVersion(version: ListingVersion): Promise<void> {

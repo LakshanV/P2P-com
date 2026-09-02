@@ -66,6 +66,17 @@ export const JAYA_V1_ROLES: readonly RoleCapabilities[] = Object.freeze([
       { action: 'create', resourceType: 'commerce-request' },
       { action: 'read', resourceType: 'commerce-request' },
       { action: 'update', resourceType: 'commerce-request' },
+      // Reading a sourcing run is reading what the platform tried on their behalf. There is no
+      // create: a run is started by sourcing a Need, which is an update to the Need.
+      { action: 'read', resourceType: 'sourcing-run' },
+      // A tender is opened by the buyer, and only when the ladder could not answer.
+      { action: 'create', resourceType: 'rfq' },
+      { action: 'read', resourceType: 'rfq' },
+      { action: 'update', resourceType: 'rfq' },
+      // Reading the offers, and choosing between them. A customer never makes one, and never
+      // withdraws one: both are the supplier's acts, and separate verbs are what keep them so.
+      { action: 'read', resourceType: 'quote' },
+      { action: 'decide', resourceType: 'quote' },
       { action: 'create', resourceType: 'order' },
       { action: 'read', resourceType: 'order' },
       { action: 'update', resourceType: 'order' },
@@ -85,6 +96,16 @@ export const JAYA_V1_ROLES: readonly RoleCapabilities[] = Object.freeze([
   {
     role: 'SUPPLIER',
     capabilities: Object.freeze([
+      // A tender they were invited to, and their own offers against it. `read rfq` is what makes an
+      // invitation answerable; the object-level check limits it to tenders they were invited to,
+      // and the handlers limit what they see of one to the requirement rather than the bidding.
+      { action: 'read', resourceType: 'rfq' },
+      { action: 'quote', resourceType: 'rfq' },
+      { action: 'read', resourceType: 'quote' },
+      // Withdrawing their own offer, and **not** deciding. A supplier who held `decide` could
+      // accept their own offer, which is awarding themselves the order; M-10 refuses that too, and
+      // the point of two verbs is that both layers do.
+      { action: 'withdraw', resourceType: 'quote' },
       { action: 'read', resourceType: 'order' },
       { action: 'update', resourceType: 'order' },
       { action: 'read', resourceType: 'payment' },

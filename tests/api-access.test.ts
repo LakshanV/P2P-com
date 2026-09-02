@@ -170,7 +170,6 @@ async function anOrder(harness: Harness): Promise<string> {
   const created = await harness.call('POST', '/v1/orders', {
     as: harness.buyer,
     body: {
-      buyerAccountId: harness.buyer.accountId,
       sellerAccountId: harness.seller.accountId,
       currency: 'LKR',
       reason: 'a basket, so there is something to try to reach',
@@ -187,7 +186,6 @@ async function aPayment(harness: Harness, orderId: string): Promise<string> {
     as: harness.buyer,
     body: {
       orderId,
-      payerAccountId: harness.buyer.accountId,
       payeeAccountId: harness.seller.accountId,
       provider: 'mock',
       rail: 'card',
@@ -340,7 +338,6 @@ test('a wallet and a value plan are reachable only by the accounts they belong t
   const wallet = await harness.call('POST', '/v1/wallets', {
     as: harness.buyer,
     body: {
-      ownerAccountId: harness.buyer.accountId,
       assetTypeId: 'jaya_reward',
       purpose: 'spending',
       normalBalance: 'credit',
@@ -394,37 +391,49 @@ test('a session cannot act within an account it does not hold', async () => {
   }
 });
 
-test('naming another account in the body does not move the request into it', async () => {
-  // The account authority is scoped to is resolved from the session, never read from the request.
-  // K-04 resolves it a second time and refuses `cross-account-access` if the two disagree, so a
-  // caller who names somebody else's account is refused rather than believed.
+test('naming another account in the body is refused, not tolerated', async () => {
+  // The account authority is scoped to is resolved from the session, and the caller's own side of a
+  // record is now taken from there too. This suite used to accept either outcome — refusal, or an
+  // order the impersonator could not read — because the route read `buyerAccountId` from the body
+  // and M-11 recorded whoever was named. That was a hole with a polite fence around it: a stranger
+  // could fill somebody else's cockpit with orders they never placed.
   const harness = await build();
 
-  const response = await harness.call('POST', '/v1/orders', {
+  for (const field of ['buyerAccountId', 'buyer_account_id']) {
+    const response = await harness.call('POST', '/v1/orders', {
+      as: harness.stranger,
+      body: {
+        [field]: harness.buyer.accountId,
+        sellerAccountId: harness.seller.accountId,
+        currency: 'LKR',
+        reason: 'an order placed in somebody else’s name',
+      },
+      key: `idem_access_forge_${field.slice(0, 5)}`,
+    });
+
+    assert.equal(response.status, 400, `"${field}" was accepted`);
+    assert.equal((response.body as { code?: string }).code, 'caller-asserted-party');
+  }
+
+  // And with no field to send, an order is the caller's own or nobody's.
+  const created = await harness.call('POST', '/v1/orders', {
     as: harness.stranger,
     body: {
-      buyerAccountId: harness.buyer.accountId,
       sellerAccountId: harness.seller.accountId,
       currency: 'LKR',
-      reason: 'an order placed in somebody else’s name',
+      reason: 'an ordinary order',
     },
-    key: 'idem_access_forge_01',
+    key: 'idem_access_forge_ok',
   });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
 
-  // M-11 will happily record the buyer the caller names — it is not an authorisation component and
-  // should not become one. What matters is that the platform refuses this before it gets there, or
-  // that the resulting order is not reachable as the impersonated account's.
-  if (response.status < 300) {
-    const orderId = (response.body as { order: { orderId: string } }).order.orderId;
-    const asStranger = await harness.call('GET', `/v1/orders/${orderId}`, { as: harness.stranger });
-    assert.equal(
-      asStranger.status,
-      404,
-      'an order created naming another account is not the creator’s to read',
-    );
-  } else {
-    assert.equal(response.status, 403);
-  }
+  const orderId = (created.body as { order: { orderId: string } }).order.orderId;
+  const asBuyer = await harness.call('GET', `/v1/orders/${orderId}`, { as: harness.buyer });
+  assert.equal(
+    asBuyer.status,
+    404,
+    'the order belongs to the stranger who created it, and to nobody they named',
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -476,7 +485,6 @@ test('a seller cannot create an order or a payment', async () => {
   const order = await harness.call('POST', '/v1/orders', {
     as: harness.seller,
     body: {
-      buyerAccountId: harness.seller.accountId,
       sellerAccountId: harness.buyer.accountId,
       currency: 'LKR',
       reason: 'an order the seller placed for themselves',

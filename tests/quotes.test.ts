@@ -64,6 +64,7 @@ class StubTenders implements TenderSource {
   constructor() {
     this.tenders.set(RFQ, {
       rfqId: RFQ,
+      buyerAccountId: BUYER,
       status: 'open',
       quantity: 20n,
       substitutionPolicy: 'equivalent-with-disclosure',
@@ -72,6 +73,7 @@ class StubTenders implements TenderSource {
     });
     this.tenders.set(OTHER_RFQ, {
       rfqId: OTHER_RFQ,
+      buyerAccountId: BUYER,
       status: 'open',
       quantity: 5n,
       substitutionPolicy: 'none',
@@ -474,6 +476,49 @@ test('a supplier cannot withdraw another supplier’s offer', async () => {
 
   const held = await harness.service.getQuote('quo_01HR0QUOTE0017');
   assert.equal(held?.status, 'submitted', 'and the offer is untouched');
+});
+
+test('a supplier cannot accept their own offer', async () => {
+  // The more dangerous direction, and the one an ownership check on the *offer* gets wrong: "is this
+  // your quote?" answers yes for the supplier who wrote it. Choosing between offers is checked
+  // against the tender instead, because a supplier who could accept their own has awarded themselves
+  // the order.
+  const harness = build();
+  await anOffer(harness, { tag: '0033', supplierAccountId: SUPPLIER_A });
+
+  for (const operation of ['acceptQuote', 'rejectQuote'] as const) {
+    await assert.rejects(
+      harness.service[operation]({
+        quoteId: 'quo_01HR0QUOTE0033',
+        actingAccountId: SUPPLIER_A,
+        reason: 'awarding myself the order, which is the thing this must refuse',
+        occurredAt: LATER,
+        correlationId: `corr_01HR0QUOTEself${operation.slice(0, 3)}`,
+        idempotencyKey: `idem_01HR0QUOTEslf${operation.slice(0, 3)}`,
+      }),
+      (error: unknown) => error instanceof QuoteError && error.code === 'not-your-tender',
+      `${operation} let the supplier decide`,
+    );
+  }
+
+  assert.equal((await harness.service.getQuote('quo_01HR0QUOTE0033'))?.status, 'submitted');
+});
+
+test('a stranger cannot accept an offer against somebody else’s tender', async () => {
+  const harness = build();
+  await anOffer(harness, { tag: '0034' });
+
+  await assert.rejects(
+    harness.service.acceptQuote({
+      quoteId: 'quo_01HR0QUOTE0034',
+      actingAccountId: SUPPLIER_C,
+      reason: 'not my tender, and not my decision to take',
+      occurredAt: LATER,
+      correlationId: 'corr_01HR0QUOTEstrng1',
+      idempotencyKey: 'idem_01HR0QUOTEstrng1',
+    }),
+    (error: unknown) => error instanceof QuoteError && error.code === 'not-your-tender',
+  );
 });
 
 test('a supplier withdraws their own offer, and the record keeps both prices', async () => {

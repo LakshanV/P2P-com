@@ -27,6 +27,9 @@
  */
 
 import type { CommerceRequestService } from '../../modules/commerce-request/index.ts';
+import type { MatchingService } from '../../modules/matching/index.ts';
+import type { QuoteService } from '../../modules/quotes/index.ts';
+import type { RfqService } from '../../modules/rfq/index.ts';
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
@@ -85,6 +88,9 @@ export interface OwnershipServices {
   readonly payments: PaymentService;
   readonly ledger: FinancialLedgerService;
   readonly needs: CommerceRequestService;
+  readonly tenders: RfqService;
+  readonly quotes: QuoteService;
+  readonly matching: MatchingService;
 }
 
 const param =
@@ -162,6 +168,52 @@ const OWNERS: Readonly<Record<string, OwnerResolver>> = Object.freeze({
     const need = await services.needs.getNeed(id);
     return need === null ? [] : [need.accountId];
   },
+  /**
+   * A tender: its buyer, **and every supplier invited to quote for it**.
+   *
+   * The invited suppliers are the point. A tender they cannot read is a tender they cannot answer,
+   * so object-level access has to include them — which means "may this caller reach this tender?"
+   * and "is this caller the buyer?" are different questions. The routes ask the second one
+   * themselves for everything only a buyer may do: inviting, listing who else was invited, reading
+   * the offers, ranking them, choosing. This resolver deliberately does not answer that, and a
+   * reader who assumed it did would open a sealed tender to the people bidding in it.
+   */
+  rfq: async (services, id) => {
+    const tender = await services.tenders.getRfq(id);
+    if (tender === null) return [];
+    const invitations = await services.tenders.listInvitations(id);
+    return [tender.accountId, ...invitations.map((one) => one.supplierAccountId)];
+  },
+
+  /**
+   * An offer: the supplier who made it, and the buyer of the tender it answers.
+   *
+   * Both parties legitimately reach the record — but reaching it is not deciding it. M-10 checks
+   * accepting and rejecting against the **tender's** buyer, because this list answers yes for the
+   * supplier who wrote the offer, and a supplier who could accept their own has awarded themselves
+   * the order.
+   */
+  quote: async (services, id) => {
+    const quote = await services.quotes.getQuote(id);
+    if (quote === null) return [];
+    const tender = await services.tenders.getRfq(quote.rfqId);
+    return tender === null
+      ? [quote.supplierAccountId]
+      : [quote.supplierAccountId, tender.accountId];
+  },
+
+  /**
+   * A sourcing run belongs to whoever asked the Need it answers.
+   *
+   * Read from the run rather than from M-03, because M-07 copies the account onto the run precisely
+   * so a run can be scoped without reading the Need back — and a resolver that went through M-03
+   * would let a deleted Need make its runs unreachable rather than unowned.
+   */
+  'sourcing-run': async (services, id) => {
+    const run = await services.matching.getRun(id);
+    return run === null ? [] : [run.accountId];
+  },
+
   /** An account addresses itself. The object *is* the account. */
   account: (_services, id) => Promise.resolve([id]),
 });
@@ -408,6 +460,114 @@ export const ACCESS_POLICY: Readonly<Record<string, RouteAccess>> = Object.freez
     resourceType: 'commerce-request',
     resourceId: param('requestId'),
   },
+
+  // Sourcing. Running the ladder is an `update` on the Need — it changes its status and appends a
+  // run to it — so the object-level check is the Need's own owner. Nobody else sources somebody
+  // else's Need.
+  'POST /v1/needs/:requestId/sourcing': {
+    action: 'update',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'GET /v1/needs/:requestId/sourcing': {
+    action: 'read',
+    resourceType: 'commerce-request',
+    resourceId: param('requestId'),
+  },
+  'GET /v1/sourcing-runs/:runId': {
+    action: 'read',
+    resourceType: 'sourcing-run',
+    resourceId: param('runId'),
+  },
+  'GET /v1/sourcing-runs/:runId/attempts': {
+    action: 'read',
+    resourceType: 'sourcing-run',
+    resourceId: param('runId'),
+  },
+  'GET /v1/sourcing-runs/:runId/candidates': {
+    action: 'read',
+    resourceType: 'sourcing-run',
+    resourceId: param('runId'),
+  },
+
+  // Tenders. `rfq` ownership includes the invited suppliers, deliberately: a tender they cannot
+  // read is a tender they cannot answer. Everything only a buyer may do is checked again in the
+  // handler, because for an invited supplier "is this your tender?" honestly answers yes.
+  'POST /v1/rfqs': { action: 'create', resourceType: 'rfq' },
+  'GET /v1/rfqs': { action: 'read', resourceType: 'rfq' },
+  'GET /v1/rfqs/:rfqId': { action: 'read', resourceType: 'rfq', resourceId: param('rfqId') },
+  'POST /v1/rfqs/:rfqId/invitations': {
+    action: 'update',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+  'GET /v1/rfqs/:rfqId/invitations': {
+    action: 'read',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+  'GET /v1/rfqs/:rfqId/history': {
+    action: 'read',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+  'POST /v1/rfqs/:rfqId/closure': {
+    action: 'update',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+  'POST /v1/rfqs/:rfqId/award': {
+    action: 'update',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+  'POST /v1/rfqs/:rfqId/cancellation': {
+    action: 'update',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+  'GET /v1/rfqs/:rfqId/quotes': {
+    action: 'read',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+  'GET /v1/rfqs/:rfqId/evaluation': {
+    action: 'read',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+
+  // Offers. Submitting is guarded against the **tender**, because the offer does not exist yet and
+  // there is nothing else to check: M-10 then refuses a supplier who was not invited.
+  'POST /v1/rfqs/:rfqId/quotes': {
+    action: 'quote',
+    resourceType: 'rfq',
+    resourceId: param('rfqId'),
+  },
+  'GET /v1/quotes': { action: 'read', resourceType: 'quote' },
+  'GET /v1/quotes/:quoteId': {
+    action: 'read',
+    resourceType: 'quote',
+    resourceId: param('quoteId'),
+  },
+  'POST /v1/quotes/:quoteId/withdrawal': {
+    action: 'withdraw',
+    resourceType: 'quote',
+    resourceId: param('quoteId'),
+  },
+  'POST /v1/quotes/:quoteId/acceptance': {
+    action: 'decide',
+    resourceType: 'quote',
+    resourceId: param('quoteId'),
+  },
+  'POST /v1/quotes/:quoteId/rejection': {
+    action: 'decide',
+    resourceType: 'quote',
+    resourceId: param('quoteId'),
+  },
+
+  // A supplier's own inbox. Scoped by construction: there is no object and no parameter.
+  'GET /v1/invitations': { action: 'read', resourceType: 'rfq' },
 
   // Cockpit. Every one addresses an account, and the account is the object.
   'GET /v1/accounts/:accountId/money': {

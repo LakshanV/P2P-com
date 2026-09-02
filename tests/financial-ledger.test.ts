@@ -641,12 +641,12 @@ test('a purchase of LKR 10,000 is paid with rewards, merchant credit and a card'
   );
 
   assert.deepEqual(eventTypes(harness.repository).slice(-6), [
-    'value-plan.allocated',
-    'value-leg.posted',
-    'value-leg.posted',
-    'value-plan.committed',
-    'value-leg.posted',
-    'value-plan.settled',
+    'value_plan.allocated',
+    'value_leg.posted',
+    'value_leg.posted',
+    'value_plan.committed',
+    'value_leg.posted',
+    'value_plan.settled',
   ]);
 });
 
@@ -1078,7 +1078,7 @@ test('a leg event carries both what moved and what it counted for', async () => 
     eventId: idFor('fev'),
   });
 
-  const payload = lastEventPayload(harness.repository, 'value-leg.posted');
+  const payload = lastEventPayload(harness.repository, 'value_leg.posted');
   assert.equal(payload.amount_minor, '8');
   assert.equal(payload.settlement_equivalent_minor, '12');
   assert.equal(payload.asset_type_id, JAYA_REWARD);

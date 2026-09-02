@@ -194,7 +194,6 @@ async function anOrder(harness: Harness, key: string): Promise<string> {
     'POST',
     '/v1/orders',
     {
-      buyerAccountId: harness.buyer.accountId,
       sellerAccountId: harness.seller.accountId,
       currency: 'LKR',
       reason: 'a basket to add lines to',

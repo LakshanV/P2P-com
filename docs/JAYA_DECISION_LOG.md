@@ -511,6 +511,66 @@ Each entry includes:
 
 ---
 
+## D-042 — An event type and an audit action read as a subject and a fact, both halves snake_case
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | Widen K-08's `TYPE_NAME` and K-09's `ACTION_NAME` so the **subject** may carry underscores, matching the fact half: `/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/`. A hyphen stays refused. Rename M-03's four event types from `commerce_request.*` to `need.*`, M-13's from `value-plan.*` / `value-leg.*` / `wallet.status-changed` to the underscore forms, and M-03's, M-07's and M-13's audit `resourceTypes` from kebab to snake. |
+| Context | The first end-to-end journey tried to publish, and K-08 refused three modules' event types outright. The subject was restricted to a single word while the fact was not — an asymmetry nothing stated and nobody intended — so `inventory.item_reserved` was legal and `value_plan.allocated` was not. Separately, M-13 used hyphens, which both rules have always refused, and M-03 borrowed K-04's kebab-case resource-type spelling for a K-09 field where every other module uses snake. **None of this could be discovered without running a relay**, and nothing ran one until `tests/e2e/` existed. |
+| Consequences | The platform's event traffic can be published at all, which it could not before: every M-03 and M-13 outbox row would have been dead-lettered on the first pass, in production, quietly. `tests/platform-events.test.ts` now constructs both registries at build time, so a definition either kernel would refuse fails the suite rather than the relay. `need.*` is kept rather than reverted to `commerce_request.*` because the product calls it a Need everywhere else. No stored data is affected: nothing had ever been published. |
+| Status | active |
+
+---
+
+## D-043 — An application is a manifest unit, and may own a subscription
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | Add `APPLICATIONS = ['apps/api']` to `platform/architecture/manifest.ts`, and include it in the owner set K-08 and K-09 validate against. |
+| Context | The two cross-module consumers declare `owner: 'apps/api'`, and K-08 refused every one: the owner set was kernel components plus business modules. Those consumers exist precisely because M-11/M-04 and M-11/M-10 are the same layer and neither may import the other, so the join is made from above both — and "above both" is an application. A kernel that cannot name the thing that owns a subscription cannot have that subscription registered, which is what happened: both were written, neither could run. |
+| Consequences | An application is an id and nothing more. It owns no schema and no migration; everything it persists belongs to a module, and the boundary checks are unchanged. `platform` was already in the set for the same reason, so this is the pattern completed rather than a new one. |
+| Status | active |
+
+---
+
+## D-044 — A caller never names their own side of a record
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | `buyerAccountId` on `POST /v1/orders`, `payerAccountId` on `POST /v1/payments` and `POST /v1/value-plans`, and `ownerAccountId` on `POST /v1/wallets` now come from the **session**. Sending any of them is refused with `caller-asserted-party` rather than ignored. The counterparty — `sellerAccountId`, `payeeAccountId` — is still named by the caller, because naming who you are buying from or paying is what a request is for. |
+| Context | Found by the first end-to-end journey. Four create routes read the caller's own party from the request body, so any signed-in customer could open an order, a payment, a wallet or a value plan naming somebody else as the owning party. The object-level ownership check then worked exactly as designed — and against the victim: the fabricated order was *theirs*, so it appeared in their cockpit and the person who created it could not see it. The suite that should have caught this accepted either outcome, refusal or an unreadable order, and so tested nothing once the second branch was taken. |
+| Consequences | An order, payment, wallet or plan belongs to whoever created it, and there is no field through which that can be moved. Each party opens their own wallet, which is a behaviour change: a seller's earnings wallet is opened by the seller. The refusal is by name rather than silent, because "ignored" is a behaviour that changes the first time somebody adds the field back for another reason, and a client that thought it was setting the party would never find out. |
+| Status | active |
+
+---
+
+## D-045 — The application owns the event inventory, and a test keeps it honest
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | `apps/api/platform-events.ts` names every event type, every audit action and every outbox schema this deployment publishes. `tests/platform-events.test.ts` reads the modules from disk and asserts the inventory is complete in both directions, that every schema with an outbox is polled, and that both kernel registries accept every entry. |
+| Context | A module declares its own facts and the kernels refuse what they have not been told about. Nothing joined the two, so the relay could not have been constructed at all — and the failure mode of getting it wrong is silent: a module whose outbox nobody polls writes rows that are never published and reports nothing wrong, because its own transaction committed. |
+| Consequences | The relay has a source of truth, and adding an event without registering it fails the build rather than the next production pass. The inventory is a deployment decision rather than a discovery: a relay that discovered its own sources would quietly start publishing whatever somebody added next. |
+| Status | active |
+
+---
+
+## D-046 — Offering, withdrawing and choosing are separate authority verbs
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | Add `quote`, `withdraw` and `decide` to K-04's action vocabulary. A SUPPLIER holds `quote` on `rfq` and `withdraw` on `quote`; a CUSTOMER holds `decide` on `quote`. Neither holds `update` on the other's objects. M-10 additionally checks accepting and rejecting against the **tender's buyer**, and add `buyerAccountId` to its `TenderFacts` port so it can. |
+| Context | The same reasoning that already separated `capture` and `refund` from "update a payment", and a sharper case. A tender has two parties reaching the same objects, so "update an offer" would grant both of them the other's act — and object-level ownership cannot separate them, because for the supplier who wrote an offer "is this yours?" honestly answers yes. A supplier who could accept their own offer has awarded themselves the order. |
+| Consequences | Two independent layers refuse it: K-04 answers 403 because a SUPPLIER holds no `decide`, and M-10 answers `not-your-tender` if anything ever reached it. Buyer-only reads — the invitations, the offers, the ranking — are enforced by a third check in the handlers, because `rfq` ownership deliberately includes the invited suppliers and must, or a tender they cannot read is one they cannot answer. |
+| Status | active |
+
+---
+
 ## Decision Status Legend
 
 | Status | Meaning |

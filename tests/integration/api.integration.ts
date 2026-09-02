@@ -51,6 +51,12 @@ import { migrateUp } from '../../platform/db/runner.ts';
 import { PostgresQuoteRepository, QuoteService } from '../../modules/quotes/index.ts';
 import { PostgresRfqRepository, RfqService } from '../../modules/rfq/index.ts';
 import { tenderSourceFor } from '../../apps/api/tender-source.ts';
+import { catalogueSourceFor } from '../../apps/api/catalogue-source.ts';
+import {
+  MatchingService,
+  PostgresMatchingRepository,
+  catalogueRung,
+} from '../../modules/matching/index.ts';
 
 import { liveTestOptions, withTestDatabase } from './harness.ts';
 
@@ -155,6 +161,10 @@ async function withServer(
     idempotencyKey: `idem_live_api_stk_${String(namespaceCounter)}`,
   });
 
+  const matching = new MatchingService(new PostgresMatchingRepository(database), {
+    catalogue: catalogueRung({ source: catalogueSourceFor({ listings }), listings }),
+  });
+
   const api = buildApi({
     services: {
       orders,
@@ -164,6 +174,7 @@ async function withServer(
       needs: new CommerceRequestService(new PostgresCommerceRequestRepository(database)),
       tenders,
       quotes,
+      matching,
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,
@@ -216,7 +227,6 @@ test(
           'POST',
           '/v1/orders',
           {
-            buyerAccountId: BUYER,
             sellerAccountId: SELLER,
             currency: 'LKR',
             reason: 'the buyer started a basket',
@@ -271,7 +281,6 @@ test('a retried write over the wire creates one record', liveTestOptions, async 
 
     await withServer(database, async ({ call }) => {
       const body = {
-        buyerAccountId: BUYER,
         sellerAccountId: SELLER,
         currency: 'LKR',
         reason: 'a basket the client retried',
@@ -317,7 +326,6 @@ test(
           '/v1/payments',
           {
             orderId: 'ord_live_apipay001',
-            payerAccountId: BUYER,
             payeeAccountId: SELLER,
             provider: 'mock',
             rail: 'card',
@@ -363,7 +371,6 @@ test(
 
       await withServer(database, async ({ call }) => {
         const noKey = await call('POST', '/v1/orders', {
-          buyerAccountId: BUYER,
           sellerAccountId: SELLER,
           currency: 'LKR',
           reason: 'basket',

@@ -19,7 +19,7 @@ import type { TenderFacts, TenderSource } from '../../modules/quotes/index.ts';
 import type { TenderBuyerSource } from './consumers/quote-order.ts';
 
 /**
- * M-09 as the three facts M-10 needs about a tender.
+ * M-09 as the facts M-10 needs about a tender.
  *
  * `isInvited` is answered from the invitation records rather than from anything the supplier sends.
  * A supplier who could assert their own invitation would be a supplier who needs no invitation, and
@@ -32,6 +32,7 @@ export function tenderSourceFor(rfq: RfqService): TenderSource {
       if (tender === null) return null;
       return {
         rfqId: tender.rfqId,
+        buyerAccountId: tender.accountId,
         status: tender.status,
         quantity: tender.specification.quantity,
         substitutionPolicy: tender.specification.substitutionPolicy,

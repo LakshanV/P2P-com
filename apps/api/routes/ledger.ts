@@ -28,10 +28,42 @@ import { readAmount, readOptionalString, readString } from '../reading.ts';
 export interface LedgerRoutesOptions {
   readonly ledger: FinancialLedgerService;
   readonly contextFor: (request: HttpRequest) => RequestContext;
+  /** The account the caller's session resolved to. Never read from the request body. */
+  readonly accountFor: (request: HttpRequest) => string;
+}
+
+/**
+ * Fields naming the caller's own side of a record.
+ *
+ * The caller is whoever the session resolved to, and there is no field for it. Refused rather than
+ * ignored: a client that thought it was setting the party would never find out otherwise, and
+ * "ignored" is a behaviour that changes the first time somebody adds the field back for a different
+ * reason.
+ */
+const CALLER_OWN_SIDE: readonly string[] = [
+  'ownerAccountId',
+  'owner_account_id',
+  'payerAccountId',
+  'payer_account_id',
+];
+
+function assertDoesNotNameTheCaller(body: unknown): void {
+  if (typeof body !== 'object' || body === null) return;
+  for (const field of CALLER_OWN_SIDE) {
+    if (field in (body as Record<string, unknown>)) {
+      throw new ApiError(
+        400,
+        'caller-asserted-party',
+        `"${field}" is not a field a caller may send. It names the caller's own side of the record, ` +
+          'and it comes from the session — a caller who could name it would be acting in somebody ' +
+          "else's name.",
+      );
+    }
+  }
 }
 
 export function ledgerRoutes(options: LedgerRoutesOptions): readonly Route[] {
-  const { ledger, contextFor } = options;
+  const { ledger, contextFor, accountFor } = options;
 
   return [
     {
@@ -50,9 +82,11 @@ export function ledgerRoutes(options: LedgerRoutesOptions): readonly Route[] {
           );
         }
 
+        assertDoesNotNameTheCaller(request.body);
         const result = await ledger.openWallet({
           walletId: context.derivedId('wal', 'wallet'),
-          ownerAccountId: readString(request.body, 'ownerAccountId'),
+          // From the session. A wallet is opened by whoever will hold it.
+          ownerAccountId: accountFor(request),
           assetTypeId: readString(request.body, 'assetTypeId'),
           purpose: readString(request.body, 'purpose'),
           ledgerAccountId: context.derivedId('lac', 'ledger-account'),
@@ -114,13 +148,15 @@ export function ledgerRoutes(options: LedgerRoutesOptions): readonly Route[] {
       summary: 'Allocate one obligation across several kinds of value. Nothing moves.',
       handler: async (request: HttpRequest): Promise<HttpResponse> => {
         const context = contextFor(request);
+        assertDoesNotNameTheCaller(request.body);
         const legs = readLegs(request.body, context);
 
         const result = await ledger.allocatePlan({
           planId: context.derivedId('pln', 'plan'),
           obligationId: readString(request.body, 'obligationId'),
           obligationKind: readString(request.body, 'obligationKind'),
-          payerAccountId: readString(request.body, 'payerAccountId'),
+          // From the session, like every other own-side party.
+          payerAccountId: accountFor(request),
           payeeAccountId: readString(request.body, 'payeeAccountId'),
           settlementAssetTypeId: readString(request.body, 'settlementAssetTypeId'),
           targetAmountMinor: readAmount(request.body, 'targetAmountMinor'),

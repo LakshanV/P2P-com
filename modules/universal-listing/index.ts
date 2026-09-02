@@ -77,7 +77,7 @@ export {
 } from './validate.ts';
 export type { RecordSource } from './validate.ts';
 
-export { UniversalListingService } from './service.ts';
+export { DEFAULT_RECALL_LIMIT, MAXIMUM_RECALL_LIMIT, UniversalListingService } from './service.ts';
 export type {
   AddDeclarationRequest,
   AddDeclarationResult,
@@ -104,7 +104,11 @@ export type {
 } from './service.ts';
 
 export { InMemoryUniversalListingRepository } from './repository.ts';
-export type { UniversalListingRepository, UniversalListingTransaction } from './repository.ts';
+export type {
+  PublishedVersion,
+  UniversalListingRepository,
+  UniversalListingTransaction,
+} from './repository.ts';
 
 export {
   EnlistedUniversalListingRepository,

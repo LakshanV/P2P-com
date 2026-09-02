@@ -38,12 +38,39 @@ import { verifyWebhookSignature, type WebhookSecrets } from '../webhook-signatur
 export interface PaymentRoutesOptions {
   readonly payments: PaymentService;
   readonly contextFor: (request: HttpRequest) => RequestContext;
+  /** The account the caller's session resolved to. Never read from the request body. */
+  readonly accountFor: (request: HttpRequest) => string;
   /** Per-provider signing secrets. A deployment that configures none accepts no webhook at all. */
   readonly webhookSecrets: WebhookSecrets;
 }
 
+/**
+ * Fields naming the caller's own side of a record.
+ *
+ * The caller is whoever the session resolved to, and there is no field for it. Refused rather than
+ * ignored: a client that thought it was setting the party would never find out otherwise, and
+ * "ignored" is a behaviour that changes the first time somebody adds the field back for a different
+ * reason.
+ */
+const CALLER_OWN_SIDE: readonly string[] = ['payerAccountId', 'payer_account_id'];
+
+function assertDoesNotNameTheCaller(body: unknown): void {
+  if (typeof body !== 'object' || body === null) return;
+  for (const field of CALLER_OWN_SIDE) {
+    if (field in (body as Record<string, unknown>)) {
+      throw new ApiError(
+        400,
+        'caller-asserted-party',
+        `"${field}" is not a field a caller may send. It names the caller's own side of the record, ` +
+          'and it comes from the session — a caller who could name it would be acting in somebody ' +
+          "else's name.",
+      );
+    }
+  }
+}
+
 export function paymentRoutes(options: PaymentRoutesOptions): readonly Route[] {
-  const { payments, contextFor, webhookSecrets } = options;
+  const { payments, contextFor, accountFor, webhookSecrets } = options;
 
   return [
     {
@@ -52,10 +79,14 @@ export function paymentRoutes(options: PaymentRoutesOptions): readonly Route[] {
       summary: 'Record the intent to pay. No provider is called and no value moves.',
       handler: async (request: HttpRequest): Promise<HttpResponse> => {
         const context = contextFor(request);
+        assertDoesNotNameTheCaller(request.body);
         const result = await payments.requestPayment({
           paymentId: context.derivedId('pay', 'payment'),
           orderId: readString(request.body, 'orderId'),
-          payerAccountId: readString(request.body, 'payerAccountId'),
+          // From the session. A caller who could name the payer would be recording somebody
+          // else's payments, and a fabricated one against a real order is a story about money that
+          // never moved.
+          payerAccountId: accountFor(request),
           payeeAccountId: readString(request.body, 'payeeAccountId'),
           provider: readString(request.body, 'provider'),
           rail: readString(request.body, 'rail'),

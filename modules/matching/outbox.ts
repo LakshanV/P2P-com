@@ -93,7 +93,7 @@ export const MATCH_RUN_ACTION: AuditActionDefinition = {
   owner: 'M-07',
   authority: 'business-authoritative',
   description: 'The sourcing ladder ran against a Need.',
-  resourceTypes: ['commerce-request'],
+  resourceTypes: ['commerce_request'],
   evidenceFields: RUN_FIELDS.map((field) => ({
     name: field.name,
     kind: 'string' as const,
@@ -172,7 +172,7 @@ export function makeMatchRunAction(
       recordId,
       action: MATCH_RUN_ACTION.action,
       subjectId: run.accountId,
-      resourceType: 'commerce-request',
+      resourceType: 'commerce_request',
       resourceId: run.requestId,
       occurredAt: run.completedAt,
       recordedAt: run.completedAt,

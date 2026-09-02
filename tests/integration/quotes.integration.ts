@@ -63,6 +63,7 @@ class StubTenders implements TenderSource {
       rfqId === RFQ
         ? {
             rfqId: RFQ,
+            buyerAccountId: BUYER,
             status: 'open',
             quantity: 20n,
             substitutionPolicy: 'equivalent-with-disclosure',

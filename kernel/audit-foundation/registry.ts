@@ -20,7 +20,11 @@
  * Owned by: K-09 Audit Foundation.
  */
 
-import { BUSINESS_MODULES, KERNEL_COMPONENTS } from '../../platform/architecture/manifest.ts';
+import {
+  APPLICATIONS,
+  BUSINESS_MODULES,
+  KERNEL_COMPONENTS,
+} from '../../platform/architecture/manifest.ts';
 
 import {
   AuditError,
@@ -61,7 +65,14 @@ export interface AuditActionDefinition {
   readonly evidenceFields: readonly EvidenceField[];
 }
 
-const ACTION_NAME = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9_]*)+$/;
+/**
+ * An action reads as a subject and a deed: `configuration.version_published`.
+ *
+ * Both halves are snake_case, matching K-08's rule for event types and for the same reason: the
+ * subject used to be a single word, which refused actions modules legitimately wanted to record. A
+ * hyphen is still refused.
+ */
+const ACTION_NAME = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
 const FIELD_NAME = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 const RESOURCE_TYPE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 
@@ -102,6 +113,9 @@ const manifestIds = (): ReadonlySet<string> =>
     'platform',
     ...KERNEL_COMPONENTS.map((component) => component.id),
     ...BUSINESS_MODULES.map((mod) => mod.id),
+    // An application owns the consumers that join two modules of the same layer, because neither
+    // module may import the other and the join has to be made from above both.
+    ...APPLICATIONS,
   ]);
 
 /** Refuse a definition that could never be validated, or that declares a credential field. */

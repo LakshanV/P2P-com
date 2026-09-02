@@ -130,6 +130,36 @@ export function readArray<T>(
   return value.map((element, index) => read(element, index));
 }
 
+/**
+ * An optional array of non-empty strings, defaulting to none.
+ *
+ * Absent and empty mean the same thing here — a tender with no quality requirements and one that
+ * did not mention any are the same tender — so absence is not an error. A **present** field that
+ * holds something other than strings is, because that is a client sending the wrong shape rather
+ * than sending nothing.
+ */
+export function readStringArray(body: unknown, name: string): readonly string[] {
+  const value = fields(body)[name];
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new ApiError(
+      400,
+      'malformed-field',
+      `"${name}" must be an array of strings, and it was ${describe(value)}.`,
+    );
+  }
+  return value.map((element, index) => {
+    if (typeof element !== 'string' || element.trim() === '') {
+      throw new ApiError(
+        400,
+        'malformed-field',
+        `"${name}[${String(index)}]" must be a non-empty string, and it was ${describe(element)}.`,
+      );
+    }
+    return element;
+  });
+}
+
 /** A required JSON object, passed through as-is. Used for a provider's own webhook payload. */
 export function readObject(body: unknown, name: string): Record<string, unknown> {
   const value = fields(body)[name];

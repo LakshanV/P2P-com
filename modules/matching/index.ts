@@ -84,3 +84,15 @@ export { InMemoryMatchingRepository } from './repository.ts';
 export type { MatchingRepository, MatchingTransaction } from './repository.ts';
 
 export { ESCALATE_TO_RFQ_EVENT, MATCH_FOUND_EVENT, MATCH_RUN_ACTION } from './outbox.ts';
+
+export {
+  EnlistedMatchingRepository,
+  MATCHING_SCHEMA,
+  MATCH_CANDIDATE_TABLE,
+  MATCH_RUN_TABLE,
+  PostgresMatchingRepository,
+  RUNG_ATTEMPT_TABLE,
+  toCandidate,
+  toMatchRun,
+  toRungAttempt,
+} from './postgres-repository.ts';

@@ -28,6 +28,7 @@ import type {
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
 import type { CommerceRequestService } from '../../modules/commerce-request/index.ts';
+import type { MatchingService } from '../../modules/matching/index.ts';
 import type { QuoteService } from '../../modules/quotes/index.ts';
 import type { RfqService } from '../../modules/rfq/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
@@ -51,6 +52,8 @@ import { addCockpitRoutes } from './routes/cockpit.ts';
 import { addLedgerRoutes } from './routes/ledger.ts';
 import { addNeedRoutes } from './routes/needs.ts';
 import { addOrderRoutes } from './routes/orders.ts';
+import { addSourcingRoutes } from './routes/sourcing.ts';
+import { addTenderRoutes } from './routes/tenders.ts';
 import { addPaymentRoutes } from './routes/payments.ts';
 
 export interface ApiServices {
@@ -63,6 +66,8 @@ export interface ApiServices {
   readonly listings: UniversalListingService;
   /** M-03: what somebody asked for, in their own words. The entry point of the product. */
   readonly needs: CommerceRequestService;
+  /** M-07: the sourcing ladder that tries to solve a Need before anybody publishes it. */
+  readonly matching: MatchingService;
   /** M-09: the tenders opened when the sourcing ladder could not answer a Need. */
   readonly tenders: RfqService;
   /** M-10: what the market offered back, and the comparison a customer decides on. */
@@ -210,10 +215,22 @@ export function buildApi(options: ApiOptions): PipelineOptions {
     contextFor,
     // Fails closed. A deployment that configures no secret accepts no webhook, rather than
     // accepting every webhook because there was nothing to check one against.
+    accountFor,
     webhookSecrets: options.webhookSecrets ?? NO_WEBHOOK_SECRETS,
   });
-  addLedgerRoutes(router, { ledger: options.services.ledger, contextFor });
+  addLedgerRoutes(router, { ledger: options.services.ledger, contextFor, accountFor });
   addNeedRoutes(router, { needs: options.services.needs, contextFor, accountFor });
+  addSourcingRoutes(router, {
+    matching: options.services.matching,
+    needs: options.services.needs,
+    contextFor,
+  });
+  addTenderRoutes(router, {
+    tenders: options.services.tenders,
+    quotes: options.services.quotes,
+    contextFor,
+    accountFor,
+  });
   addCockpitRoutes(router, { cockpit: options.services.cockpit, contextFor });
 
   router.add({

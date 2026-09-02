@@ -23,7 +23,10 @@
  */
 
 import { FinancialLedgerError } from '../../modules/financial-ledger/index.ts';
+import { MatchingError } from '../../modules/matching/index.ts';
 import { OrderError } from '../../modules/orders/index.ts';
+import { QuoteError } from '../../modules/quotes/index.ts';
+import { RfqError } from '../../modules/rfq/index.ts';
 import { PaymentError } from '../../modules/payments/index.ts';
 import { UserCockpitError } from '../../modules/user-cockpit/index.ts';
 import type { DescribeError } from '../../platform/http/pipeline.ts';
@@ -156,6 +159,77 @@ const COCKPIT: Readonly<Record<string, number>> = Object.freeze({
 });
 
 /**
+ * M-07 Matching.
+ *
+ * A ladder run is a read of the world, so almost everything it refuses is a malformed request. The
+ * exception is `rung-failed`, which is 502: a rung that could not look is somebody else's outage —
+ * a supplier directory, an external adapter — and answering 400 would blame the caller for it.
+ */
+const MATCHING: Readonly<Record<string, number>> = Object.freeze({
+  ...SHARED,
+  'duplicate-run-id': 409,
+  'duplicate-candidate-id': 409,
+  'run-not-found': 404,
+  'unknown-rung': 400,
+  'unknown-outcome': 400,
+  'unknown-candidate-kind': 400,
+  'malformed-score': 400,
+  'malformed-reason': 400,
+  // A candidate with no explanation, or one whose kind and identifiers disagree, is a rung that
+  // built a bad record. That is a defect in an adapter this deployment wired, not a client mistake.
+  'malformed-explanation': 500,
+  'incoherent-candidate': 500,
+  'rung-failed': 502,
+});
+
+/**
+ * M-09 RFQ.
+ *
+ * `private-text-in-specification` is 400 and not negotiable: the request carried something that
+ * looked like the customer's own words, and a supplier-facing specification may not.
+ */
+const RFQ: Readonly<Record<string, number>> = Object.freeze({
+  ...SHARED,
+  'duplicate-rfq-id': 409,
+  'duplicate-invitation': 409,
+  'rfq-not-found': 404,
+  'unknown-visibility': 400,
+  'unknown-substitution-policy': 400,
+  'malformed-specification': 400,
+  'malformed-reason': 400,
+  'private-text-in-specification': 400,
+  // States the tender is in that make the request impossible. Well formed, and refused.
+  'rfq-closed': 422,
+  'illegal-transition': 422,
+});
+
+/**
+ * M-10 Quotes.
+ *
+ * The two that matter are 409, because both are conflicts with who the caller is rather than with
+ * what they sent: `not-your-quote` is a supplier acting on somebody else's offer, and
+ * `not-your-tender` is somebody deciding a tender they did not open. Neither is a 403, because
+ * K-04 has already permitted the *kind* of action — what is wrong is the object.
+ */
+const QUOTES: Readonly<Record<string, number>> = Object.freeze({
+  ...SHARED,
+  'duplicate-quote-id': 409,
+  'quote-not-found': 404,
+  'unknown-kind': 400,
+  'malformed-quantity': 400,
+  'malformed-amount': 400,
+  'malformed-validity': 400,
+  'undeclared-substitution': 400,
+  'not-invited': 409,
+  'not-your-quote': 409,
+  'not-your-tender': 409,
+  'rfq-not-open': 422,
+  'substitution-not-permitted': 422,
+  'illegal-transition': 422,
+  'quote-closed': 422,
+});
+
+/**
  * Classify a refusal.
  *
  * Returns null for anything unrecognised, which the pipeline turns into a 500 and hands to the
@@ -172,7 +246,13 @@ export const describeError: DescribeError = (error) => {
           ? LEDGER
           : error instanceof UserCockpitError
             ? COCKPIT
-            : null;
+            : error instanceof MatchingError
+              ? MATCHING
+              : error instanceof RfqError
+                ? RFQ
+                : error instanceof QuoteError
+                  ? QUOTES
+                  : null;
 
   if (table === null) return null;
 
@@ -189,6 +269,9 @@ export const CLASSIFIED_CODES: Readonly<Record<string, readonly string[]>> = Obj
   payments: Object.freeze(Object.keys(PAYMENTS)),
   'financial-ledger': Object.freeze(Object.keys(LEDGER)),
   'user-cockpit': Object.freeze(Object.keys(COCKPIT)),
+  matching: Object.freeze(Object.keys(MATCHING)),
+  rfq: Object.freeze(Object.keys(RFQ)),
+  quotes: Object.freeze(Object.keys(QUOTES)),
 });
 
 /**

@@ -34,6 +34,17 @@ import {
   type ListingVersion,
 } from './types.ts';
 
+/**
+ * One listing's current version, with the account that supplies it.
+ *
+ * The pair a sourcing rung needs: M-04 holds the supplier on the listing and the terms on the
+ * version, and a caller looking across supply should not have to join the two itself.
+ */
+export interface PublishedVersion {
+  readonly version: ListingVersion;
+  readonly supplierAccountId: string;
+}
+
 export interface UniversalListingTransaction extends OutboxTransaction {
   /** Listing lookup and creation. */
   findListingById(listingId: string): Promise<Listing | null>;
@@ -51,6 +62,19 @@ export interface UniversalListingTransaction extends OutboxTransaction {
     versionNumber: number,
   ): Promise<ListingVersion | null>;
   insertVersion(version: ListingVersion): Promise<void>;
+  /**
+   * Every listing's current version, for a caller that has to look across all of supply.
+   *
+   * The recall step of a search, and deliberately unfiltered: a sourcing rung scores what it is
+   * given, and a source that pre-filtered aggressively would hide the near misses a customer most
+   * wants to see when nothing matched exactly. Bounded by `limit` so it cannot become an
+   * unbounded scan, and ordered so two calls return the same page.
+   *
+   * **This is recall by enumeration, and it belongs to M-06 Search & Discovery the moment supply
+   * outgrows a page.** It lives here for now because M-04 owns supply and a query over its own
+   * published versions is its own operation; it does not become a search engine by having one.
+   */
+  findPublishedVersions(limit: number): Promise<readonly PublishedVersion[]>;
 
   /** Media lookup and creation. */
   findMediaById(mediaId: string): Promise<ListingMedia | null>;
@@ -606,6 +630,29 @@ class InMemoryUniversalListingTransaction implements UniversalListingTransaction
       (v) => v.listingId === listingId && v.versionNumber === versionNumber,
     );
     return Promise.resolve(found === undefined ? null : sealListingVersion(found));
+  }
+
+  findPublishedVersions(limit: number): Promise<readonly PublishedVersion[]> {
+    const found: PublishedVersion[] = [];
+    for (const listing of this.#state.listings) {
+      // `published` only. A suspended or withdrawn listing is not supply somebody can be offered,
+      // and a draft has no version yet.
+      if (listing.status !== 'published' || listing.currentVersion === 0) continue;
+      const version = this.#state.versions.find(
+        (one) =>
+          one.listingId === listing.listingId && one.versionNumber === listing.currentVersion,
+      );
+      if (version === undefined) continue;
+      found.push({ version: sealListingVersion(version), supplierAccountId: listing.accountId });
+    }
+
+    // Newest first, then by id, so two calls return the same page and a caller can reason about it.
+    found.sort(
+      (a, b) =>
+        b.version.publishedAt.localeCompare(a.version.publishedAt) ||
+        a.version.versionId.localeCompare(b.version.versionId),
+    );
+    return Promise.resolve(Object.freeze(found.slice(0, limit)));
   }
 
   insertVersion(version: ListingVersion): Promise<void> {

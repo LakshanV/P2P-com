@@ -151,18 +151,22 @@ that order and stopped at the first rung whose best candidate reaches the suffic
 Every rung records an attempt, including the ones that found nothing and the ones that were skipped,
 which is what makes an escalation explainable to the customer it inconvenienced.
 
-**Nothing calls it yet**: no route runs a ladder, and the rung adapters are wired only in tests.
+`POST /v1/needs/:requestId/sourcing` runs it, guarded as an `update` on the Need so only the
+person who asked may source their own. The **catalogue rung is wired for real** against M-04; the
+supplier rungs need a directory nothing implements and external discovery needs an adapter that does
+not ship, so both are left unwired and the ladder records `unavailable` rather than `empty` — which
+is the difference between a configuration choice and an outage.
 
 | ID | Requirement | Status | Missing Work | Priority |
 |---|---|---|---|---|
-| E-01 | Need → existing stock | `TESTED` 60% | `catalogueRung` scores on commodity, attributes, quantity, place and freshness, and excludes on zero commodity match or insufficient tracked stock. **No caller runs it against real listings** | **P0** |
+| E-01 | Need → existing stock | `TESTED` 75% | Wired end to end: a Need whose reading names cement in Matale is matched against a published M-04 listing with stock, over HTTP, and the customer is shown why. Recall is by enumeration (`listPublishedVersions`) and belongs to M-06 the moment supply outgrows a page | **P0** |
 | E-02 | Need → probable supplier | `TESTED` 45% | `knownSupplierRung` weights prior trade highest, then category, recency, capability, geography, reliability. Reads a `SupplierDirectory` port; **no real directory implements it** (§O) | **P0** |
 | E-03 | Need → verified supplier network | `TESTED` 40% | `verifiedSupplierRung` weights category and verification highest. Not yet joined to M-02, so verification is a field the directory supplies rather than a fact read from M-02 | P1 |
 | E-04 | External supplier discovery | `TESTED` 35% | `ExternalSupplierDiscoveryProvider` port with a mock adapter. Leads are capped at 600 per mille — below the 700 sufficiency — so an unverified lead can never satisfy the ladder alone, only justify an invitation. **No live adapter** | P2 |
 | E-05 | Supplier lead acquisition | `PARTIAL` 20% | A `SupplierLead` is produced and can become an RFQ invitation carrying its source rung. Nothing onboards a lead into an account | P2 |
-| E-06 | Strict sourcing ladder | `TESTED` 65% | `runLadder` stops at the first satisfying rung and records `skipped` for the rest. A CHECK pins each rung to its position, so the database and the code cannot disagree about the order. **Not yet under a K-06 policy version**, so the weights and threshold are code rather than configuration | **P0** |
+| E-06 | Strict sourcing ladder | `TESTED` 75% | `runLadder` stops at the first satisfying rung and records `skipped` for the rest, and a route runs it. A CHECK pins each rung to its position, so the database and the code cannot disagree about the order. **Not yet under a K-06 policy version**, so the weights and threshold are code rather than configuration | **P0** |
 | E-07 | No unnecessary public RFQ | `TESTED` 60% | The `rfq` rung is a **recommendation, never a search**: a run reaches it only when every earlier rung failed, and the outcome vocabulary separates `empty` from `lookup-failed` so an outage is not silently reported as absent supply | **P0** |
-| E-08 | Explainable Match Score | `TESTED` 55% | Integer per-mille scores with a factor breakdown per candidate and a recorded attempt per rung. Not yet shown to anybody: no route returns a run | P1 |
+| E-08 | Explainable Match Score | `TESTED` 70% | Integer per-mille scores with a factor breakdown per candidate and a recorded attempt per rung, returned by `GET /v1/sourcing-runs/:runId` and readable only by the person whose Need it answers. No UI shows it | P1 |
 
 ---
 
@@ -180,23 +184,29 @@ which is what makes an escalation explainable to the customer it inconvenienced.
 
 ## G. RFQ / tender engine
 
-M-09 (tenders and invitations) and M-10 (offers and ranking) are built, persisted and integration
-tested, and an accepted offer now opens an order. **No HTTP route reaches either**, so a supplier
-cannot yet see a tender or answer one: everything below runs through the service layer only.
+M-09 (tenders and invitations) and M-10 (offers and ranking) are built, persisted, integration
+tested and **reachable over HTTP**. A buyer opens a tender, invites suppliers, reads the offers,
+ranks them and chooses; an invited supplier reads the requirement, offers against it and withdraws
+their own offer — and sees nothing else. That asymmetry is enforced three ways: K-04 capabilities
+(`quote`, `withdraw` and `decide` are separate verbs, because the parties differ), object-level
+ownership (a tender includes its invited suppliers, deliberately), and a `requireBuyer` check in the
+handlers for everything only a buyer may do.
+
+**No UI, and no notification.** An invited supplier finds out by polling `GET /v1/invitations`.
 
 | ID | Requirement | Status | Priority | Notes |
 |---|---|---|---|---|
-| G-01 | Private RFQ | `INTEGRATION TESTED` 70% | **P0** | `visibility = private`; the specification carries no customer text and none travels in an event |
+| G-01 | Private RFQ | `INTEGRATION TESTED` 80% | **P0** | `visibility = private`, reachable over HTTP; the specification carries no customer text, none travels in an event, and an uninvited supplier gets 404 rather than a hint |
 | G-02 | Category supplier RFQ | `PARTIAL` 35% | P1 | Invitations carry their source rung; category routing still needs §D-04 |
 | G-03 | Public verified-network RFQ | `PARTIAL` 30% | P1 | `visibility = network` is a stored, validated value; nothing yet reads it to widen an audience |
 | G-04 | Supplier clarification | `NOT STARTED` 0% | P1 | Needs K-12, which exists. No question can be asked about a tender |
-| G-05 | Full bid | `INTEGRATION TESTED` 70% | **P0** | `kind = full` must cover the whole quantity, refused otherwise |
+| G-05 | Full bid | `INTEGRATION TESTED` 80% | **P0** | `kind = full` must cover the whole quantity, refused otherwise. `POST /v1/rfqs/:rfqId/quotes`, guarded by the `quote` verb a CUSTOMER does not hold |
 | G-06 | Partial bid | `INTEGRATION TESTED` 65% | **P0** | `kind = partial`, scored proportionally rather than excluded. Not yet fed into M-11 split fulfilment |
 | G-07 | Alternative offer | `INTEGRATION TESTED` 65% | P1 | `kind = substitute`, tied to a declared difference in both directions by CHECK, and refused where the tender forbids substitution |
 | G-08 | Deadline / closing | `PARTIAL` 40% | **P0** | `closes_at > opened_at` by CHECK, and an offer after closing is refused. Expiry is evaluated against an injected instant rather than a sweep, because **no scheduler exists** |
 | G-09 | Attachments / evidence | `PARTIAL` 25% | P1 | Opaque references only, on both the tender and the offer, and quality scoring reads whether evidence exists. **No object storage**, so nothing can be fetched |
-| G-10 | Ranking | `INTEGRATION TESTED` 70% | P1 | Five weighted per-mille factors, weights as data, an explanation per score, unavailable offers shown with their reason, exactly one recommendation the customer may override. Reliability is a supplied figure — **nothing computes it from delivery history yet** |
-| G-11 | Award | `INTEGRATION TESTED` 70% | **P0** | Exactly one winner in both directions by CHECK; a second, different award is `illegal-transition` rather than a replay |
+| G-10 | Ranking | `INTEGRATION TESTED` 75% | P1 | Five weighted per-mille factors, weights as data, an explanation per score, unavailable offers shown with their reason, exactly one recommendation the customer may override — proved over HTTP by accepting a non-recommended offer. Buyer-only: a supplier reading the ranking would know what to undercut. Reliability is a supplied figure and **nothing computes it from delivery history yet**, so the route passes none and M-10 scores every supplier at its no-record default |
+| G-11 | Award | `INTEGRATION TESTED` 80% | **P0** | Exactly one winner in both directions by CHECK; a second, different award is `illegal-transition` rather than a replay, and answers 422 over HTTP rather than 500 — a gap this suite found |
 | G-12 | Conversion to order | `TESTED` 60% | **P0** | `apps/api/consumers/quote-order.ts` opens, places and confirms an order from `quote.accepted`. Migration 0054 lets a line pin a quote instead of a listing version. **Not yet proved against a live database or through an HTTP entry point** |
 
 ---
@@ -602,48 +612,60 @@ working software is not, and the two are scored separately so the first cannot f
 |---|---|---|
 | **Architecture** | **85%** | Manifest, 8-layer model, 4 executable boundary checks with planted-violation fixtures, financial-zone isolation, schema-namespace ownership. Genuinely enforced, not aspirational |
 | **Contracts** | **47%** | 23 of 62 units have a written contract. Those that exist are precise and executable |
-| **Backend implementation** | **24%** | 11 of 47 business modules; 14 of 15 kernel components. The transaction spine (M-04, M-11, M-12, M-13) and now the sourcing path (M-03, M-07, M-09, M-10) both exist. 36 modules have no code |
+| **Backend implementation** | **26%** | 11 of 47 business modules; 14 of 15 kernel components. The transaction spine (M-04, M-11, M-12, M-13) and now the sourcing path (M-03, M-07, M-09, M-10) both exist. 36 modules have no code |
 | **Integration testing** | **40%** | 59 live-PostgreSQL tests covering everything that exists, thoroughly. Nothing covering what does not |
-| **E2E functionality** | **2%** | **No E2E harness exists.** The API integration suite is the closest thing and is not a user journey. Unchanged deliberately: the sourcing path being built does not make it reachable |
+| **E2E functionality** | **22%** | `tests/e2e/` exists and runs two journeys against a live server: a matched purchase and a tendered one. Both go over a real socket, as a real signed-in person, and — the part no API test reaches — **through the outbox, K-08 and a consumer**, so an accepted offer really does open an order by the machinery that would open it in production. Four journeys, 0 of the remaining flows (mixed-value, split supplier, logistics, returns), and no UI |
 | **AI functionality** | **6%** | Gateway, authority ceiling and kill switch are real and tested. Zero live adapters, zero of sixteen agents, nothing has ever called a model |
 | **Financial functionality** | **58%** | The strongest area. Multi-value ledger, three positions, double entry, mixed-value routing with no rounding, payments with timeout discipline, database-enforced invariants. Missing: settlement, payout, commission, receivable/payable, restriction enforcement |
 | **Logistics** | **0%** | Nothing |
 | **Cockpit backend** | **12%** | 3 of 8 sections, buyer only, no role adaptation |
 | **Final UI/UX** | **0%** | Nothing. One README |
-| **Security** | **58%** | Was not scored separately before, and should have been — it is the dimension that decides whether anything else may be deployed. Authentication, authorisation, object-level access, account isolation, IDOR and webhook verification are all real and tested at the HTTP edge. Rate limits, secret management, backups and consent are not |
+| **Security** | **66%** | Was not scored separately before, and should have been — it is the dimension that decides whether anything else may be deployed. Authentication, authorisation, object-level access, account isolation, IDOR and webhook verification are all real and tested at the HTTP edge. Rate limits, secret management, backups and consent are not |
 | **Deployment readiness** | **22%** | Migrations, health and now a closed front door are real. No CI, no rate limits, no monitoring, no backups, no staging, and passwords are not yet durable |
-| **Overall original JAYA vision** | **≈ 21%** | See below |
+| **Overall original JAYA vision** | **≈ 28%** | See below |
 
-### Why 21% and not 40%
+### Why 28% and not 40%
 
-A naive average of the rows above gives something near 30%. That would be dishonest, for three
+A naive average of the rows above gives something near 35%. That would be dishonest, for three
 reasons:
 
-1. **Nothing on the differentiated path is reachable by anybody.** M-03 has routes; M-07, M-09 and
-   M-10 have none. A supplier cannot see a tender or answer one, a buyer cannot compare offers, and
-   no ladder has ever been run against a real listing. Every capability in sections E and G is
-   reached only from a test, which is a very different thing from existing.
-2. **Nothing is reachable by a person who is not a developer.** There is authentication and
-   authorisation, so a real user *could* be signed in — but there is no UI, no registration route,
-   and no durable password store.
+1. **Nothing is reachable by a person who is not a developer.** There is authentication and
+   authorisation, and the whole differentiated path now has routes — but there is no UI, no
+   registration route, no durable password store, and no notification, so an invited supplier finds
+   out they were invited by polling an endpoint with a bearer token they were handed by a test.
+2. **The path works and the market is empty.** Every rung above the catalogue is unwired, because a
+   supplier directory and an external discovery adapter do not exist. A ladder that can only search
+   the catalogue is a ladder with one rung, and it says so honestly rather than pretending — but it
+   means the escalation to a tender happens far more often than it should.
 3. **Contracts and architecture were weighted down deliberately.** They are 85% and 47% complete and
    they are worth having, but a customer cannot buy anything with a boundary check.
 
-**The movement from 15% to 21% is six points, and this is what earns them.** The previous revision
-said the bulk of the original vision is the Need → sourcing → RFQ → quote path and that none of it
-existed. That is no longer true. A Need is captured verbatim and cannot be edited; a sourcing ladder
-tries the catalogue, then the buyer's own suppliers, then the verified network, then external
-discovery, and recommends a tender only when all of them fail; a tender carries a supplier-facing
-specification and never the customer's words; suppliers offer against it; the offers are ranked on
-five factors with an explanation the customer can override; and an accepted offer opens a placed,
-confirmed order. Four modules, four migrations, seventeen new live-PostgreSQL tests.
+**The movement from 15% to 28% is thirteen points across three revisions, and this is what earns them.**
+An earlier revision said the bulk of the original vision is the Need → sourcing → RFQ → quote path
+and that none of it existed. That is no longer true, in two steps.
 
-Six points and not fifteen, because **the path has no surface**. It is proved through service calls
-and one event consumer, which is the difference between "the software can do this" and "somebody can
-do this". The E2E row is deliberately unchanged at 2% for the same reason: no harness enters through
-the application boundary, so nothing here is yet a journey.
+First the modules: a Need captured verbatim and unable to be edited; a sourcing ladder that tries
+the catalogue, then the buyer's own suppliers, then the verified network, then external discovery,
+and recommends a tender only when all of them fail; a tender carrying a supplier-facing
+specification and never the customer's words; offers against it, ranked on five factors with an
+explanation the customer can override; and an accepted offer opening a placed, confirmed order.
 
-What *is* worth stating plainly: the 21% that exists is unusually solid. The financial core has
+Then the surface: 36 new routes, so a buyer can actually source a Need, open a tender, invite
+suppliers, compare offers and choose one — and an invited supplier can read the requirement, answer
+it and withdraw. The asymmetry between the two parties is enforced three ways, because the failure
+mode has a victim: a supplier who could read the other bids knows what to undercut.
+
+Then the proof: `tests/e2e/` runs both journeys against a live server, over a socket, as a real
+signed-in person — and through the outbox, K-08 and a consumer, which is the part no API test
+reaches. Building it found four defects that had been latent for weeks, three of which meant the
+platform's event traffic could never have been published at all, and one of which let a caller open
+an order in somebody else's name.
+
+Thirteen points and not thirty, because **the market is empty and nobody can see any of it**. Two of
+the four sourcing rungs cannot be wired at all, there is no interface in front of any of it, and an
+invited supplier learns they were invited by polling an endpoint.
+
+What *is* worth stating plainly: the 28% that exists is unusually solid. The financial core has
 invariants enforced in the database, not just in code; an offer's terms are immutable at three
 layers; the concurrency cases are proven against a real server; and several defects — the webhook
 that trusted its caller, and the quote convergence that would have told a supplier they had quoted

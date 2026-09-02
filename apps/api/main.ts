@@ -61,6 +61,11 @@ import {
   resolveMockProvider,
 } from '../../modules/payments/index.ts';
 
+import {
+  MatchingService,
+  PostgresMatchingRepository,
+  catalogueRung,
+} from '../../modules/matching/index.ts';
 import { PostgresQuoteRepository, QuoteService } from '../../modules/quotes/index.ts';
 import { PostgresRfqRepository, RfqService } from '../../modules/rfq/index.ts';
 
@@ -82,6 +87,7 @@ import {
   quoteOrderHandler,
   type QuoteOrderOutcome,
 } from './consumers/quote-order.ts';
+import { catalogueSourceFor } from './catalogue-source.ts';
 import { tenderBuyerSourceFor, tenderSourceFor } from './tender-source.ts';
 import { webhookSecrets, type WebhookSecrets } from './webhook-signature.ts';
 
@@ -317,7 +323,16 @@ export function servicesFor(databaseUrl: string): ApiServices {
   const tenders = new RfqService(new PostgresRfqRepository(database));
   const quotes = new QuoteService(new PostgresQuoteRepository(database), tenderSourceFor(tenders));
 
-  return { orders, payments, ledger, cockpit, listings, needs, tenders, quotes };
+  // The ladder, with the one rung this deployment can actually wire. The supplier rungs need a
+  // directory nothing implements yet and external discovery needs an adapter that does not ship, so
+  // both are left unwired — and M-07 records `unavailable` for them rather than `empty`. That is the
+  // difference between a configuration choice and an outage, and it is why a Need that reaches a
+  // tender here can say honestly that nothing looked rather than that nothing was found.
+  const matching = new MatchingService(new PostgresMatchingRepository(database), {
+    catalogue: catalogueRung({ source: catalogueSourceFor({ listings }), listings }),
+  });
+
+  return { orders, payments, ledger, cockpit, listings, needs, tenders, quotes, matching };
 }
 
 export function start(options: StartOptions): ReturnType<typeof createHttpServer> {

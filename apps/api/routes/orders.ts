@@ -31,6 +31,7 @@ import type { RequestContext } from '../../../platform/http/context.ts';
 import type { Route, Router } from '../../../platform/http/router.ts';
 import { json, type HttpRequest, type HttpResponse } from '../../../platform/http/types.ts';
 
+import { ApiError } from '../errors.ts';
 import { readAmount, readArray, readOptionalString, readString } from '../reading.ts';
 import { assertDoesNotAssertReservation, reserveForLine } from '../reservation.ts';
 
@@ -54,6 +55,31 @@ export interface OrderRoutesOptions {
   readonly accountFor: (request: HttpRequest) => string;
 }
 
+/**
+ * Fields naming the caller's own side of a record.
+ *
+ * The caller is whoever the session resolved to, and there is no field for it. Refused rather than
+ * ignored: a client that thought it was setting the party would never find out otherwise, and
+ * "ignored" is a behaviour that changes the first time somebody adds the field back for a different
+ * reason.
+ */
+const CALLER_OWN_SIDE: readonly string[] = ['buyerAccountId', 'buyer_account_id'];
+
+function assertDoesNotNameTheCaller(body: unknown): void {
+  if (typeof body !== 'object' || body === null) return;
+  for (const field of CALLER_OWN_SIDE) {
+    if (field in (body as Record<string, unknown>)) {
+      throw new ApiError(
+        400,
+        'caller-asserted-party',
+        `"${field}" is not a field a caller may send. It names the caller's own side of the record, ` +
+          'and it comes from the session — a caller who could name it would be acting in somebody ' +
+          "else's name.",
+      );
+    }
+  }
+}
+
 export function orderRoutes(options: OrderRoutesOptions): readonly Route[] {
   const { orders, listings, contextFor, accountFor } = options;
 
@@ -64,10 +90,14 @@ export function orderRoutes(options: OrderRoutesOptions): readonly Route[] {
       summary: 'Open a draft order.',
       handler: async (request: HttpRequest): Promise<HttpResponse> => {
         const context = contextFor(request);
+        assertDoesNotNameTheCaller(request.body);
         const result = await orders.createOrder({
           // Derived, not minted: a retry under the same key must address this order, not a new one.
           orderId: context.derivedId('ord', 'order'),
-          buyerAccountId: readString(request.body, 'buyerAccountId'),
+          // From the session. A caller who could name the buyer would be opening orders in
+          // somebody else's name, and the object-level check would then let that person read one
+          // they never placed.
+          buyerAccountId: accountFor(request),
           sellerAccountId: readString(request.body, 'sellerAccountId'),
           currency: readString(request.body, 'currency'),
           createdAt: context.now,

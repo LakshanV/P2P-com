@@ -54,6 +54,20 @@ export const MODULE_LAYER_DEPTH: Readonly<Record<ModuleLayer, number>> = {
 
 export const APP_DEPTH = 11;
 
+/**
+ * The applications: assemblies of modules, above every layer.
+ *
+ * Registered here because an application legitimately **owns** things the kernel validates — an
+ * event subscription, above all. The consumers that join two modules of the same layer cannot live
+ * in either module, so they live in an application, and K-08 refuses a subscription whose owner it
+ * cannot find in this file. Until this list existed those two subscriptions could be written but
+ * never registered, which is exactly as useful as not writing them.
+ *
+ * An application is an id here and nothing more. It owns no schema and no migration: everything it
+ * persists belongs to a module.
+ */
+export const APPLICATIONS: readonly string[] = ['apps/api'];
+
 /** The 15 commerce kernel components (MODULE_MAP.md §3). */
 export const KERNEL_COMPONENTS: readonly KernelComponent[] = [
   { id: 'K-01', name: 'Identity', dir: 'identity' },

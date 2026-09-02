@@ -37,10 +37,17 @@ import { validateQuote } from './validate.ts';
  * What M-10 needs to know about a tender before it accepts an offer against it.
  *
  * A narrow port onto M-09 rather than the service, because M-10 has no business closing tenders or
- * reading somebody else's invitations. It needs three facts, and this is all three.
+ * reading somebody else's invitations. It needs six facts, and this is all six.
  */
 export interface TenderFacts {
   readonly rfqId: string;
+  /**
+   * Who opened it.
+   *
+   * The fact that makes accepting safe. Ownership of the *offer* answers yes for the supplier who
+   * wrote it, so choosing between offers has to be checked against the tender instead.
+   */
+  readonly buyerAccountId: string;
   readonly status: string;
   readonly quantity: bigint;
   readonly substitutionPolicy: string;
@@ -339,6 +346,30 @@ export class QuoteService {
             'a supplier may withdraw only their own offer. Withdrawing somebody else’s would let ' +
               'one supplier remove a competitor from a tender',
           );
+        }
+
+        // And the other direction, which is the more dangerous one. Accepting or rejecting is the
+        // buyer's act, so it is checked against the tender rather than against the offer: an
+        // ownership rule that only asked "is this your quote?" would answer yes for the supplier
+        // who wrote it, and a supplier who could accept their own offer has awarded themselves the
+        // order.
+        if (actor === 'buyer') {
+          const tender = await this.#tenders.findTender(before.rfqId);
+          if (tender === null) {
+            throw new QuoteError(
+              'quote-not-found',
+              `offer ${before.quoteId} answers tender ${before.rfqId}, which cannot be read. ` +
+                'Refusing rather than deciding an offer nobody can attribute to a buyer',
+            );
+          }
+          if (tender.buyerAccountId !== request.actingAccountId) {
+            throw new QuoteError(
+              'not-your-tender',
+              `${request.actingAccountId} did not open tender ${before.rfqId}. Choosing between ` +
+                'offers is the buyer’s decision, and a supplier who could take it would be ' +
+                'awarding themselves the order',
+            );
+          }
         }
 
         if (before.status === to) return { quote: sealQuote(before), replayed: true };

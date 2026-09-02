@@ -75,7 +75,7 @@ export const WALLET_OPENED_EVENT: EventTypeDefinition = {
 };
 
 export const WALLET_STATUS_CHANGED_EVENT: EventTypeDefinition = {
-  type: 'wallet.status-changed',
+  type: 'wallet.status_changed',
   schemaVersion: 1,
   owner: 'M-13',
   description: 'A wallet was frozen, unfrozen or closed.',
@@ -152,7 +152,7 @@ const PLAN_FIELDS = [
 ] satisfies PayloadField[];
 
 export const PLAN_ALLOCATED_EVENT: EventTypeDefinition = {
-  type: 'value-plan.allocated',
+  type: 'value_plan.allocated',
   schemaVersion: 1,
   owner: 'M-13',
   description: 'An obligation was allocated across several kinds of value. Nothing has moved yet.',
@@ -160,7 +160,7 @@ export const PLAN_ALLOCATED_EVENT: EventTypeDefinition = {
 };
 
 export const PLAN_COMMITTED_EVENT: EventTypeDefinition = {
-  type: 'value-plan.committed',
+  type: 'value_plan.committed',
   schemaVersion: 1,
   owner: 'M-13',
   description: 'Every internal leg has posted; any external leg awaits settlement.',
@@ -168,7 +168,7 @@ export const PLAN_COMMITTED_EVENT: EventTypeDefinition = {
 };
 
 export const PLAN_SETTLED_EVENT: EventTypeDefinition = {
-  type: 'value-plan.settled',
+  type: 'value_plan.settled',
   schemaVersion: 1,
   owner: 'M-13',
   description: 'Every leg has posted. The obligation is covered in full.',
@@ -176,7 +176,7 @@ export const PLAN_SETTLED_EVENT: EventTypeDefinition = {
 };
 
 export const PLAN_CANCELLED_EVENT: EventTypeDefinition = {
-  type: 'value-plan.cancelled',
+  type: 'value_plan.cancelled',
   schemaVersion: 1,
   owner: 'M-13',
   description: 'Every posted leg was reversed by a compensating transaction.',
@@ -258,7 +258,7 @@ const LEG_FIELDS = [
 ] satisfies PayloadField[];
 
 export const LEG_POSTED_EVENT: EventTypeDefinition = {
-  type: 'value-leg.posted',
+  type: 'value_leg.posted',
   schemaVersion: 1,
   owner: 'M-13',
   description: 'One leg of a plan moved value, and K-10 recorded the transaction.',
@@ -266,7 +266,7 @@ export const LEG_POSTED_EVENT: EventTypeDefinition = {
 };
 
 export const LEG_REVERSED_EVENT: EventTypeDefinition = {
-  type: 'value-leg.reversed',
+  type: 'value_leg.reversed',
   schemaVersion: 1,
   owner: 'M-13',
   description: 'A posted leg was undone by a compensating K-10 transaction.',
@@ -298,7 +298,7 @@ export const WALLET_OPENED_ACTION: AuditActionDefinition = {
 };
 
 export const WALLET_STATUS_CHANGED_ACTION: AuditActionDefinition = {
-  action: 'wallet.status-changed',
+  action: 'wallet.status_changed',
   owner: 'M-13',
   authority: 'business-authoritative',
   description: 'A wallet was frozen, unfrozen or closed.',
@@ -311,38 +311,38 @@ export const WALLET_STATUS_CHANGED_ACTION: AuditActionDefinition = {
 };
 
 export const PLAN_ALLOCATED_ACTION: AuditActionDefinition = {
-  action: 'value-plan.allocated',
+  action: 'value_plan.allocated',
   owner: 'M-13',
   authority: 'business-authoritative',
   description: 'An obligation was allocated across several kinds of value.',
-  resourceTypes: ['value-plan'],
+  resourceTypes: ['value_plan'],
   evidenceFields: internal(PLAN_FIELDS),
 };
 
 export const PLAN_COMMITTED_ACTION: AuditActionDefinition = {
-  action: 'value-plan.committed',
+  action: 'value_plan.committed',
   owner: 'M-13',
   authority: 'business-authoritative',
   description: 'Every internal leg posted.',
-  resourceTypes: ['value-plan'],
+  resourceTypes: ['value_plan'],
   evidenceFields: internal(PLAN_FIELDS),
 };
 
 export const PLAN_SETTLED_ACTION: AuditActionDefinition = {
-  action: 'value-plan.settled',
+  action: 'value_plan.settled',
   owner: 'M-13',
   authority: 'business-authoritative',
   description: 'Every leg posted; the obligation is covered in full.',
-  resourceTypes: ['value-plan'],
+  resourceTypes: ['value_plan'],
   evidenceFields: internal(PLAN_FIELDS),
 };
 
 export const PLAN_CANCELLED_ACTION: AuditActionDefinition = {
-  action: 'value-plan.cancelled',
+  action: 'value_plan.cancelled',
   owner: 'M-13',
   authority: 'business-authoritative',
   description: 'Every posted leg was reversed.',
-  resourceTypes: ['value-plan'],
+  resourceTypes: ['value_plan'],
   evidenceFields: internal([
     ...PLAN_FIELDS,
     { name: 'reason', kind: 'string', required: true, description: 'Why it was cancelled.' },
@@ -350,20 +350,20 @@ export const PLAN_CANCELLED_ACTION: AuditActionDefinition = {
 };
 
 export const LEG_POSTED_ACTION: AuditActionDefinition = {
-  action: 'value-leg.posted',
+  action: 'value_leg.posted',
   owner: 'M-13',
   authority: 'business-authoritative',
   description: 'One leg moved value.',
-  resourceTypes: ['value-leg'],
+  resourceTypes: ['value_leg'],
   evidenceFields: internal(LEG_FIELDS),
 };
 
 export const LEG_REVERSED_ACTION: AuditActionDefinition = {
-  action: 'value-leg.reversed',
+  action: 'value_leg.reversed',
   owner: 'M-13',
   authority: 'business-authoritative',
   description: 'A posted leg was undone by a compensating transaction.',
-  resourceTypes: ['value-leg'],
+  resourceTypes: ['value_leg'],
   evidenceFields: internal([
     ...LEG_FIELDS,
     {
@@ -588,7 +588,7 @@ export function makePlanEntries(
     auditEntry(
       factId,
       action,
-      'value-plan',
+      'value_plan',
       plan.planId,
       `plan ${plan.planId} is ${plan.status}`,
       payload,
@@ -612,7 +612,7 @@ export function makeLegEntries(
     auditEntry(
       leg.legId,
       action,
-      'value-leg',
+      'value_leg',
       leg.legId,
       `leg ${leg.legId} is ${leg.status}`,
       payload,

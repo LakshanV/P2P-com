@@ -159,6 +159,8 @@ export type QuoteErrorCode =
   | 'rfq-not-open'
   /** A supplier tried to act on somebody else's offer. */
   | 'not-your-quote'
+  /** Somebody who did not open the tender tried to choose between its offers. */
+  | 'not-your-tender'
   /** The offer is for more than was asked for, or for nothing. */
   | 'malformed-quantity'
   | 'malformed-amount'

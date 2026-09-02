@@ -261,7 +261,6 @@ test('the route inventory lists every path, with what it is for', async () => {
 test('a write without an idempotency key is refused, and told why', async () => {
   const { call } = await build();
   const response = await call('POST', '/v1/orders', {
-    buyerAccountId: BUYER,
     sellerAccountId: SELLER,
     currency: 'LKR',
     reason: 'the buyer started a basket',
@@ -285,7 +284,6 @@ test('a read needs no idempotency key', async () => {
 test('the same key twice creates one order', async () => {
   const { call } = await build();
   const body = {
-    buyerAccountId: BUYER,
     sellerAccountId: SELLER,
     currency: 'LKR',
     reason: 'the buyer started a basket',
@@ -310,7 +308,6 @@ test('the same key twice creates one order', async () => {
 test('two different keys create two orders', async () => {
   const { call } = await build();
   const body = {
-    buyerAccountId: BUYER,
     sellerAccountId: SELLER,
     currency: 'LKR',
     reason: 'the buyer started a basket',
@@ -330,7 +327,7 @@ test('an idempotency key that identifies a person is refused', async () => {
   const response = await call(
     'POST',
     '/v1/orders',
-    { buyerAccountId: BUYER, sellerAccountId: SELLER, currency: 'LKR', reason: 'basket' },
+    { sellerAccountId: SELLER, currency: 'LKR', reason: 'basket' },
     keyed('buyer@example.com'),
   );
 
@@ -352,7 +349,7 @@ test('an amount sent as a JSON number is refused, with the reason', async () => 
   const created = await call(
     'POST',
     '/v1/orders',
-    { buyerAccountId: BUYER, sellerAccountId: SELLER, currency: 'LKR', reason: 'basket' },
+    { sellerAccountId: SELLER, currency: 'LKR', reason: 'basket' },
     keyed('idem_api_num_order'),
   );
   const orderId = (created.body as { order: { orderId: string } }).order.orderId;
@@ -386,7 +383,6 @@ test('an amount beyond the safe-integer range survives the round trip', async ()
     '/v1/payments',
     {
       orderId: 'ord_01HR0APIhuge001',
-      payerAccountId: BUYER,
       payeeAccountId: SELLER,
       provider: 'mock',
       rail: 'card',
@@ -416,7 +412,7 @@ test('a module refusal keeps its code and gets a sensible status', async () => {
   const created = await call(
     'POST',
     '/v1/orders',
-    { buyerAccountId: BUYER, sellerAccountId: SELLER, currency: 'LKR', reason: 'basket' },
+    { sellerAccountId: SELLER, currency: 'LKR', reason: 'basket' },
     keyed('idem_api_trans_ord'),
   );
   const orderId = (created.body as { order: { orderId: string } }).order.orderId;
@@ -443,7 +439,6 @@ test('a conflict is 409 and a domain refusal is 422', async () => {
 
   const paymentBody = {
     orderId: 'ord_01HR0APIconf001',
-    payerAccountId: BUYER,
     payeeAccountId: SELLER,
     provider: 'mock',
     rail: 'card',
@@ -482,7 +477,6 @@ test('a gateway refusal is 502, because it is neither the client’s fault nor o
     '/v1/payments',
     {
       orderId: 'ord_01HR0APIdecl001',
-      payerAccountId: BUYER,
       payeeAccountId: SELLER,
       provider: 'mock',
       rail: 'card',
@@ -527,6 +521,9 @@ test('every refusal code a module can raise has a status', () => {
     payments: 'payments',
     'financial-ledger': 'financial-ledger',
     'user-cockpit': 'user-cockpit',
+    matching: 'matching',
+    rfq: 'rfq',
+    quotes: 'quotes',
   };
 
   for (const [key, dir] of Object.entries(modules)) {
@@ -557,7 +554,7 @@ test('an order can be created, filled, placed and confirmed over HTTP', async ()
   const created = await call(
     'POST',
     '/v1/orders',
-    { buyerAccountId: BUYER, sellerAccountId: SELLER, currency: 'LKR', reason: 'basket' },
+    { sellerAccountId: SELLER, currency: 'LKR', reason: 'basket' },
     keyed('idem_api_flow_ord'),
   );
   assert.equal(created.status, 201);
@@ -619,7 +616,6 @@ test('a payment can be requested, authorised, captured and refunded over HTTP', 
     '/v1/payments',
     {
       orderId: 'ord_01HR0APIflow001',
-      payerAccountId: BUYER,
       payeeAccountId: SELLER,
       provider: 'mock',
       rail: 'card',
@@ -780,8 +776,8 @@ test('a mixed-value purchase can be allocated and committed over HTTP', async ()
 
   const wallets: Record<string, string> = {};
   for (const [name, spec] of Object.entries({
-    buyerRewards: { ownerAccountId: BUYER, assetTypeId: 'jaya_reward', purpose: 'spending' },
-    sellerRewards: { ownerAccountId: SELLER, assetTypeId: 'jaya_reward', purpose: 'earnings' },
+    buyerRewards: { assetTypeId: 'jaya_reward', purpose: 'spending' },
+    sellerRewards: { assetTypeId: 'jaya_reward', purpose: 'earnings' },
   })) {
     const response = await call(
       'POST',
@@ -799,7 +795,6 @@ test('a mixed-value purchase can be allocated and committed over HTTP', async ()
     {
       obligationId: 'ord_01HR0APIplan001',
       obligationKind: 'order',
-      payerAccountId: BUYER,
       payeeAccountId: SELLER,
       settlementAssetTypeId: 'jaya_reward',
       targetAmountMinor: '500',
@@ -848,7 +843,6 @@ test('an allocation that does not add up is refused with its own code', async ()
     'POST',
     '/v1/wallets',
     {
-      ownerAccountId: BUYER,
       assetTypeId: 'jaya_reward',
       purpose: 'spending',
       normalBalance: 'credit',
@@ -859,7 +853,6 @@ test('an allocation that does not add up is refused with its own code', async ()
     'POST',
     '/v1/wallets',
     {
-      ownerAccountId: SELLER,
       assetTypeId: 'jaya_reward',
       purpose: 'earnings',
       normalBalance: 'credit',
@@ -873,7 +866,6 @@ test('an allocation that does not add up is refused with its own code', async ()
     {
       obligationId: 'ord_01HR0APImis0001',
       obligationKind: 'order',
-      payerAccountId: BUYER,
       payeeAccountId: SELLER,
       settlementAssetTypeId: 'jaya_reward',
       targetAmountMinor: '1000',
@@ -959,6 +951,7 @@ test('an unclassified failure tells the caller nothing and the observer everythi
       needs: {} as unknown as ApiServices['needs'],
       tenders: {} as unknown as ApiServices['tenders'],
       quotes: {} as unknown as ApiServices['quotes'],
+      matching: {} as unknown as ApiServices['matching'],
     },
     access: identity,
     clock: () => NOW,
@@ -993,7 +986,6 @@ test('a response carrying an amount survives JSON serialisation', async () => {
     '/v1/payments',
     {
       orderId: 'ord_01HR0APIser0001',
-      payerAccountId: BUYER,
       payeeAccountId: SELLER,
       provider: 'mock',
       rail: 'card',
@@ -1060,7 +1052,6 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
         authorization: `Bearer ${buyer.token}`,
       },
       body: JSON.stringify({
-        buyerAccountId: BUYER,
         sellerAccountId: SELLER,
         currency: 'LKR',
         reason: 'a basket the client retried a second later',
@@ -1089,7 +1080,6 @@ test('MY MONEY is served over HTTP, and never as one total', async () => {
     'POST',
     '/v1/wallets',
     {
-      ownerAccountId: BUYER,
       assetTypeId: 'jaya_reward',
       purpose: 'spending',
       normalBalance: 'credit',

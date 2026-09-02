@@ -12,7 +12,11 @@
  * Owned by: K-08 Event Infrastructure.
  */
 
-import { KERNEL_COMPONENTS, BUSINESS_MODULES } from '../../platform/architecture/manifest.ts';
+import {
+  APPLICATIONS,
+  BUSINESS_MODULES,
+  KERNEL_COMPONENTS,
+} from '../../platform/architecture/manifest.ts';
 
 import { EventError, type EventPayload, type JsonScalar } from './types.ts';
 
@@ -48,7 +52,18 @@ export interface SubscriptionDefinition {
   readonly description: string;
 }
 
-const TYPE_NAME = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9_]*)+$/;
+/**
+ * A type reads as a subject and a fact: `inventory.item_reserved`, `value_plan.allocated`.
+ *
+ * Both halves are snake_case, and they were not always. The subject used to be a single word, which
+ * refused `value_plan.allocated` while permitting `inventory.item_reserved` — an asymmetry nothing
+ * stated and nobody intended. It was expensive: two modules shipped event types this registry could
+ * never accept, and nothing found out until the first end-to-end journey tried to publish one.
+ *
+ * A hyphen is still refused. A dotted name whose parts are sometimes hyphenated and sometimes not is
+ * a name nobody can guess, and guessing is what a consumer subscribing to a type has to do.
+ */
+const TYPE_NAME = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
 const SUBSCRIPTION_NAME = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const FIELD_NAME = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 
@@ -90,6 +105,9 @@ const manifestIds = (): ReadonlySet<string> =>
     'platform',
     ...KERNEL_COMPONENTS.map((component) => component.id),
     ...BUSINESS_MODULES.map((mod) => mod.id),
+    // An application owns the consumers that join two modules of the same layer, because neither
+    // module may import the other and the join has to be made from above both.
+    ...APPLICATIONS,
   ]);
 
 /** Refuse a definition that could never be validated, or that declares a credential field. */

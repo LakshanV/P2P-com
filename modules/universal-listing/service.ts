@@ -38,7 +38,11 @@ import {
   assertInventoryMode,
   assertUniversalListingIdentifier,
 } from './registry.ts';
-import type { UniversalListingRepository, UniversalListingTransaction } from './repository.ts';
+import type {
+  PublishedVersion,
+  UniversalListingRepository,
+  UniversalListingTransaction,
+} from './repository.ts';
 import {
   sealInventoryMovement,
   sealListing,
@@ -392,6 +396,15 @@ const COMMIT_INVENTORY_KEYS: readonly string[] = [
   'correlationId',
   'idempotencyKey',
 ];
+
+/**
+ * How many published versions a recall step reads when the caller does not say.
+ *
+ * Small enough that reading them all is cheap, large enough that a young marketplace's whole
+ * catalogue fits. Neither number is a search strategy, which is the point of saying so here.
+ */
+export const DEFAULT_RECALL_LIMIT = 200;
+export const MAXIMUM_RECALL_LIMIT = 1000;
 
 export class UniversalListingService {
   readonly #repository: UniversalListingRepository;
@@ -925,6 +938,30 @@ export class UniversalListingService {
       tx.findVersionsByListingId(listingId),
     );
     return sealListingVersions(versions);
+  }
+
+  /**
+   * Every published listing's current version, newest first, bounded.
+   *
+   * The **recall** step of a search, for a caller that has to look across supply rather than at one
+   * listing: a sourcing rung scores what it is given, and a source that pre-filtered aggressively
+   * would hide the near misses a customer most wants to see when nothing matched exactly.
+   *
+   * **This is recall by enumeration and it belongs to M-06 Search & Discovery** the moment supply
+   * outgrows a page. It is here because M-04 owns supply and a bounded query over its own published
+   * versions is its own operation — but a module that answers "what is for sale, roughly?" by
+   * reading everything is not a search engine, and should not be mistaken for one.
+   */
+  async listPublishedVersions(limit = DEFAULT_RECALL_LIMIT): Promise<readonly PublishedVersion[]> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > MAXIMUM_RECALL_LIMIT) {
+      throw new UniversalListingError(
+        'malformed-record',
+        `limit is ${String(limit)}; expected a whole number between 1 and ` +
+          `${String(MAXIMUM_RECALL_LIMIT)}. An unbounded read of every version is how a recall ` +
+          'step becomes an outage',
+      );
+    }
+    return this.#repository.withTransaction((tx) => tx.findPublishedVersions(limit));
   }
 
   /** Every media reference for the version, in display order. */

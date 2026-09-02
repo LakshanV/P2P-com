@@ -76,6 +76,13 @@ export const ACTIONS: Readonly<Record<string, string>> = Object.freeze({
   // one action would mean any grant that let a buyer pay also let them refund themselves.
   capture: 'take money that was authorised, which is the moment a payment becomes real',
   refund: 'return money that was captured, in whole or in part',
+  // Separate verbs for the same reason, and the reason is sharper here. A tender has a buyer and a
+  // supplier reaching the same objects, so "update a tender" and "update an offer" would each grant
+  // both parties the other's act: a supplier who could update an offer could accept their own, and
+  // a buyer who could update a tender could quote for it.
+  quote: 'offer against a tender, which is a supplier’s act and never the buyer’s',
+  withdraw: 'take back an offer you made, which is the offering supplier’s act alone',
+  decide: 'choose between offers — accept one, reject another — which is the buyer’s act alone',
   export: 'take a copy of data out of the platform',
   impersonate: 'act as another party, which nothing currently grants',
   'grant-permission': 'change who may do what — the authority over authority itself',
@@ -93,6 +100,10 @@ export const RESOURCE_TYPES: Readonly<Record<string, string>> = Object.freeze({
   conversation: 'a conversation between parties, or between a party and the platform',
   'commerce-request':
     'a Need: what somebody asked for, in their own words, before it is anything else',
+  'sourcing-run':
+    'one attempt to solve a Need without publishing it: which rungs were tried, and what each found',
+  rfq: 'a tender: what a buyer asked the market for, once the sourcing ladder could not answer it',
+  quote: "a supplier's offer against a tender. Binding until it expires, and never edited",
   order: 'a commerce transaction record',
   listing: 'an offer of something for sale or hire',
   payment: 'a movement of money, owned by the payments module when it exists',

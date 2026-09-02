@@ -104,7 +104,7 @@ const INTERPRETATION_EVENT_FIELDS: readonly PayloadField[] = [
 ];
 
 export const NEED_CAPTURED_EVENT: EventTypeDefinition = {
-  type: 'commerce_request.captured',
+  type: 'need.captured',
   schemaVersion: 1,
   owner: 'M-03',
   description: 'Somebody said what they want. The words themselves are not in this event.',
@@ -112,7 +112,7 @@ export const NEED_CAPTURED_EVENT: EventTypeDefinition = {
 };
 
 export const NEED_INTERPRETED_EVENT: EventTypeDefinition = {
-  type: 'commerce_request.interpreted',
+  type: 'need.interpreted',
   schemaVersion: 1,
   owner: 'M-03',
   description: 'A reading of a Need was recorded. Earlier readings are untouched.',
@@ -120,7 +120,7 @@ export const NEED_INTERPRETED_EVENT: EventTypeDefinition = {
 };
 
 export const NEED_READY_EVENT: EventTypeDefinition = {
-  type: 'commerce_request.ready',
+  type: 'need.ready',
   schemaVersion: 1,
   owner: 'M-03',
   description: 'A Need is understood well enough to source against. The ladder starts here.',
@@ -128,7 +128,7 @@ export const NEED_READY_EVENT: EventTypeDefinition = {
 };
 
 export const NEED_CLOSED_EVENT: EventTypeDefinition = {
-  type: 'commerce_request.closed',
+  type: 'need.closed',
   schemaVersion: 1,
   owner: 'M-03',
   description:
@@ -160,29 +160,29 @@ const INTERPRETATION_EVIDENCE = INTERPRETATION_EVENT_FIELDS.map((field) => ({
 }));
 
 export const NEED_CAPTURED_ACTION: AuditActionDefinition = {
-  action: 'commerce_request.captured',
+  action: 'need.captured',
   owner: 'M-03',
   authority: 'business-authoritative',
   description: 'A Need was captured.',
-  resourceTypes: ['commerce-request'],
+  resourceTypes: ['commerce_request'],
   evidenceFields: REQUEST_EVIDENCE,
 };
 
 export const NEED_INTERPRETED_ACTION: AuditActionDefinition = {
-  action: 'commerce_request.interpreted',
+  action: 'need.interpreted',
   owner: 'M-03',
   authority: 'business-authoritative',
   description: 'A reading of a Need was recorded.',
-  resourceTypes: ['commerce-request'],
+  resourceTypes: ['commerce_request'],
   evidenceFields: INTERPRETATION_EVIDENCE,
 };
 
 export const NEED_STATUS_ACTION: AuditActionDefinition = {
-  action: 'commerce_request.status_changed',
+  action: 'need.status_changed',
   owner: 'M-03',
   authority: 'business-authoritative',
   description: 'A Need moved between statuses.',
-  resourceTypes: ['commerce-request'],
+  resourceTypes: ['commerce_request'],
   evidenceFields: REQUEST_EVIDENCE,
 };
 
@@ -280,7 +280,7 @@ function requestAuditEntry(
       recordId,
       action: definition.action,
       subjectId: request.accountId,
-      resourceType: 'commerce-request',
+      resourceType: 'commerce_request',
       resourceId: request.requestId,
       occurredAt,
       recordedAt: occurredAt,
@@ -384,7 +384,7 @@ export function makeInterpretedAction(
       recordId,
       action: NEED_INTERPRETED_ACTION.action,
       subjectId: accountId,
-      resourceType: 'commerce-request',
+      resourceType: 'commerce_request',
       resourceId: interpretation.requestId,
       occurredAt: interpretation.interpretedAt,
       recordedAt: interpretation.interpretedAt,
