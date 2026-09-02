@@ -581,6 +581,26 @@ class PostgresEventTransaction implements EventTransaction {
    * the second is how a crashed worker's delivery returns to the pool without an operator.
    */
   async claimDueDeliveries(request: ClaimRequest): Promise<readonly Delivery[]> {
+    // Reuse is refused here rather than by a unique index, because a claim covers a **batch** and
+    // every row in it carries the same token. The index that once enforced this made batching
+    // impossible: two due deliveries claimed together violated it, so a subscription with a backlog
+    // made no progress at all. See migration 0056. This check is in the same transaction as the
+    // claim and matches what the in-memory repository has always done.
+    const held = await this.#run('claimDueDeliveries', () =>
+      this.#client.query<{ delivery_id: string }>(
+        `SELECT delivery_id FROM ${DELIVERY_TABLE} WHERE claim_token = $1 LIMIT 1;`,
+        [request.claimToken],
+      ),
+    );
+    if (held.rows.length > 0) {
+      throw new EventError(
+        'claim-token-reuse',
+        `claim token "${request.claimToken}" is already held by a delivery. A token identifies ` +
+          'one claim, not one worker; reusing one means two claims cannot be told apart, and the ' +
+          'guard that stops a stale worker acknowledging depends on telling them apart',
+      );
+    }
+
     const result = await this.#run('claimDueDeliveries', () =>
       this.#client.query<DeliveryRow>(
         `UPDATE ${DELIVERY_TABLE} AS target

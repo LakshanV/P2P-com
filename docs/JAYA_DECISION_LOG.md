@@ -571,6 +571,30 @@ Each entry includes:
 
 ---
 
+## D-047 — A claim token identifies one claim, and a claim covers a batch
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | Migration 0056 replaces K-08's `UNIQUE (claim_token)` on `event_delivery` with `UNIQUE (claim_token, delivery_id)`, and moves reuse detection into `claimDueDeliveries` — a `SELECT` in the same transaction as the claim, which is where the in-memory repository has always done it. |
+| Context | 0004's own header said a token identifies one **claim**, and then enforced one *row*. So `claimDueDeliveries(limit)`, which stamps every row of a batch with the same token, violated the constraint whenever it claimed more than one. **Batching had never worked against PostgreSQL**, and it failed badly rather than gracefully: a unique violation from inside the claim, so a subscription with a backlog made no progress at all and the error named a constraint rather than the situation. Every unit test passed throughout, because the in-memory repository allowed the batch — the two implementations disagreed about something no test had asked either of them. It surfaced when an end-to-end journey accepted two partial offers on one tender and produced two due deliveries at the same instant. |
+| Consequences | A consumer can drain a backlog. What the token actually guards is **completion** — `completeDelivery`, `rescheduleDelivery` and `deadLetterDelivery` are each conditional on it still being current, which is a per-row comparison and never needed global uniqueness. Reuse across claims is still refused, because two claims that cannot be told apart defeat exactly that guard. The rollback can fail by design: restoring the old constraint with an in-flight batch on record would mean taking work away from a worker that owns it, on an operator's behalf. `tests/integration/events-claim.integration.ts` pins all three properties against a live server. |
+| Status | active |
+
+---
+
+## D-048 — A split tender is closed, not awarded
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | When several partial offers together cover a tender, each acceptance opens its own order against its own supplier, and the tender is **closed** rather than awarded. `rfq_award_names_winner` stays as it is: an award names exactly one winning quote, in both directions. |
+| Context | M-09's award models one decision with one winner, which is right for the ordinary case and has no answer for a split. The alternatives were to relax the CHECK so `awarded_quote_id` could be null on an awarded tender — which would let an awarded tender exist that cannot say who won — or to name one of the suppliers as *the* winner, which is a record of a decision nobody made. |
+| Consequences | The two orders are real and complete, and together cover the quantity exactly; what is missing is a first-class record that they were the *outcome of the tender*. A reader can reconstruct it from the accepted quotes, which all name the tender. **Recorded as a gap**: a split award — one tender, several winning quotes, one parent order — is not modelled. `tests/e2e/flow-d-split-supply.e2e.ts` asserts the honest ending rather than working around it. |
+| Status | active |
+
+---
+
 ## Decision Status Legend
 
 | Status | Meaning |

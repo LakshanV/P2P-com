@@ -290,6 +290,9 @@ export async function journey(body: (context: Journey) => Promise<void>): Promis
     const observed: unknown[] = [];
     let sequence = 0;
     let issuance = 0;
+    // Its own counter. A claim token identifies one claim and K-08 refuses a reused one, so sharing
+    // the request counter made a collision a matter of how many calls a journey happened to make.
+    let claims = 0;
     let signedIn: SignedIn | null = null;
 
     const call: Journey['call'] = async (method, path, payload, options = {}) => {
@@ -333,11 +336,11 @@ export async function journey(body: (context: Journey) => Promise<void>): Promis
 
       let delivered = 0;
       for (const subscription of SUBSCRIPTIONS) {
-        sequence += 1;
+        claims += 1;
         const outcomes = await events.deliver({
           subscription: subscription.subscription,
           worker: { kind: 'system', id: 'e2e-worker' },
-          claimToken: `clm_01HR0E2E${String(sequence).padStart(6, '0')}`,
+          claimToken: `clm_01HR0E2E${String(claims).padStart(6, '0')}`,
           now,
           limit: 50,
         });
