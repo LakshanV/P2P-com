@@ -28,6 +28,8 @@ import type {
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
 import type { CommerceRequestService } from '../../modules/commerce-request/index.ts';
+import type { QuoteService } from '../../modules/quotes/index.ts';
+import type { RfqService } from '../../modules/rfq/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
 import type { UniversalListingService } from '../../modules/universal-listing/index.ts';
 import type { UserCockpitService } from '../../modules/user-cockpit/index.ts';
@@ -61,6 +63,10 @@ export interface ApiServices {
   readonly listings: UniversalListingService;
   /** M-03: what somebody asked for, in their own words. The entry point of the product. */
   readonly needs: CommerceRequestService;
+  /** M-09: the tenders opened when the sourcing ladder could not answer a Need. */
+  readonly tenders: RfqService;
+  /** M-10: what the market offered back, and the comparison a customer decides on. */
+  readonly quotes: QuoteService;
 }
 
 /**

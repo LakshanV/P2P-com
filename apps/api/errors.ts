@@ -67,8 +67,12 @@ const ORDERS: Readonly<Record<string, number>> = Object.freeze({
   // Vocabulary words the client got wrong: a malformed request, not a domain refusal.
   'unknown-event-kind': 400,
   'unknown-fulfilment-role': 400,
+  'unknown-line-kind': 400,
   'malformed-currency': 400,
   'negative-quantity': 400,
+  // A line that names neither a listing version nor a quote, or both. The request is malformed:
+  // nothing on such a line can say what the buyer agreed to.
+  'ambiguous-line-source': 400,
   // States the order is in that make the request impossible. Well formed, and refused.
   'order-not-draft': 422,
   'order-empty': 422,

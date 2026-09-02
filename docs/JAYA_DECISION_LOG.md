@@ -439,6 +439,78 @@ Each entry includes:
 
 ---
 
+## D-036 — M-03 Commerce Request: what somebody said is evidence, and evidence is not edited
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-01 |
+| Decision | Implement M-03 owning `request` and three append-only companions — `request_interpretation`, `request_media`, `request_event` — in schema `module_commerce_request`. `request.raw_text` is **write-once**, enforced by a database trigger as well as by the absence of any service path that would change it. A correction is a **new interpretation row**, versioned and append-only, never an edit to the words. `raw_text` is the one column in the platform deliberately exempt from `is_opaque_identifier`; the cost of that exemption is paid by publishing the text's **length** in events and never its content. Confidence is an integer per mille. |
+| Context | The product begins with somebody saying what they need, in their own words. Every design that stores a "cleaned" version of that sentence loses the thing a dispute is actually about, and every design that lets the platform improve the sentence later means the platform can rewrite what a customer asked for after the fact. A system that can edit its own evidence has none. |
+| Consequences | An interpretation must name its K-13 run when it came from a model and must not when it came from a human or a rule, so nobody can present a model's guess as a person's statement. Interpretations are versioned with `UNIQUE (request_id, version)`, which makes the sequence readable and makes a wrong reading impossible to quietly improve into a right one. Because `raw_text` is exempt from the identifier rules, everything downstream of it is held to the opposite discipline: M-09 carries a **specification** to suppliers and never the words, and M-07 stores none of what it is given. |
+| Status | active |
+
+---
+
+## D-037 — M-07 Matching: a sourcing ladder, and the difference between no result and a failed lookup
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-01 |
+| Decision | Implement M-07 as an ordered ladder of five rungs — `catalogue`, `known`, `verified`, `external`, `rfq` — run in that order, stopping at the first rung whose best candidate reaches the sufficiency threshold (700 per mille by default). Every rung records an attempt, including the ones that found nothing and the ones that were skipped after an earlier rung satisfied the run. Rung outcomes are `satisfied`, `insufficient`, `empty`, `unavailable`, `lookup-failed` or `skipped`; run outcomes are `matched`, `escalate-to-rfq` or `exhausted`. The `rfq` rung is a **recommendation, never a search**. External discovery arrives through an `ExternalSupplierDiscoveryProvider` port with a mock adapter, and its leads are capped at 600 per mille — below the sufficiency threshold, so a lead can never satisfy the ladder on its own. |
+| Context | The brief is explicit that JAYA must first try to *solve* a Need rather than publish it. A platform that turns every Need into a tender is a request board: it costs suppliers attention, it costs the customer time, and it answers "I need 20 tonnes of cement" with a form. The ordering is the product decision, which is why a CHECK pins each rung to its position in the ladder — the database and the code cannot disagree about it. |
+| Consequences | An escalation to RFQ is explainable to the customer it inconvenienced, because the run names every rung that was tried and why each did not answer. `lookup-failed` is separated from `unavailable` (migration 0051) because they are different facts with different owners: "no adapter is wired for this rung" is a configuration choice and nobody is paged, while "the adapter was called and it broke" is an outage quietly escalating every Need to RFQ for a reason that has nothing to do with supply. An unverified external lead cannot win a match by itself; it can only justify an invitation. |
+| Status | active |
+
+---
+
+## D-038 — M-09 RFQ: a specification travels, and the customer's words never do
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-01 |
+| Decision | Implement M-09 owning `rfq`, `rfq_invitation` and `rfq_event` in schema `module_rfq`. A tender carries a **supplier-facing specification** built from an allowlist of carried keys, with a private-text guard, an `item_description` capped at 500 characters, and the specification **flattened across named typed columns** rather than stored as one `jsonb` blob. No specification travels in an event. `UNIQUE (rfq_id, supplier_account_id)`; a re-invitation converges on the existing record and publishes nothing. An award names exactly one winner in both directions by CHECK, and awarding a second, different quote is `illegal-transition` rather than a replay. |
+| Context | A Need is exempt from the identifier rules on purpose and may hold a telephone number, an address or a hint about what the buyer will pay. A tender goes to strangers. Any single defence here is one refactor away from being removed, so the rule is defended four ways, and the two that actually hold are the ones that are structural: a schema with no free-text field wide enough to hold a message, and a specification builder that carries only what it recognises. |
+| Consequences | A supplier who receives a tender cannot learn who the buyer is from the words, because there are no words. An invited supplier fetches the requirement through a route that can check the invitation, rather than reading it from a shared event log every subscriber keeps indefinitely. `rfq_invitation.reason` has a minimum length, because a supplier receiving an irrelevant tender is entitled to know why they were asked and "matched" is not an answer. Adding a `notes` column to the tender table fails an integration test that asserts the column set exactly. |
+| Status | active |
+
+---
+
+## D-039 — M-10 Quotes: an offer binds, and ranking is advice
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-01 |
+| Decision | Implement M-10 owning `quote` in schema `module_quotes`. **The terms of a submitted offer are immutable** — enforced by the absence of an edit operation, by an adapter whose UPDATE sets four columns, and by the `quote_terms_are_immutable` trigger, which also refuses DELETE and refuses to move an offer that has already ended. A supplier may act only on their own offer, checked in the service. Only an invited supplier may quote, checked against M-09 through a two-method port. `partial` and `substitute` are first-class kinds, with a CHECK tying `substitute` to a declared difference in both directions. **Ranking is computed, never stored**, over five weighted per-mille factors whose weights are data; a supplier with no delivery record scores 600 rather than 0; every score explains itself; exactly one offer is recommended and the customer may accept any other eligible one. **No price travels in an event**, and the audit record carries it. |
+| Context | A market where an offer can be quietly revised is one where the offer you accepted is not the offer you saw. Separately, a platform whose ranking is "cheapest first" teaches its customers to ignore the ranking — an offer 8% cheaper that arrives three weeks late from a supplier who failed twice last year is not the best offer. Both of those are trust decisions rather than technical ones, and both have to be true in the schema, not only in a service somebody may refactor. |
+| Consequences | Changing a price means withdrawing and submitting a new offer, so both stay on the record and a buyer can see that the price moved. A recommendation cannot be overridden **by the platform**: the customer may always accept any eligible offer, because one they could not override would be a decision taken from them. Nothing stores a score, so a ranking cannot go stale. A quote's landed total is carried separately from `quantity × unitPrice`, because the difference is exactly where a cheap offer becomes an expensive one — which is what makes D-041 necessary. |
+| Status | active |
+
+---
+
+## D-040 — An order line's source is a listing version **or** an accepted quote
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | Migration 0054 makes `module_orders.order_item.listing_id`, `version_id` and `commerce_unit_type_id` nullable, adds `quote_id`, and adds `order_item_names_one_source` requiring **exactly one** source in both directions. `commerce_unit_type_id` is required for a listing line and NULL for a quote line. The same rule is enforced in M-11's validator with the refusal code `ambiguous-line-source`. |
+| Context | 0028 assumed every order line came from a listing, which is right for the catalogue half of the platform and impossible for the other half: a tender exists **because no listing answered**, so there is no version to pin. The alternatives were both worse. Faking a listing puts a row in M-04 that nobody published and no supplier maintains, existing only so a NOT NULL could be satisfied — a reference invented to satisfy a constraint is a lie the schema tells every reader after it. Leaving the columns NOT NULL and refusing quote-sourced orders would mean the whole tendering path could never become a purchase. |
+| Consequences | An accepted offer is a permanent address of exactly the kind `version_id` provides: M-10 holds its terms immutable by trigger, so a line pinning `quote_id` reads the same terms forever. `commerce_unit_type_id` being NULL for a quote line says "no registered K-11 unit type is known for this line", which is true — a tender is written in whatever unit the buyer used, and naming a type that does not exist would be worse than saying so. **Open gap:** M-09 should eventually carry a K-11 unit type on its specification, at which point a quote line can carry one too. The split-fulfilment allocation now groups by "pinned source" rather than by version, so a quote-sourced order can in principle be split; no caller does that yet. The rollback can fail by design, and refuses rather than deleting the record of what a buyer agreed to. |
+| Status | active |
+
+---
+
+## D-041 — A landed total becomes two order lines, not one inflated unit price
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | An accepted offer opens an order with a `goods` line at exactly `quantity × unitPriceMinor` and, when the landed total is higher, a `charges` line of quantity 1 for the remainder. `order_item.line_kind` records which. Migration 0055 adds `quote_total_covers_goods` to M-10 — a landed total is never **below** the goods it lands — with the same rule in M-10's validator. The join is made by `apps/api/consumers/quote-order.ts` on `quote.accepted`, which reads the terms from M-10 rather than the event (no price travels in one) and the buyer from M-09 rather than anything a caller can influence. The resulting order is placed **and confirmed**. |
+| Context | A quote's `total_minor` is what the buyer pays all in and is deliberately not `quantity × unit_price` — the difference is delivery, duties and handling. M-11's `order_item_line_total_is_product` makes the line arithmetic a database rule, and it should stay one: a line total that does not equal quantity times unit price is a number nobody can defend in a dispute. Folding delivery into the unit price would satisfy the constraint by lying about the price the supplier quoted. |
+| Consequences | A buyer sees what the delivery cost, and can therefore tell a cheap offer with expensive carriage from an expensive one that includes it. The order's total equals the offer's landed total exactly, checked by M-11's `expectedTotalMinor`. A total below the goods subtotal is now impossible, because there is no honest way to open an order from one — it would need a negative charge line, which the order schema refuses; a supplier giving a volume discount states a lower unit price, which is what a discount is. **Confirming the order here is deliberate**: a quote binds, the supplier offered and the buyer accepted, so leaving it at `placed` for the supplier to confirm would give them a second chance to decline what they were bound to — the thing M-10 exists to prevent. |
+| Status | active |
+
+---
+
 ## Decision Status Legend
 
 | Status | Meaning |

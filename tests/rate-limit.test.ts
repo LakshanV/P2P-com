@@ -54,6 +54,7 @@ import { UserCockpitService } from '../modules/user-cockpit/index.ts';
 import { buildApi } from '../apps/api/app.ts';
 import { handleRequest } from '../platform/http/pipeline.ts';
 import { identityStack } from './helpers/api-identity.ts';
+import { inMemoryTendering } from './helpers/tendering-services.ts';
 
 const NOW = '2026-07-01T09:00:00.000000Z';
 
@@ -357,6 +358,7 @@ test('a throttled caller gets a 429 with the headers needed to back off', async 
       ledger,
       listings: new UniversalListingService(new InMemoryUniversalListingRepository()),
       needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
+      ...inMemoryTendering(),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: {
@@ -436,6 +438,7 @@ test('a throttled caller does not consume another caller’s allowance', async (
       ledger,
       listings: new UniversalListingService(new InMemoryUniversalListingRepository()),
       needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
+      ...inMemoryTendering(),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,

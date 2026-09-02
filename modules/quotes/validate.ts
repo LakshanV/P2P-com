@@ -73,6 +73,25 @@ export function validateQuote(candidate: unknown, source: RecordSource): Quote {
       );
     }
 
+    const quantity = assertQuantity(fields.quantity, 'quantity');
+    const unitPriceMinor = assertAmount(fields.unitPriceMinor, 'unitPriceMinor');
+    const totalMinor = assertAmount(fields.totalMinor, 'totalMinor');
+
+    // The landed total covers the goods it lands. The difference above the subtotal is delivery,
+    // duties and handling; below it there is no honest reading, because it says the stated unit
+    // price is not the price. A supplier giving a volume discount states a lower unit price, which
+    // is what a discount is — and M-11 opens an order from this pair, so a negative remainder would
+    // surface far downstream as an arithmetic error nobody could trace back here.
+    if (totalMinor < quantity * unitPriceMinor) {
+      throw new QuoteError(
+        'malformed-amount',
+        `the landed total ${String(totalMinor)} is below ${String(quantity)} × ` +
+          `${String(unitPriceMinor)} = ${String(quantity * unitPriceMinor)}. A total under the ` +
+          'goods it lands says the stated unit price is not the price; a discount is a lower unit ' +
+          'price',
+      );
+    }
+
     const currency = asText(fields.currency, 'currency');
     if (!/^[A-Z]{3}$/.test(currency)) {
       throw new QuoteError('malformed-record', `currency is "${currency}"; expected ISO-4217`);
@@ -84,9 +103,9 @@ export function validateQuote(candidate: unknown, source: RecordSource): Quote {
       supplierAccountId: assertQuoteIdentifier(fields.supplierAccountId, 'supplierAccountId'),
       kind,
       status: assertQuoteStatus(fields.status, 'status'),
-      quantity: assertQuantity(fields.quantity, 'quantity'),
-      unitPriceMinor: assertAmount(fields.unitPriceMinor, 'unitPriceMinor'),
-      totalMinor: assertAmount(fields.totalMinor, 'totalMinor'),
+      quantity,
+      unitPriceMinor,
+      totalMinor,
       currency,
       leadTimeDays: asNonNegativeInteger(fields.leadTimeDays, 'leadTimeDays'),
       deliveryTerms: asText(fields.deliveryTerms, 'deliveryTerms'),

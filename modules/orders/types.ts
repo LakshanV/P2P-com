@@ -115,17 +115,58 @@ export interface Order {
  * One line of an order. Append-only: once a line is added it is never edited, because the order is
  * an agreement and an agreement that changes after the fact is not a record of what was agreed.
  */
+/**
+ * What an order line is for.
+ *
+ * `goods` — the thing itself, at `quantity * unitPriceMinor`.
+ * `charges` — delivery, duties and handling, as a separate line. Separate rather than folded into
+ *   the unit price, because a buyer who cannot see what the delivery cost cannot tell a cheap offer
+ *   with expensive carriage from an expensive one that includes it.
+ */
+export const ORDER_LINE_KINDS = ['goods', 'charges'] as const;
+export type OrderLineKind = (typeof ORDER_LINE_KINDS)[number];
+
 export interface OrderItem {
   /** Caller-supplied opaque and stable identifier. */
   readonly itemId: string;
   /** The order this line belongs to. */
   readonly orderId: string;
-  /** The M-04 listing. */
-  readonly listingId: string;
-  /** The pinned version — the permanent address of the agreed terms. */
-  readonly versionId: string;
-  /** The commerce unit type copied from the listing at pin time. */
-  readonly commerceUnitTypeId: string;
+  /** The M-04 listing, or null when this line was priced from an accepted offer. */
+  readonly listingId: string | null;
+  /**
+   * The pinned version — the permanent address of the agreed terms.
+   *
+   * Null for a quote line, which pins {@link quoteId} instead. A tender exists because no listing
+   * answered, so there is no version to pin; the accepted offer is the permanent address, held
+   * immutable in M-10 by a trigger.
+   */
+  readonly versionId: string | null;
+  /**
+   * The commerce unit type copied from the listing at pin time.
+   *
+   * Null for a quote line. A listing is published against a registered K-11 type; a tender is
+   * written in whatever unit the buyer used, and there may be no registered type for it. Naming one
+   * that does not exist would be worse than saying so.
+   */
+  readonly commerceUnitTypeId: string | null;
+  /**
+   * The M-10 offer this line was priced from, or null for a listing line.
+   *
+   * Exactly one of `quoteId` and the listing triple is present — enforced here, in the validator and
+   * by `order_item_names_one_source`. A line with neither cannot say what was agreed; a line with
+   * both has two prices and no way to say which one a dispute is judged against.
+   */
+  readonly quoteId: string | null;
+  /**
+   * What this line is for.
+   *
+   * A quote's landed total is deliberately not `quantity * unitPriceMinor` — the difference is
+   * delivery, duties and handling — and the line arithmetic is a database rule that must stay one.
+   * So an accepted offer becomes a `goods` line at the exact product plus a `charges` line for the
+   * rest, and the buyer sees what they are being charged for rather than a unit price quietly
+   * inflated to absorb delivery.
+   */
+  readonly lineKind: OrderLineKind;
   /** How many units. */
   readonly quantity: bigint;
   /** The unit price in integer minor units, copied from the pinned version. Never recomputed. */
@@ -250,6 +291,10 @@ export type OrderErrorCode =
   | 'unknown-event-kind'
   /** The fulfilment role is not one M-11 recognises. */
   | 'unknown-fulfilment-role'
+  /** The line kind is not one M-11 recognises. */
+  | 'unknown-line-kind'
+  /** A line named neither a listing version nor a quote, or named both. */
+  | 'ambiguous-line-source'
   /** The currency is not a valid ISO-4217 code. */
   | 'malformed-currency'
   /** The reason text is malformed. */

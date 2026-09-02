@@ -53,8 +53,9 @@ const VALID_UNTIL = '2026-07-08T09:00:00.123456Z';
  * this is an implausible order; the point is not the plausibility but that the platform must not
  * silently change a number somebody is charged.
  */
-const HUGE_TOTAL = 90_071_992_547_409_931n;
 const HUGE_UNIT = 9_007_199_254_740_993n;
+/** Twenty of those, plus a delivery charge that is itself past the safe-integer boundary. */
+const HUGE_TOTAL = 20n * HUGE_UNIT + 9_007_199_254_740_993n;
 
 class StubTenders implements TenderSource {
   findTender(rfqId: string): Promise<TenderFacts | null> {
@@ -369,6 +370,9 @@ test('the PostgreSQL adapter and the in-memory one agree', liveTestOptions, asyn
         supplierAccountId: SUPPLIER_B,
         kind: 'partial',
         quantity: 12n,
+        // 12 × 1,150,000 = 13,800,000 of goods, landing for 14,000,000. The pair has to hold: a
+        // landed total below the goods it lands is refused.
+        unitPriceMinor: 1_150_000n,
         totalMinor: 14_000_000n,
         leadTimeDays: 2,
       });

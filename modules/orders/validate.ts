@@ -11,6 +11,7 @@ import { formatInstant, InvalidInstantError, parseInstant } from '../../platform
 
 import {
   assertCancellationReason,
+  assertLineKind,
   assertOrderEventKind,
   assertOrderIdentifier,
   assertOrderStatus,
@@ -140,6 +141,8 @@ const ORDER_ITEM_FIELDS: readonly string[] = [
   'listingId',
   'versionId',
   'commerceUnitTypeId',
+  'quoteId',
+  'lineKind',
   'quantity',
   'unitPriceMinor',
   'lineTotalMinor',
@@ -180,12 +183,55 @@ function checkOrderItem(candidate: unknown, source: RecordSource): OrderItem {
     );
   }
 
+  const listingId = assertOptionalIdentifier(fields.listingId, 'listingId');
+  const versionId = assertOptionalIdentifier(fields.versionId, 'versionId');
+  const commerceUnitTypeId = assertOptionalIdentifier(
+    fields.commerceUnitTypeId,
+    'commerceUnitTypeId',
+  );
+  const quoteId = assertOptionalIdentifier(fields.quoteId, 'quoteId');
+
+  // Exactly one source, in both directions. A line with neither cannot say what was agreed; a line
+  // with both has two prices and no way to say which one a dispute is judged against. The database
+  // says the same thing in `order_item_names_one_source`, because a rule this important should not
+  // depend on one code path being the only writer.
+  const fromListing = listingId !== null || versionId !== null || commerceUnitTypeId !== null;
+  if (quoteId === null && !fromListing) {
+    throw new OrderError(
+      'ambiguous-line-source',
+      'an order line names either a listing version or an accepted quote. This names neither, so ' +
+        'nothing on it can say what the buyer agreed to',
+    );
+  }
+  if (quoteId !== null && fromListing) {
+    throw new OrderError(
+      'ambiguous-line-source',
+      `line ${String(fields.itemId)} names both a listing and quote ${quoteId}. That is two ` +
+        'prices with no way to say which one a dispute is judged against',
+    );
+  }
+  if (quoteId === null && (listingId === null || versionId === null)) {
+    throw new OrderError(
+      'ambiguous-line-source',
+      'a listing line pins both the listing and the version. Without the version it reads whatever ' +
+        'the terms have become, which is not what was agreed',
+    );
+  }
+  if (quoteId === null && commerceUnitTypeId === null) {
+    throw new OrderError(
+      'ambiguous-line-source',
+      'a listing line carries the K-11 commerce unit type the listing was published against',
+    );
+  }
+
   return {
     itemId: assertOrderIdentifier(fields.itemId, 'itemId'),
     orderId: assertOrderIdentifier(fields.orderId, 'orderId'),
-    listingId: assertOrderIdentifier(fields.listingId, 'listingId'),
-    versionId: assertOrderIdentifier(fields.versionId, 'versionId'),
-    commerceUnitTypeId: assertOrderIdentifier(fields.commerceUnitTypeId, 'commerceUnitTypeId'),
+    listingId,
+    versionId,
+    commerceUnitTypeId,
+    quoteId,
+    lineKind: assertLineKind(fields.lineKind, 'lineKind'),
     quantity,
     unitPriceMinor,
     lineTotalMinor,

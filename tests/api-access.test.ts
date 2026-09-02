@@ -59,6 +59,7 @@ import { handleRequest, type PipelineOptions } from '../platform/http/pipeline.t
 import type { HttpResponse } from '../platform/http/types.ts';
 
 import { identityStack, type SignedIn } from './helpers/api-identity.ts';
+import { inMemoryTendering } from './helpers/tendering-services.ts';
 
 const NOW = '2026-07-01T09:00:00.000000Z';
 
@@ -134,6 +135,7 @@ async function build(): Promise<Harness> {
       ledger,
       listings: new UniversalListingService(new InMemoryUniversalListingRepository()),
       needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
+      ...inMemoryTendering(),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,

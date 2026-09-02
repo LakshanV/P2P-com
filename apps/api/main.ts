@@ -61,6 +61,9 @@ import {
   resolveMockProvider,
 } from '../../modules/payments/index.ts';
 
+import { PostgresQuoteRepository, QuoteService } from '../../modules/quotes/index.ts';
+import { PostgresRfqRepository, RfqService } from '../../modules/rfq/index.ts';
+
 import { buildApi, type ApiAccess, type ApiServices } from './app.ts';
 import {
   ORDER_INVENTORY_SUBSCRIPTION,
@@ -74,6 +77,12 @@ import {
   type SettlementAssets,
   type SettlementOutcome,
 } from './consumers/payment-settlement.ts';
+import {
+  QUOTE_ORDER_SUBSCRIPTION,
+  quoteOrderHandler,
+  type QuoteOrderOutcome,
+} from './consumers/quote-order.ts';
+import { tenderBuyerSourceFor, tenderSourceFor } from './tender-source.ts';
 import { webhookSecrets, type WebhookSecrets } from './webhook-signature.ts';
 
 /** Read a variable, or fail with a message that says what to set. */
@@ -245,7 +254,11 @@ export function registerConsumers(options: {
   readonly ledger: FinancialLedgerService;
   readonly orders: OrderService;
   readonly listings: UniversalListingService;
-  readonly observe?: (outcome: SettlementOutcome | InventoryResolution) => void;
+  /** M-10, for the offer an accepted quote was priced from. */
+  readonly quotes: QuoteService;
+  /** M-09, for who is buying. Never taken from anything a caller can influence. */
+  readonly tenders: RfqService;
+  readonly observe?: (outcome: SettlementOutcome | InventoryResolution | QuoteOrderOutcome) => void;
 }): void {
   options.events.register(
     PAYMENT_SETTLEMENT_SUBSCRIPTION,
@@ -264,6 +277,18 @@ export function registerConsumers(options: {
     orderInventoryHandler({
       orders: options.orders,
       listings: options.listings,
+      ...(options.observe === undefined ? {} : { observe: options.observe }),
+    }),
+  );
+
+  // Where the differentiated path becomes a purchase. Without this the customer chooses a supplier
+  // and nothing is bought: quote.accepted is published and nobody listens.
+  options.events.register(
+    QUOTE_ORDER_SUBSCRIPTION,
+    quoteOrderHandler({
+      orders: options.orders,
+      quotes: options.quotes,
+      tenders: tenderBuyerSourceFor(options.tenders),
       ...(options.observe === undefined ? {} : { observe: options.observe }),
     }),
   );
@@ -287,7 +312,12 @@ export function servicesFor(databaseUrl: string): ApiServices {
 
   const needs = new CommerceRequestService(new PostgresCommerceRequestRepository(database));
 
-  return { orders, payments, ledger, cockpit, listings, needs };
+  // M-09 and M-10 are the same layer, so M-10 reaches M-09 through a two-method port rather than an
+  // import. The adapter is built here, above both, which is the only place that join may be made.
+  const tenders = new RfqService(new PostgresRfqRepository(database));
+  const quotes = new QuoteService(new PostgresQuoteRepository(database), tenderSourceFor(tenders));
+
+  return { orders, payments, ledger, cockpit, listings, needs, tenders, quotes };
 }
 
 export function start(options: StartOptions): ReturnType<typeof createHttpServer> {

@@ -16,15 +16,23 @@ import { AccountError, assertAccountIdentifier } from '../../kernel/accounts/ind
 import {
   CANCELLATION_REASONS,
   ORDER_EVENT_KINDS,
+  ORDER_LINE_KINDS,
   ORDER_STATUSES,
   OrderError,
   type CancellationReason,
   type OrderErrorCode,
   type OrderEventKind,
+  type OrderLineKind,
   type OrderStatus,
 } from './types.ts';
 
-export type { CancellationReason, OrderErrorCode, OrderEventKind, OrderStatus } from './types.ts';
+export type {
+  CancellationReason,
+  OrderErrorCode,
+  OrderEventKind,
+  OrderLineKind,
+  OrderStatus,
+} from './types.ts';
 
 /**
  * K-03's identifier refusals, in this module's vocabulary.
@@ -65,6 +73,27 @@ export function assertOrderStatus(value: unknown, field: string): OrderStatus {
     );
   }
   return value as OrderStatus;
+}
+
+/**
+ * Refuse a line kind that is not one M-11 recognises.
+ *
+ * Absent means `goods`. Every line written before charges existed was goods, and every caller adding
+ * a listing line still means exactly that — so the default is what those callers already meant
+ * rather than a shortcut.
+ */
+export function assertLineKind(value: unknown, field: string): OrderLineKind {
+  if (value === null || value === undefined) return 'goods';
+  if (typeof value !== 'string' || !(ORDER_LINE_KINDS as readonly string[]).includes(value)) {
+    // Only a string is quoted back. An object stringifies to "[object Object]", which tells the
+    // caller nothing and looks like a value they might have sent.
+    throw new OrderError(
+      'unknown-line-kind',
+      `${field} is ${typeof value === 'string' ? `"${value}"` : typeof value}; expected one of ` +
+        ORDER_LINE_KINDS.join(', '),
+    );
+  }
+  return value as OrderLineKind;
 }
 
 /**

@@ -48,12 +48,19 @@ import { identityStack } from '../helpers/api-identity.ts';
 import type { Database } from '../../platform/db/client.ts';
 import { createHttpServer } from '../../platform/http/server.ts';
 import { migrateUp } from '../../platform/db/runner.ts';
+import { PostgresQuoteRepository, QuoteService } from '../../modules/quotes/index.ts';
+import { PostgresRfqRepository, RfqService } from '../../modules/rfq/index.ts';
+import { tenderSourceFor } from '../../apps/api/tender-source.ts';
 
 import { liveTestOptions, withTestDatabase } from './harness.ts';
 
 const BUYER = 'acct_live_apibuyer1';
 const SELLER = 'acct_live_apisellr1';
 const LIVE_WEBHOOK_SECRET = 'a-live-signing-secret-only-the-provider-and-this-deployment-hold';
+/** The listing every order line in this suite is priced from. */
+const LISTING = 'lst_live_api000001';
+const VERSION = 'ver_live_api000001';
+const NOW = '2026-07-01T09:00:00.000000Z';
 
 /**
  * Distinguishes one server's identifiers from the next.
@@ -79,6 +86,8 @@ async function withServer(
 ): Promise<void> {
   const journal = new LedgerService(new PostgresLedgerRepository(database));
   const orders = new OrderService(new PostgresOrderRepository(database));
+  const tenders = new RfqService(new PostgresRfqRepository(database));
+  const quotes = new QuoteService(new PostgresQuoteRepository(database), tenderSourceFor(tenders));
   const payments = new PaymentService(new PostgresPaymentRepository(database), resolveMockProvider);
   const ledger = new FinancialLedgerService(
     new PostgresFinancialLedgerRepository(database),
@@ -107,13 +116,54 @@ async function withServer(
     roles: ['SUPPLIER', 'CUSTOMER'],
   });
 
+  // A published listing with stock. Adding an order line reserves against M-04 rather than
+  // believing a `reservationId` the client sent, so a line against a listing nobody published is
+  // refused — correctly, and this suite was asserting 201 against exactly that.
+  const listings = new UniversalListingService(new PostgresUniversalListingRepository(database));
+  await listings.createListing({
+    listingId: LISTING,
+    accountId: SELLER,
+    commerceUnitTypeId: 'cut_live_api000001',
+    createdAt: NOW,
+    updatedAt: NOW,
+    correlationId: 'corr_live_apisetup1',
+    idempotencyKey: `idem_live_api_lst_${String(namespaceCounter)}`,
+    recordId: 'rec_live_apisetup1',
+  });
+  await listings.publishListing({
+    versionId: VERSION,
+    listingId: LISTING,
+    title: 'Ceylon cinnamon, Alba grade, 500g',
+    description: 'Hand-rolled quills from a single estate in Matale.',
+    unitPriceMinor: 250n,
+    currency: 'LKR',
+    quantityAvailable: 500n,
+    inventoryMode: 'tracked',
+    attributes: {},
+    publishedAt: NOW,
+    correlationId: 'corr_live_apisetup1',
+    idempotencyKey: `idem_live_api_ver_${String(namespaceCounter)}`,
+  });
+  await listings.receiveInventory({
+    movementId: 'mov_live_apisetup1',
+    listingId: LISTING,
+    versionId: VERSION,
+    quantity: 500n,
+    reason: 'opening stock for the live suite',
+    occurredAt: NOW,
+    correlationId: 'corr_live_apisetup1',
+    idempotencyKey: `idem_live_api_stk_${String(namespaceCounter)}`,
+  });
+
   const api = buildApi({
     services: {
       orders,
       payments,
       ledger,
-      listings: new UniversalListingService(new PostgresUniversalListingRepository(database)),
+      listings,
       needs: new CommerceRequestService(new PostgresCommerceRequestRepository(database)),
+      tenders,
+      quotes,
       cockpit: new UserCockpitService({ orders, payments, ledger, journal }),
     },
     access: identity,

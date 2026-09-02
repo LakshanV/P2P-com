@@ -15,8 +15,9 @@ Three things, and the outbox that publishes changes to them:
 
 1. **Orders** (`order_header`) — the agreement: buyer, seller, status, currency, totals and the
    timestamps of each lifecycle transition.
-2. **Order items** (`order_item`) — one row per line added to a draft, pinning `(listing_id,
-   version_id)`. Append-only.
+2. **Order items** (`order_item`) — one row per line added to a draft, pinning **either**
+   `(listing_id, version_id)` **or** `quote_id`, and carrying a `line_kind` of `goods` or `charges`.
+   Append-only. See §3a.
 3. **Order snapshots** (`order_snapshot`) — the immutable commercial record captured at placement.
    One row per order. Append-only.
 4. **Order events** (`order_event`) — the append-only transition log. One row per successful
@@ -73,6 +74,8 @@ listOrdersBySeller(sellerAccountId)
 | `currency-mismatch` | an item's currency differs from the order's currency |
 | `total-mismatch` | the caller's expected total disagrees with the computed total |
 | `line-total-mismatch` | `lineTotalMinor` is not exactly `quantity * unitPriceMinor` |
+| `ambiguous-line-source` | a line named neither a listing version nor a quote, or named both |
+| `unknown-line-kind` | a `lineKind` outside `ORDER_LINE_KINDS` |
 | `snapshot-exists` | the order already has a snapshot |
 | `negative-amount` / `negative-quantity` | a money amount or quantity below zero, or not an exact integer |
 | `malformed-currency` | not three uppercase letters |
@@ -92,6 +95,36 @@ against tables that have moved on. The snapshot pins every `version_id`, quantit
 `UNIQUE (order_id)` on `order_snapshot` enforces one commercial record per order, and the
 append-only triggers on `order_item`, `order_snapshot` and `order_event` stop the record being
 rewritten after the fact.
+
+---
+
+## 3a. A line's source: a listing version, or an accepted offer
+
+An order line names **exactly one** source, in both directions — enforced by the validator
+(`ambiguous-line-source`) and by `order_item_names_one_source` in migration 0054.
+
+| Source | Columns | When |
+|---|---|---|
+| Listing | `listing_id`, `version_id`, `commerce_unit_type_id` | the catalogue answered |
+| Quote | `quote_id` | a tender answered, because no listing did |
+
+`commerce_unit_type_id` is required for a listing line and NULL for a quote line. A listing is
+published against a registered K-11 type; a tender is written in whatever unit the buyer used, and
+there may be no registered type for it. NULL says "no registered unit type is known for this line",
+which is true — naming one that does not exist would not be.
+
+A line with neither source cannot say what the buyer agreed to; a line with both has two prices and
+no way to say which one a dispute is judged against.
+
+**`line_kind` separates goods from charges.** A quote's landed total is what the buyer pays all in
+and is deliberately not `quantity × unitPrice` — the difference is delivery, duties and handling —
+while `order_item_line_total_is_product` makes the line arithmetic a database rule that must keep
+holding. So an accepted offer opens a `goods` line at the exact product and a `charges` line of
+quantity 1 for the remainder. Folding delivery into the unit price would satisfy the constraint by
+lying about the price the supplier quoted, and a buyer who cannot see what the delivery cost cannot
+tell a cheap offer with expensive carriage from an expensive one that includes it.
+
+M-11 does not know M-10 exists. The join is made by `apps/api/consumers/quote-order.ts`, above both.
 
 ---
 

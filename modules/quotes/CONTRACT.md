@@ -75,7 +75,7 @@ invitations, and a narrow port makes it obvious when the module starts depending
 | `duplicate-quote-id` | the quote id already exists |
 | `idempotency-key-reuse` | the key was already used for a **different** offer |
 | `malformed-quantity` | zero, more than the tender asked for, or a `full` offer covering less |
-| `malformed-amount` | a negative price, or a number that is not a safe integer |
+| `malformed-amount` | a negative price, a number that is not a safe integer, or a landed total below `quantity × unitPriceMinor` (§7) |
 | `malformed-validity` | the offer expires at or before it was submitted |
 | `undeclared-substitution` | a substitute with nothing declared, or a declaration on a non-substitute |
 | `substitution-not-permitted` | the tender's policy is `none` |
@@ -177,6 +177,13 @@ repository accepts.
 delivery, duties, handling — is exactly where a cheap offer becomes an expensive one, and a
 comparison that ignored it would rank on the wrong number.
 
+The difference may only run **upwards**. `quote_total_covers_goods` (migration 0055) and the
+validator both refuse a landed total below the goods it lands: such a pair says the stated unit price
+is not the price, and there is no honest way to open an order from it — M-11 would need a negative
+charge line, which its schema refuses, or would have to quietly restate a number the supplier
+committed to. A supplier giving a volume discount states a lower unit price, which is what a discount
+is. Equality is fine and common: an ex-works offer with no delivery has nothing to add.
+
 ---
 
 ## 8. State machine
@@ -235,7 +242,7 @@ belongs to would tell a supplier they had quoted when they had not.
 
 ## 11. Proof
 
-- `tests/quotes.test.ts` — 38 tests: submission rules, the invitation check, ownership, the state
+- `tests/quotes.test.ts` — 40 tests: submission rules, the invitation check, ownership, the state
   machine, idempotency in both directions, the full ranking surface, immutability of returned
   records, the foreign-field table, and the determinism scan.
 - `tests/integration/quotes.integration.ts` — 9 tests against a live PostgreSQL server: amounts

@@ -128,16 +128,37 @@ interface OfferOptions {
   readonly submittedAt?: string;
 }
 
+/**
+ * A unit price the landed total can actually cover.
+ *
+ * The total is what the buyer pays all in, and it is never below the goods it lands. Deriving the
+ * unit price from the total keeps every fixture consistent with that rule, so a test that varies a
+ * price varies one number rather than two that have to agree.
+ */
+function unitPriceFor(totalMinor: unknown, quantity: unknown): bigint {
+  try {
+    const total = typeof totalMinor === 'bigint' ? totalMinor : BigInt(String(totalMinor));
+    const count = typeof quantity === 'bigint' ? quantity : BigInt(String(quantity));
+    return total / count;
+  } catch {
+    // A total this cannot divide is a malformed amount, and the validator is the thing that should
+    // say so. Zero keeps the fixture out of the way of that refusal.
+    return 0n;
+  }
+}
+
 async function anOffer(harness: Harness, options: OfferOptions = {}): Promise<Quote> {
   const tag = options.tag ?? '0001';
+  const quantity = options.quantity ?? 20n;
+  const totalMinor = options.totalMinor ?? 25_000_000n;
   const result = await harness.service.submitQuote({
     quoteId: `quo_01HR0QUOTE${tag}`,
     rfqId: options.rfqId ?? RFQ,
     supplierAccountId: options.supplierAccountId ?? SUPPLIER_A,
     kind: options.kind ?? 'full',
-    quantity: options.quantity ?? 20n,
-    unitPriceMinor: options.unitPriceMinor ?? 1_250_000n,
-    totalMinor: options.totalMinor ?? 25_000_000n,
+    quantity,
+    unitPriceMinor: options.unitPriceMinor ?? unitPriceFor(totalMinor, quantity),
+    totalMinor,
     currency: options.currency ?? 'LKR',
     leadTimeDays: options.leadTimeDays ?? 5,
     deliveryTerms: options.deliveryTerms ?? 'delivered',
@@ -303,6 +324,40 @@ test('an amount arrives as a string or a safe integer, never as an unsafe double
     anOffer(harness, { tag: '0014', totalMinor: 25_000_000.5 }),
     (error: unknown) => error instanceof QuoteError && error.code === 'malformed-amount',
   );
+});
+
+test('the landed total covers the goods it lands', async () => {
+  // Above the subtotal is delivery, duties and handling. Below it there is no honest reading: it
+  // says the stated unit price is not the price. M-11 opens an order from this pair -- a goods line
+  // at the exact product plus a charges line for the rest -- so a negative remainder would surface
+  // far downstream as an arithmetic error nobody could trace back to the offer.
+  const harness = build();
+
+  await assert.rejects(
+    anOffer(harness, { tag: '0031', unitPriceMinor: 1_250_000n, totalMinor: 23_000_000n }),
+    (error: unknown) =>
+      error instanceof QuoteError &&
+      error.code === 'malformed-amount' &&
+      /a discount is a lower unit price/.test(error.message),
+  );
+
+  // Equality is fine and common: an ex-works offer with no delivery has nothing to add.
+  const exWorks = await anOffer(harness, {
+    tag: '0032',
+    unitPriceMinor: 1_250_000n,
+    totalMinor: 25_000_000n,
+    deliveryTerms: 'ex-works',
+  });
+  assert.equal(exWorks.totalMinor, 25_000_000n);
+});
+
+test('the database refuses a landed total below the goods, not just the validator', () => {
+  const migration = readFileSync(
+    path.join(REPO_ROOT, 'db/migrations/0055_quote_total_covers_goods.up.sql'),
+    'utf8',
+  );
+  assert.match(migration, /quote_total_covers_goods/);
+  assert.match(migration, /total_minor >= quantity \* unit_price_minor/);
 });
 
 // ---------------------------------------------------------------------------
@@ -531,15 +586,17 @@ test('every terminal status is terminal in the transition table', () => {
 
 /** A quote built directly, for ranking tests that do not need the service. */
 function offer(overrides: Partial<Quote> & { quoteId: string }): Quote {
+  const quantity = overrides.quantity ?? 20n;
+  const totalMinor = overrides.totalMinor ?? 25_000_000n;
   return validateQuote(
     {
       rfqId: RFQ,
       supplierAccountId: SUPPLIER_A,
       kind: 'full',
       status: 'submitted',
-      quantity: 20n,
-      unitPriceMinor: 1_250_000n,
-      totalMinor: 25_000_000n,
+      quantity,
+      unitPriceMinor: unitPriceFor(totalMinor, quantity),
+      totalMinor,
       currency: 'LKR',
       leadTimeDays: 5,
       deliveryTerms: 'delivered',

@@ -89,7 +89,7 @@ The entire section is unbuilt.
 
 | ID | Requirement | Owning Module | Implementation | Persistence | API | UI | Unit Tests | Integration | E2E | Status | % | Missing Work | Priority | Blocks Deploy? |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| B-01 | Free-text Need | M-03 | none | none | — | — | — | — | — | `ARCHITECTURE ONLY` | 0% | The whole module | **P0** | No |
+| B-01 | Free-text Need | M-03 | `modules/commerce-request/` | migration 0049 | 10 routes | — | `tests/commerce-request.test.ts`, `tests/needs-api.test.ts` | `commerce-request.integration.ts` | — | `INTEGRATION TESTED` | 75% | No UI. No conversational surface — a Need arrives as one HTTP call rather than a conversation | **P0** | No |
 | B-02 | Voice Need (architecture) | M-03 | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Ingestion port, transcription adapter | P2 | No |
 | B-03 | Image Need | M-03 | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Upload, storage, reference | **P0** | No |
 | B-04 | Screenshot Need | M-03 | none | — | — | — | — | — | — | `NOT STARTED` | 0% | As B-03 plus OCR path | P1 | No |
@@ -100,10 +100,10 @@ The entire section is unbuilt.
 | B-09 | GPS / location-aware Need | M-03 | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Location model, consent (§AB) | P1 | No |
 | B-10 | Browser assistant | — | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Extension, auth bridge | P3 | No |
 | B-11 | Wearable / AI glasses ingestion | — | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Milestone 3 | P3 | No |
-| B-12 | Original input preserved verbatim | M-03 | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Append-only raw-input store | **P0** | No |
-| B-13 | AI structured interpretation | M-03 + K-13 | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Need Agent (§AA), live model adapter | **P0** | No |
-| B-14 | Interpretation confidence | M-03 | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Score, threshold, escalation | P1 | No |
-| B-15 | User correction of interpretation | M-03 | none | — | — | — | — | — | — | `NOT STARTED` | 0% | Correction record, feedback loop | P1 | No |
+| B-12 | Original input preserved verbatim | M-03 | `request.raw_text`, write-once | trigger `request_raw_text_is_write_once` | ✓ | — | ✓ | ✓ round-trips an emoji, a newline and Sinhala byte for byte | — | `INTEGRATION TESTED` | 95% | Only text. Voice, image and document inputs are not captured at all (B-02…B-08) | **P0** | No |
+| B-13 | AI structured interpretation | M-03 + K-13 | `request_interpretation`, append-only and versioned | 0049 | 2 routes | — | ✓ | ✓ | — | `PARTIAL` | 35% | The record exists and enforces its rules — a `model` reading must name its K-13 run, a `human` or `rule` one must not. **No model produces one**: no Need Agent, no live adapter | **P0** | No |
+| B-14 | Interpretation confidence | M-03 | `confidence_per_mille`, integer 0..1000 | CHECK | ✓ | — | ✓ | ✓ | — | `PARTIAL` | 40% | Stored and validated. No threshold policy and no escalation when a reading is poor | P1 | No |
+| B-15 | User correction of interpretation | M-03 | a **new interpretation row**, never an edit | append-only trigger | ✓ | — | ✓ | ✓ | — | `PARTIAL` | 45% | A correction is recorded and supersedes rather than overwrites. No feedback loop back into any model | P1 | No |
 
 ---
 
@@ -146,18 +146,23 @@ computes an embedding, or scores a visual match. Owning module would be M-03/M-0
 
 ## E. Matching / sourcing
 
-Owning module M-07 Matching is registered and empty. **Every row `NOT STARTED`, 0%.**
+M-07 Matching implements the ladder: `catalogue` → `known` → `verified` → `external` → `rfq`, run in
+that order and stopped at the first rung whose best candidate reaches the sufficiency threshold.
+Every rung records an attempt, including the ones that found nothing and the ones that were skipped,
+which is what makes an escalation explainable to the customer it inconvenienced.
+
+**Nothing calls it yet**: no route runs a ladder, and the rung adapters are wired only in tests.
 
 | ID | Requirement | Status | Missing Work | Priority |
 |---|---|---|---|---|
-| E-01 | Need → existing stock | `NOT STARTED` | M-07; would consume M-04 inventory, which exists | **P0** |
-| E-02 | Need → probable supplier | `NOT STARTED` | Supplier model (§O) | **P0** |
-| E-03 | Need → verified supplier network | `NOT STARTED` | Verification (M-02 exists) plus supplier model | P1 |
-| E-04 | External supplier discovery | `NOT STARTED` | — | P2 |
-| E-05 | Supplier lead acquisition | `NOT STARTED` | — | P2 |
-| E-06 | Strict sourcing ladder | `NOT STARTED` | The ordering rule itself, and its policy version | **P0** |
-| E-07 | No unnecessary public RFQ | `NOT STARTED` | Consequence of E-06 | **P0** |
-| E-08 | Explainable Match Score | `NOT STARTED` | Score, and the reasons behind it | P1 |
+| E-01 | Need → existing stock | `TESTED` 60% | `catalogueRung` scores on commodity, attributes, quantity, place and freshness, and excludes on zero commodity match or insufficient tracked stock. **No caller runs it against real listings** | **P0** |
+| E-02 | Need → probable supplier | `TESTED` 45% | `knownSupplierRung` weights prior trade highest, then category, recency, capability, geography, reliability. Reads a `SupplierDirectory` port; **no real directory implements it** (§O) | **P0** |
+| E-03 | Need → verified supplier network | `TESTED` 40% | `verifiedSupplierRung` weights category and verification highest. Not yet joined to M-02, so verification is a field the directory supplies rather than a fact read from M-02 | P1 |
+| E-04 | External supplier discovery | `TESTED` 35% | `ExternalSupplierDiscoveryProvider` port with a mock adapter. Leads are capped at 600 per mille — below the 700 sufficiency — so an unverified lead can never satisfy the ladder alone, only justify an invitation. **No live adapter** | P2 |
+| E-05 | Supplier lead acquisition | `PARTIAL` 20% | A `SupplierLead` is produced and can become an RFQ invitation carrying its source rung. Nothing onboards a lead into an account | P2 |
+| E-06 | Strict sourcing ladder | `TESTED` 65% | `runLadder` stops at the first satisfying rung and records `skipped` for the rest. A CHECK pins each rung to its position, so the database and the code cannot disagree about the order. **Not yet under a K-06 policy version**, so the weights and threshold are code rather than configuration | **P0** |
+| E-07 | No unnecessary public RFQ | `TESTED` 60% | The `rfq` rung is a **recommendation, never a search**: a run reaches it only when every earlier rung failed, and the outcome vocabulary separates `empty` from `lookup-failed` so an outage is not silently reported as absent supply | **P0** |
+| E-08 | Explainable Match Score | `TESTED` 55% | Integer per-mille scores with a factor breakdown per candidate and a recorded attempt per rung. Not yet shown to anybody: no route returns a run | P1 |
 
 ---
 
@@ -175,23 +180,24 @@ Owning module M-07 Matching is registered and empty. **Every row `NOT STARTED`, 
 
 ## G. RFQ / tender engine
 
-Owning modules M-09 (RFQ / Reverse Marketplace) and M-10 (Quotes) are registered and empty.
-**Every row `NOT STARTED`, 0%.** This is the largest single unbuilt area of the original vision.
+M-09 (tenders and invitations) and M-10 (offers and ranking) are built, persisted and integration
+tested, and an accepted offer now opens an order. **No HTTP route reaches either**, so a supplier
+cannot yet see a tender or answer one: everything below runs through the service layer only.
 
 | ID | Requirement | Status | Priority | Notes |
 |---|---|---|---|---|
-| G-01 | Private RFQ | `NOT STARTED` | **P0** | Milestone 1 spine |
-| G-02 | Category supplier RFQ | `NOT STARTED` | P1 | Needs §D-04 |
-| G-03 | Public verified-network RFQ | `NOT STARTED` | P1 | Needs M-02 verification, which exists |
-| G-04 | Supplier clarification | `NOT STARTED` | P1 | Needs K-12, which exists |
-| G-05 | Full bid | `NOT STARTED` | **P0** | |
-| G-06 | Partial bid | `NOT STARTED` | **P0** | Feeds M-11 split fulfilment, which exists |
-| G-07 | Alternative offer | `NOT STARTED` | P1 | |
-| G-08 | Deadline / closing | `NOT STARTED` | **P0** | Needs a scheduler; none exists |
-| G-09 | Attachments / evidence | `NOT STARTED` | P1 | Needs object storage; none exists |
-| G-10 | Ranking | `NOT STARTED` | P1 | |
-| G-11 | Award | `NOT STARTED` | **P0** | |
-| G-12 | Conversion to order | `NOT STARTED` | **P0** | M-11 is ready to receive this |
+| G-01 | Private RFQ | `INTEGRATION TESTED` 70% | **P0** | `visibility = private`; the specification carries no customer text and none travels in an event |
+| G-02 | Category supplier RFQ | `PARTIAL` 35% | P1 | Invitations carry their source rung; category routing still needs §D-04 |
+| G-03 | Public verified-network RFQ | `PARTIAL` 30% | P1 | `visibility = network` is a stored, validated value; nothing yet reads it to widen an audience |
+| G-04 | Supplier clarification | `NOT STARTED` 0% | P1 | Needs K-12, which exists. No question can be asked about a tender |
+| G-05 | Full bid | `INTEGRATION TESTED` 70% | **P0** | `kind = full` must cover the whole quantity, refused otherwise |
+| G-06 | Partial bid | `INTEGRATION TESTED` 65% | **P0** | `kind = partial`, scored proportionally rather than excluded. Not yet fed into M-11 split fulfilment |
+| G-07 | Alternative offer | `INTEGRATION TESTED` 65% | P1 | `kind = substitute`, tied to a declared difference in both directions by CHECK, and refused where the tender forbids substitution |
+| G-08 | Deadline / closing | `PARTIAL` 40% | **P0** | `closes_at > opened_at` by CHECK, and an offer after closing is refused. Expiry is evaluated against an injected instant rather than a sweep, because **no scheduler exists** |
+| G-09 | Attachments / evidence | `PARTIAL` 25% | P1 | Opaque references only, on both the tender and the offer, and quality scoring reads whether evidence exists. **No object storage**, so nothing can be fetched |
+| G-10 | Ranking | `INTEGRATION TESTED` 70% | P1 | Five weighted per-mille factors, weights as data, an explanation per score, unavailable offers shown with their reason, exactly one recommendation the customer may override. Reliability is a supplied figure — **nothing computes it from delivery history yet** |
+| G-11 | Award | `INTEGRATION TESTED` 70% | **P0** | Exactly one winner in both directions by CHECK; a second, different award is `illegal-transition` rather than a replay |
+| G-12 | Conversion to order | `TESTED` 60% | **P0** | `apps/api/consumers/quote-order.ts` opens, places and confirms an order from `quote.accepted`. Migration 0054 lets a line pin a quote instead of a listing version. **Not yet proved against a live database or through an HTTP entry point** |
 
 ---
 
@@ -200,7 +206,7 @@ Owning modules M-09 (RFQ / Reverse Marketplace) and M-10 (Quotes) are registered
 | ID | Requirement | Implementation | Persistence | API | Unit Tests | Integration | Status | % | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | H-01 | Standard order | `modules/orders/service.ts` | 0028 | `POST /v1/orders` | `tests/orders.test.ts` (26) | `orders.integration.ts` (8) | `INTEGRATION TESTED` | 90% | |
-| H-02 | Quote → order | none | — | — | — | — | `NOT STARTED` | 0% | Blocked on §G |
+| H-02 | Quote → order | `apps/api/consumers/quote-order.ts` | 0054 (`quote_id`, `line_kind`) | — (event-driven) | `tests/quote-order.test.ts` (11) | — | `TESTED` | 60% | Goods and charges lines, buyer read from M-09, terms read from M-10. No live-database proof yet |
 | H-03 | State machine | `ORDER_TRANSITIONS` table | CHECK constraints | 5 transition routes | ✓ | ✓ | `INTEGRATION TESTED` | 95% | Declared table, not scattered conditionals |
 | H-04 | Cancellation | `cancelOrder` | `order_header_cancelled_at_matches_status` | `POST …/cancellation` | ✓ | ✓ | `INTEGRATION TESTED` | 95% | |
 | H-05 | Cancellation reason | `CANCELLATION_REASONS` | CHECK | ✓ | ✓ | ✓ | `INTEGRATION TESTED` | 100% | Vocabulary **and** free text; a defect found in review |
@@ -595,10 +601,10 @@ working software is not, and the two are scored separately so the first cannot f
 | Dimension | Score | Basis |
 |---|---|---|
 | **Architecture** | **85%** | Manifest, 8-layer model, 4 executable boundary checks with planted-violation fixtures, financial-zone isolation, schema-namespace ownership. Genuinely enforced, not aspirational |
-| **Contracts** | **45%** | 21 of 62 units have a written contract. Those that exist are precise and executable |
-| **Backend implementation** | **17%** | 7 of 47 business modules; 14 of 15 kernel components. The 7 are the transaction spine and are strong. 40 modules have no code |
-| **Integration testing** | **32%** | 42 live-PostgreSQL tests covering everything that exists, thoroughly. Nothing covering what does not |
-| **E2E functionality** | **2%** | **No E2E harness exists.** The API integration suite is the closest thing and is not a user journey |
+| **Contracts** | **47%** | 23 of 62 units have a written contract. Those that exist are precise and executable |
+| **Backend implementation** | **24%** | 11 of 47 business modules; 14 of 15 kernel components. The transaction spine (M-04, M-11, M-12, M-13) and now the sourcing path (M-03, M-07, M-09, M-10) both exist. 36 modules have no code |
+| **Integration testing** | **40%** | 59 live-PostgreSQL tests covering everything that exists, thoroughly. Nothing covering what does not |
+| **E2E functionality** | **2%** | **No E2E harness exists.** The API integration suite is the closest thing and is not a user journey. Unchanged deliberately: the sourcing path being built does not make it reachable |
 | **AI functionality** | **6%** | Gateway, authority ceiling and kill switch are real and tested. Zero live adapters, zero of sixteen agents, nothing has ever called a model |
 | **Financial functionality** | **58%** | The strongest area. Multi-value ledger, three positions, double entry, mixed-value routing with no rounding, payments with timeout discipline, database-enforced invariants. Missing: settlement, payout, commission, receivable/payable, restriction enforcement |
 | **Logistics** | **0%** | Nothing |
@@ -606,33 +612,42 @@ working software is not, and the two are scored separately so the first cannot f
 | **Final UI/UX** | **0%** | Nothing. One README |
 | **Security** | **58%** | Was not scored separately before, and should have been — it is the dimension that decides whether anything else may be deployed. Authentication, authorisation, object-level access, account isolation, IDOR and webhook verification are all real and tested at the HTTP edge. Rate limits, secret management, backups and consent are not |
 | **Deployment readiness** | **22%** | Migrations, health and now a closed front door are real. No CI, no rate limits, no monitoring, no backups, no staging, and passwords are not yet durable |
-| **Overall original JAYA vision** | **≈ 15%** | See below |
+| **Overall original JAYA vision** | **≈ 21%** | See below |
 
-### Why 15% and not 40%
+### Why 21% and not 40%
 
-A naive average of the rows above gives something near 25%. That would be dishonest, for three
+A naive average of the rows above gives something near 30%. That would be dishonest, for three
 reasons:
 
-1. **The bulk of the original vision is the Need → sourcing → RFQ → quote path**, and none of it
-   exists. That is not one requirement; it is five sections and the reason the platform is
-   differentiated.
-2. **Nothing is reachable by a person who is not a developer.** There is now authentication and
+1. **Nothing on the differentiated path is reachable by anybody.** M-03 has routes; M-07, M-09 and
+   M-10 have none. A supplier cannot see a tender or answer one, a buyer cannot compare offers, and
+   no ladder has ever been run against a real listing. Every capability in sections E and G is
+   reached only from a test, which is a very different thing from existing.
+2. **Nothing is reachable by a person who is not a developer.** There is authentication and
    authorisation, so a real user *could* be signed in — but there is no UI, no registration route,
-   and no durable password store, so in practice every capability above is still reached only by a
-   test.
-3. **Contracts and architecture were weighted down deliberately.** They are 85% and 45% complete and
+   and no durable password store.
+3. **Contracts and architecture were weighted down deliberately.** They are 85% and 47% complete and
    they are worth having, but a customer cannot buy anything with a boundary check.
 
-The movement from 13% to 15% is two points and no more, and the reason is worth being explicit
-about: closing the front door does not add a feature. It converts a system that could not be
-deployed at all into one that could be deployed to people it does not yet have anything to show. It
-was still the right thing to do first, because every screen and every route built before it would
-have had to be revisited afterwards.
+**The movement from 15% to 21% is six points, and this is what earns them.** The previous revision
+said the bulk of the original vision is the Need → sourcing → RFQ → quote path and that none of it
+existed. That is no longer true. A Need is captured verbatim and cannot be edited; a sourcing ladder
+tries the catalogue, then the buyer's own suppliers, then the verified network, then external
+discovery, and recommends a tender only when all of them fail; a tender carries a supplier-facing
+specification and never the customer's words; suppliers offer against it; the offers are ranked on
+five factors with an explanation the customer can override; and an accepted offer opens a placed,
+confirmed order. Four modules, four migrations, seventeen new live-PostgreSQL tests.
 
-What *is* worth stating plainly: the 15% that exists is unusually solid. The financial core has
-invariants enforced in the database, not just in code; the concurrency cases are proven against a
-real server; and several defects — the webhook that trusted its caller among them — were caught by
-tests that a less careful suite would have missed.
+Six points and not fifteen, because **the path has no surface**. It is proved through service calls
+and one event consumer, which is the difference between "the software can do this" and "somebody can
+do this". The E2E row is deliberately unchanged at 2% for the same reason: no harness enters through
+the application boundary, so nothing here is yet a journey.
+
+What *is* worth stating plainly: the 21% that exists is unusually solid. The financial core has
+invariants enforced in the database, not just in code; an offer's terms are immutable at three
+layers; the concurrency cases are proven against a real server; and several defects — the webhook
+that trusted its caller, and the quote convergence that would have told a supplier they had quoted
+when they had not — were caught by tests a less careful suite would have missed.
 
 ---
 

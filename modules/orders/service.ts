@@ -40,6 +40,7 @@ import {
   type OrderEvent,
   type OrderEventKind,
   type OrderItem,
+  type OrderLineKind,
   type OrderSnapshot,
   type OrderStatus,
 } from './types.ts';
@@ -83,9 +84,19 @@ export interface CreateOrderResult {
 export interface AddItemRequest {
   readonly itemId: string;
   readonly orderId: string;
-  readonly listingId: string;
-  readonly versionId: string;
-  readonly commerceUnitTypeId: string;
+  /**
+   * The listing triple, for a line priced from a published offer.
+   *
+   * Absent — or null — for a line priced from an accepted quote, which supplies {@link quoteId}
+   * instead. Exactly one source is accepted.
+   */
+  readonly listingId?: string | null;
+  readonly versionId?: string | null;
+  readonly commerceUnitTypeId?: string | null;
+  /** The M-10 offer, for a line that came from a tender rather than a listing. */
+  readonly quoteId?: string | null;
+  /** `goods` or `charges`. Absent means goods, which is what every listing line is. */
+  readonly lineKind?: OrderLineKind;
   readonly quantity: bigint;
   readonly unitPriceMinor: bigint;
   readonly lineTotalMinor: bigint;
@@ -186,9 +197,16 @@ export interface CancelOrderResult {
 /** One line of one supplier's allocation. Mirrors an order item, minus the fields M-11 derives. */
 export interface SplitAllocationItem {
   readonly itemId: string;
-  readonly listingId: string;
-  readonly versionId: string;
-  readonly commerceUnitTypeId: string;
+  /** The M-04 listing, or null when the line was priced from an accepted offer. */
+  readonly listingId: string | null;
+  /** The pinned version, or null for a quote line. */
+  readonly versionId: string | null;
+  /** The K-11 type, required for a listing line and null for a quote line. */
+  readonly commerceUnitTypeId: string | null;
+  /** The M-10 offer this allocation was priced from, or null for a listing line. */
+  readonly quoteId?: string | null;
+  /** `goods` or `charges`. Absent means goods. */
+  readonly lineKind?: OrderLineKind;
   readonly quantity: bigint;
   readonly unitPriceMinor: bigint;
   readonly lineTotalMinor: bigint;
@@ -276,6 +294,8 @@ const ADD_ITEM_KEYS: readonly string[] = [
   'listingId',
   'versionId',
   'commerceUnitTypeId',
+  'quoteId',
+  'lineKind',
   'quantity',
   'unitPriceMinor',
   'lineTotalMinor',
@@ -464,9 +484,9 @@ export class OrderService {
     assertNoForeignConcerns(request, ADD_ITEM_KEYS, 'addItem');
     assertOrderIdentifier(request.itemId, 'itemId');
     assertOrderIdentifier(request.orderId, 'orderId');
-    assertOrderIdentifier(request.listingId, 'listingId');
-    assertOrderIdentifier(request.versionId, 'versionId');
-    assertOrderIdentifier(request.commerceUnitTypeId, 'commerceUnitTypeId');
+    // The source fields are checked by the validator, which is also where the "exactly one source"
+    // rule lives — asserting them here as well would refuse a quote line before that rule could
+    // explain why a line needs a source at all.
     if (request.reservationId !== null) {
       assertOrderIdentifier(request.reservationId, 'reservationId');
     }
@@ -477,9 +497,11 @@ export class OrderService {
         {
           itemId: request.itemId,
           orderId: request.orderId,
-          listingId: request.listingId,
-          versionId: request.versionId,
-          commerceUnitTypeId: request.commerceUnitTypeId,
+          listingId: request.listingId ?? null,
+          versionId: request.versionId ?? null,
+          commerceUnitTypeId: request.commerceUnitTypeId ?? null,
+          quoteId: request.quoteId ?? null,
+          lineKind: request.lineKind ?? 'goods',
           quantity: request.quantity,
           unitPriceMinor: request.unitPriceMinor,
           lineTotalMinor: request.lineTotalMinor,
@@ -980,20 +1002,21 @@ export class OrderService {
         );
       }
 
-      // The central rule. Group both sides by the pinned listing version and require them to agree
-      // exactly: allocating 7 and 5 tonnes of a 20-tonne order and committing it would leave the
-      // remaining 8 owned by nobody, with no record that anyone was ever meant to supply it.
+      // The central rule. Group both sides by the **pinned source** — the listing version, or the
+      // accepted quote for a line that came from a tender — and require them to agree exactly:
+      // allocating 7 and 5 tonnes of a 20-tonne order and committing it would leave the remaining 8
+      // owned by nobody, with no record that anyone was ever meant to supply it.
       const parentItems = await tx.findItemsByOrderId(parent.orderId);
-      const ordered = sumByVersion(parentItems.map((i) => [i.versionId, i.quantity] as const));
-      const allocated = sumByVersion(
-        typed.allocations.flatMap((a) => a.items.map((i) => [i.versionId, i.quantity] as const)),
+      const ordered = sumBySource(parentItems.map((i) => [lineSource(i), i.quantity] as const));
+      const allocated = sumBySource(
+        typed.allocations.flatMap((a) => a.items.map((i) => [lineSource(i), i.quantity] as const)),
       );
-      for (const [versionId, quantity] of ordered) {
-        const given = allocated.get(versionId) ?? 0n;
+      for (const [source, quantity] of ordered) {
+        const given = allocated.get(source) ?? 0n;
         if (given !== quantity) {
           throw new OrderError(
             'allocation-mismatch',
-            `version ${versionId}: the order is for ${String(quantity)} but ${String(given)} was ` +
+            `source ${source}: the order is for ${String(quantity)} but ${String(given)} was ` +
               'allocated. Every ordered unit must be allocated to exactly one supplier',
           );
         }
@@ -1047,6 +1070,8 @@ export class OrderService {
                   listingId: item.listingId,
                   versionId: item.versionId,
                   commerceUnitTypeId: item.commerceUnitTypeId,
+                  quoteId: item.quoteId ?? null,
+                  lineKind: item.lineKind ?? 'goods',
                   quantity: item.quantity,
                   unitPriceMinor: item.unitPriceMinor,
                   lineTotalMinor: item.lineTotalMinor,
@@ -1480,6 +1505,8 @@ function itemEquals(a: OrderItem, b: OrderItem): boolean {
     a.listingId === b.listingId &&
     a.versionId === b.versionId &&
     a.commerceUnitTypeId === b.commerceUnitTypeId &&
+    a.quoteId === b.quoteId &&
+    a.lineKind === b.lineKind &&
     a.quantity === b.quantity &&
     a.unitPriceMinor === b.unitPriceMinor &&
     a.lineTotalMinor === b.lineTotalMinor &&
@@ -1579,11 +1606,25 @@ function buildCancelEventFromRequest(request: CancelOrderRequest, stored: OrderE
   };
 }
 
-/** Sum quantities by pinned listing version, so both sides of a split can be compared exactly. */
-function sumByVersion(entries: readonly (readonly [string, bigint])[]): Map<string, bigint> {
+/** Sum quantities by pinned source, so both sides of a split can be compared exactly. */
+function sumBySource(entries: readonly (readonly [string, bigint])[]): Map<string, bigint> {
   const totals = new Map<string, bigint>();
-  for (const [versionId, quantity] of entries) {
-    totals.set(versionId, (totals.get(versionId) ?? 0n) + quantity);
+  for (const [source, quantity] of entries) {
+    totals.set(source, (totals.get(source) ?? 0n) + quantity);
   }
   return totals;
+}
+
+/**
+ * The permanent address a line was priced from.
+ *
+ * A listing line pins a version; a quote line pins the accepted offer, which M-10 holds immutable by
+ * trigger. Exactly one is present — the validator and `order_item_names_one_source` both say so —
+ * so this always answers, and the fallback exists only because TypeScript cannot see that.
+ */
+function lineSource(item: {
+  readonly versionId: string | null;
+  readonly quoteId?: string | null;
+}): string {
+  return item.versionId ?? item.quoteId ?? '';
 }

@@ -111,14 +111,25 @@ export function orderInventoryHandler(
     let alreadyResolved = 0;
 
     for (const item of items) {
-      if (item.reservationId === null) {
-        // No JAYA stock was ever held for this line. Nothing to give back or consume.
+      // No JAYA stock was ever held for this line. A service, a made-to-order part, a
+      // supplier-direct machine and a digital entitlement never held any; nor did a line priced
+      // from an accepted quote, which exists precisely because no listing answered and so has no
+      // listing version to move stock against.
+      if (item.reservationId === null || item.listingId === null || item.versionId === null) {
         skipped += 1;
         continue;
       }
 
       try {
-        await resolveLine(options, item, item.reservationId, action, context);
+        await resolveLine(
+          options,
+          item,
+          item.listingId,
+          item.versionId,
+          item.reservationId,
+          action,
+          context,
+        );
         resolved += 1;
       } catch (error) {
         if ((error as { code?: unknown }).code === 'reservation-not-open') {
@@ -147,6 +158,8 @@ export function orderInventoryHandler(
 async function resolveLine(
   options: OrderInventoryOptions,
   item: OrderItem,
+  listingId: string,
+  versionId: string,
   reservationId: string,
   action: 'released' | 'committed',
   context: HandlerContext,
@@ -156,8 +169,8 @@ async function resolveLine(
   const key = `${context.idempotencyKey}:${item.itemId}`;
   const request = {
     movementId: deriveId('mov', `order-${action}`, key),
-    listingId: item.listingId,
-    versionId: item.versionId,
+    listingId,
+    versionId,
     reservationId,
     quantity: item.quantity,
     reason: action === 'committed' ? 'order-completed' : 'order-cancelled',

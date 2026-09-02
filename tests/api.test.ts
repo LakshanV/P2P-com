@@ -61,6 +61,7 @@ import {
 import { identityStack, type IdentityStack, type SignedIn } from './helpers/api-identity.ts';
 import { handleRequest, type RequestRecord } from '../platform/http/pipeline.ts';
 import type { HttpResponse } from '../platform/http/types.ts';
+import { inMemoryTendering } from './helpers/tendering-services.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUYER = 'acct_01HR0API0buyer1';
@@ -165,6 +166,7 @@ async function build(): Promise<Harness> {
     ledger,
     listings,
     needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
+    ...inMemoryTendering(),
     cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
   };
 
@@ -955,6 +957,8 @@ test('an unclassified failure tells the caller nothing and the observer everythi
       cockpit: {} as unknown as ApiServices['cockpit'],
       listings: {} as unknown as ApiServices['listings'],
       needs: {} as unknown as ApiServices['needs'],
+      tenders: {} as unknown as ApiServices['tenders'],
+      quotes: {} as unknown as ApiServices['quotes'],
     },
     access: identity,
     clock: () => NOW,
@@ -1037,6 +1041,7 @@ test('a retry a second later, with a fresh correlation id, still converges', asy
       ledger,
       listings: new UniversalListingService(new InMemoryUniversalListingRepository()),
       needs: new CommerceRequestService(new InMemoryCommerceRequestRepository()),
+      ...inMemoryTendering(),
       cockpit: new UserCockpitService({ orders, payments, ledger, journal: kernelLedger }),
     },
     access: identity,
