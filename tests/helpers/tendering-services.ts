@@ -24,6 +24,14 @@ import {
 } from '../../modules/matching/index.ts';
 import { InMemoryQuoteRepository, QuoteService } from '../../modules/quotes/index.ts';
 import { InMemoryRfqRepository, RfqService } from '../../modules/rfq/index.ts';
+import {
+  DirectoryService,
+  InMemoryDirectoryRepository,
+} from '../../modules/supplier-directory/index.ts';
+import {
+  InMemoryOrganisationRepository,
+  OrganisationService,
+} from '../../modules/organisations/index.ts';
 import type { UniversalListingService } from '../../modules/universal-listing/index.ts';
 import { catalogueSourceFor } from '../../apps/api/catalogue-source.ts';
 import { tenderSourceFor } from '../../apps/api/tender-source.ts';
@@ -32,13 +40,29 @@ export interface TenderingServices {
   readonly tenders: RfqService;
   readonly quotes: QuoteService;
   readonly matching: MatchingService;
+  readonly directory: DirectoryService;
+  readonly organisations: OrganisationService;
 }
 
+/**
+ * The ladder here keeps only the catalogue rung, and that is deliberate.
+ *
+ * `apps/api/main.ts` and `tests/e2e/harness.ts` wire the two supplier rungs as well, against the
+ * real adapter over three modules. These suites exist to test **routes** — that a request is
+ * guarded, read and answered — and a ladder that reached into a directory, a verification service
+ * and an order history would make every route test depend on three more modules' behaviour. The
+ * rungs are proved where they belong, in `tests/integration/sourcing-rungs.integration.ts` and
+ * `tests/supplier-source.test.ts`.
+ *
+ * The directory service is still returned, because the API serves M-48's own routes.
+ */
 export function inMemoryTendering(listings?: UniversalListingService): TenderingServices {
   const tenders = new RfqService(new InMemoryRfqRepository());
 
   return {
     tenders,
+    directory: new DirectoryService(new InMemoryDirectoryRepository()),
+    organisations: new OrganisationService(new InMemoryOrganisationRepository()),
     quotes: new QuoteService(new InMemoryQuoteRepository(), tenderSourceFor(tenders)),
     matching: new MatchingService(
       new InMemoryMatchingRepository(),

@@ -64,8 +64,22 @@ import {
   MatchingService,
   PostgresMatchingRepository,
   catalogueRung,
+  knownSupplierRung,
+  verifiedSupplierRung,
 } from '../../modules/matching/index.ts';
 import { OrderService, PostgresOrderRepository } from '../../modules/orders/index.ts';
+import {
+  CapabilityVerificationService,
+  PostgresCapabilityVerificationRepository,
+} from '../../modules/capability-verification/index.ts';
+import {
+  DirectoryService,
+  PostgresDirectoryRepository,
+} from '../../modules/supplier-directory/index.ts';
+import {
+  OrganisationService,
+  PostgresOrganisationRepository,
+} from '../../modules/organisations/index.ts';
 import {
   PaymentService,
   PostgresPaymentRepository,
@@ -80,6 +94,7 @@ import {
 import { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import { buildApi } from '../../apps/api/app.ts';
 import { catalogueSourceFor } from '../../apps/api/catalogue-source.ts';
+import { supplierDirectoryFor } from '../../apps/api/supplier-source.ts';
 import {
   ORDER_INVENTORY_SUBSCRIPTION,
   ORDER_INVENTORY_SUBSCRIPTION_DEFINITION,
@@ -216,8 +231,30 @@ export async function journey(body: (context: Journey) => Promise<void>): Promis
       new PostgresQuoteRepository(database),
       tenderSourceFor(tenders),
     );
+    // The same three rungs `apps/api/main.ts` wires, over the same adapter. A harness that wired
+    // fewer would be running a different application from the one that ships, and the journey it
+    // proves would be a journey nobody can take.
+    //
+    // The directory starts empty in every journey, so both supplier rungs look, find nobody and
+    // report `empty` — which is why flow B still escalates to a tender. That is the honest reason
+    // for the escalation, and it is a different fact from the `unavailable` these rungs reported
+    // when nothing implemented them.
+    const directoryService = new DirectoryService(new PostgresDirectoryRepository(database));
+    const organisationService = new OrganisationService(
+      new PostgresOrganisationRepository(database),
+    );
+    const verification = new CapabilityVerificationService(
+      new PostgresCapabilityVerificationRepository(database),
+    );
+    const supplierSource = supplierDirectoryFor({
+      directory: directoryService,
+      verification,
+      orders,
+    });
     const matching = new MatchingService(new PostgresMatchingRepository(database), {
       catalogue: catalogueRung({ source: catalogueSourceFor({ listings }), listings }),
+      known: knownSupplierRung({ directory: supplierSource }),
+      verified: verifiedSupplierRung({ directory: supplierSource }),
     });
 
     const eventTypes = new EventTypeRegistry(PLATFORM_EVENT_TYPES);
@@ -268,6 +305,8 @@ export async function journey(body: (context: Journey) => Promise<void>): Promis
         ledger,
         listings,
         needs,
+        directory: directoryService,
+        organisations: organisationService,
         tenders,
         quotes,
         matching,

@@ -269,7 +269,7 @@ test('the namespace register covers the platform plus every kernel component and
   assert.equal(owners.length, 1 + KERNEL_COMPONENTS.length + BUSINESS_MODULES.length);
   assert.equal(owners.filter((o) => o.kind === 'platform').length, 1);
   assert.equal(owners.filter((o) => o.kind === 'kernel').length, 15);
-  assert.equal(owners.filter((o) => o.kind === 'module').length, 47);
+  assert.equal(owners.filter((o) => o.kind === 'module').length, 49);
 });
 
 test('schema names are unique, snake_case, and prefixed by owner kind', () => {

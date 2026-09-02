@@ -611,20 +611,53 @@ working software is not, and the two are scored separately so the first cannot f
 | Dimension | Score | Basis |
 |---|---|---|
 | **Architecture** | **85%** | Manifest, 8-layer model, 4 executable boundary checks with planted-violation fixtures, financial-zone isolation, schema-namespace ownership. Genuinely enforced, not aspirational |
-| **Contracts** | **47%** | 23 of 62 units have a written contract. Those that exist are precise and executable |
-| **Backend implementation** | **26%** | 11 of 47 business modules; 14 of 15 kernel components. The transaction spine (M-04, M-11, M-12, M-13) and now the sourcing path (M-03, M-07, M-09, M-10) both exist. 36 modules have no code |
-| **Integration testing** | **40%** | 59 live-PostgreSQL tests covering everything that exists, thoroughly. Nothing covering what does not |
+| **Contracts** | **50%** | 25 of 62 units have a written contract. Those that exist are precise and executable |
+| **Backend implementation** | **31%** | 11 of 49 business modules; 14 of 15 kernel components. The transaction spine (M-04, M-11, M-12, M-13), the sourcing path (M-03, M-07, M-09, M-10) and now the **network** (M-48 directory, M-49 organisations) all exist — and two of the five sourcing rungs read real data rather than reporting themselves unavailable. 38 modules have no code |
+| **Integration testing** | **52%** | 210 live-PostgreSQL tests covering everything that exists, thoroughly — including the constraint each migration exists for, issued as raw SQL rather than asserted about. Nothing covering what does not |
 | **E2E functionality** | **34%** | `tests/e2e/` runs four flows and eight journeys against a live server: a matched purchase, a tendered one, a mixed-value settlement of LKR 10,000 as 1,500 reward points + 500 merchant credit + 8,000 on a card, and two partial offers covering one tender. All go over a real socket, as a real signed-in person, and — the part no API test reaches — **through the outbox, K-08 and a consumer**. Remaining: logistics, returns, disputes, and no UI |
 | **AI functionality** | **6%** | Gateway, authority ceiling and kill switch are real and tested. Zero live adapters, zero of sixteen agents, nothing has ever called a model |
 | **Financial functionality** | **64%** | The strongest area. Multi-value ledger, three positions, double entry, mixed-value routing with no rounding, payments with timeout discipline, database-enforced invariants. Missing: settlement, payout, commission, receivable/payable, restriction enforcement |
 | **Logistics** | **0%** | Nothing |
 | **Cockpit backend** | **12%** | 3 of 8 sections, buyer only, no role adaptation |
 | **Final UI/UX** | **0%** | Nothing. One README |
-| **Security** | **66%** | Was not scored separately before, and should have been — it is the dimension that decides whether anything else may be deployed. Authentication, authorisation, object-level access, account isolation, IDOR and webhook verification are all real and tested at the HTTP edge. Rate limits, secret management, backups and consent are not |
+| **Security** | **71%** | Was not scored separately before, and should have been — it is the dimension that decides whether anything else may be deployed. Authentication, authorisation, object-level access, account isolation, IDOR and webhook verification are all real and tested at the HTTP edge. Rate limits, secret management, backups and consent are not. Added since: a person can now join without any personal data being stored, organisation authority is scoped per business by construction, and the one route that acts on another party must declare a purpose K-04 records |
 | **Deployment readiness** | **22%** | Migrations, health and now a closed front door are real. No CI, no rate limits, no monitoring, no backups, no staging, and passwords are not yet durable |
-| **Overall original JAYA vision** | **≈ 31%** | See below |
+| **Overall original JAYA vision** | **≈ 36%** | See below |
 
-### Why 31% and not 40%
+### What 31% → 36% actually bought
+
+Two of the three sentences that justified 31% are no longer true, and they were the two that
+mattered most.
+
+**"Nothing is reachable by a person who is not a developer" — half false now.** There was no way to
+join this platform: every person in it was created by a fixture or by an operator running
+statements by hand. `POST /v1/participants` and `POST /v1/sessions` change that. Registration
+collects a password and **nothing else** — no email, no telephone number, no name, each refused by
+name with where it belongs — because K-01 and K-03 hold no personal data and a registration form is
+the door it would have arrived through. What is still true: there is no UI, and no notification, so
+an invited supplier still discovers a tender by polling.
+
+**"The path works and the market is empty" — false now.** M-48 gives the platform a directory:
+businesses register, declare what they deal in and where, open branches, and are **admitted by
+somebody else** — `admit` is a verb no trading role holds, so a supplier activating themselves is
+refused before any handler runs. `apps/api/supplier-source.ts` then joins M-48's claims, M-02's
+verification and M-11's completed orders — three modules that may not import one another — and the
+`known` and `verified` rungs read it. A Need the catalogue cannot answer is no longer automatically
+a tender, which was the single largest gap between the built platform and the intended one.
+
+**And businesses can now have staff.** M-49 makes an organisation a K-03 account of its own, which
+is what lets a listing, an order and a wallet belong to a business without any of their modules
+changing. A membership is scoped by construction — a FINANCE role at one business is a different row
+from anything at another — and K-04 now evaluates authority in an account the subject holds a grant
+in rather than only their own, which is what makes acting for a business possible without anybody
+impersonating anybody.
+
+Five points and not fifteen, because **nobody can see any of it and nobody is told anything**. There
+is no interface, no notification of any kind, no merchant catalogue flow, no member or logistics
+module, and the supplier directory still registers a person's account rather than an organisation's
+— so the two modules that between them describe a business do not yet meet.
+
+### Why 36% and not 50%
 
 A naive average of the rows above gives something near 35%. That would be dishonest, for three
 reasons:

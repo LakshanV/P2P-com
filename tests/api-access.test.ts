@@ -625,12 +625,21 @@ test('every route the API serves has an access policy, and every policy names a 
   );
 });
 
-test('only the two routes that cannot hold a session are open, and each says why', () => {
+test('only the routes that cannot hold a session are open, and each says why', () => {
   const open = Object.entries(ACCESS_POLICY).filter(([, access]) => access.anonymous === true);
 
+  // Four, and each is open because requiring a session would make it impossible rather than
+  // inconvenient: a load balancer has none, a payment provider has none, somebody who has not
+  // joined has none, and signing in is where a session comes from. Nothing else is on this list,
+  // and adding to it means changing this line on purpose.
   assert.deepEqual(
     open.map(([key]) => key).sort(),
-    ['GET /v1/health', 'POST /v1/payments/webhooks/:provider'],
+    [
+      'GET /v1/health',
+      'POST /v1/participants',
+      'POST /v1/payments/webhooks/:provider',
+      'POST /v1/sessions',
+    ],
     'the set of routes reachable without a session is a security decision. Changing it should ' +
       'require changing this assertion, deliberately',
   );

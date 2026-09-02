@@ -87,7 +87,7 @@ export const KERNEL_COMPONENTS: readonly KernelComponent[] = [
   { id: 'K-15', name: 'Search Foundation', dir: 'search-foundation' },
 ];
 
-/** The 47 independently owned business modules (MODULE_MAP.md §4). */
+/** The independently owned business modules (MODULE_MAP.md §4). */
 export const BUSINESS_MODULES: readonly BusinessModule[] = [
   { id: 'M-01', name: 'Universal Account', dir: 'universal-account', layer: 'L1' },
   { id: 'M-02', name: 'Capability & Verification', dir: 'capability-verification', layer: 'L1' },
@@ -151,6 +151,32 @@ export const BUSINESS_MODULES: readonly BusinessModule[] = [
   { id: 'M-45', name: 'Analytics / Platform Intelligence', dir: 'analytics', layer: 'L8' },
   { id: 'M-46', name: 'Admin Audit', dir: 'admin-audit', layer: 'L8' },
   { id: 'M-47', name: 'Module Registry / Health', dir: 'module-registry', layer: 'L8' },
+  /**
+   * The 48th, added after the sourcing ladder was built and had nothing to search.
+   *
+   * M-07's two supplier rungs read a directory of who supplies what, where, and how well it has
+   * gone before. Nothing in the original 47 owned that. M-01 owns which **roles** an account holds
+   * and M-02 owns whether it has been **verified**; neither is a trading profile, and putting
+   * categories, service areas and capacity into either would make an L1 identity component
+   * responsible for what a business sells. So it is its own module, at L2 with the other commerce
+   * primitives, depending on M-05 for the category and brand vocabularies.
+   */
+  { id: 'M-48', name: 'Supplier & Merchant Directory', dir: 'supplier-directory', layer: 'L2' },
+
+  /**
+   * M-49 exists because every commercial record in this platform names an **account**, and until it
+   * existed that account was always a person's. That is true of a sole trader and false of every
+   * business with two people in it: the first shop that wants somebody to answer tenders while
+   * somebody else keeps the stock has nowhere to put the second person.
+   *
+   * It sits at **L1**, with the identity components, because a membership is about *who somebody
+   * is to a business* rather than about what the business sells — and because M-48 at L2 and every
+   * commerce module above it must be able to belong to an organisation without importing one.
+   *
+   * An organisation is a K-03 account of its own, so nothing above this module changes: a listing,
+   * an order and a wallet already name an account, and now that account can be a business.
+   */
+  { id: 'M-49', name: 'Organisations', dir: 'organisations', layer: 'L1' },
 ];
 
 /** K-13. The sole permitted boundary to model providers (MODULE_MAP.md §12, rule A-1). */

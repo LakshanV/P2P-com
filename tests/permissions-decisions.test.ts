@@ -195,7 +195,7 @@ test('a subject cannot be authorised inside an account it does not hold', async 
     harness.service.authorize(authorizeRequest({ accountId: 'acct_01HQZXOTHER01' })),
     (error: unknown) => {
       assert.equal(codeOf(error), 'cross-account-access');
-      assert.match((error as PermissionError).message, /Authority never spans accounts/);
+      assert.match((error as PermissionError).message, /in which they hold nothing/);
       return true;
     },
   );
@@ -203,6 +203,39 @@ test('a subject cannot be authorised inside an account it does not hold', async 
     harness.repository.decisions().length,
     0,
     'refused before evaluation, so nothing was decided',
+  );
+});
+
+test('a subject holding a grant in another account may act there (D-054)', async () => {
+  // The organisation case, at the level K-04 sees it. A business is an account, and a person acting
+  // for one is acting in an account that is not theirs — permitted here **only** because somebody
+  // granted them something in it. The grant is what a membership produces; K-04 does not know or
+  // care that it is a business, which is the point: it evaluates authority, not company structure.
+  const harness = await withPolicy();
+  const business = 'acct_01HQZXBUSINESS1';
+  await harness.service.grant(grantRequest({ accountId: business }));
+
+  const decision = await harness.service.authorize(authorizeRequest({ accountId: business }));
+
+  assert.equal(decision.decision.effect, 'allow');
+  assert.equal(
+    decision.decision.accountId,
+    business,
+    'and the decision records the account the action was taken in, not the person’s own — so the ' +
+      'audit trail carries both the human and the business',
+  );
+  assert.equal(decision.decision.subjectId, SUBJECT, 'the human is never lost');
+});
+
+test('holding a grant in one other account does not open a third', async () => {
+  // The obvious way to get this wrong: check "does this subject hold anything anywhere" rather
+  // than "in the account they named". A member of one business would then act for every business.
+  const harness = await withPolicy();
+  await harness.service.grant(grantRequest({ accountId: 'acct_01HQZXBUSINESS1' }));
+
+  await assert.rejects(
+    harness.service.authorize(authorizeRequest({ accountId: 'acct_01HQZXBUSINESS2' })),
+    (error: unknown) => codeOf(error) === 'cross-account-access',
   );
 });
 

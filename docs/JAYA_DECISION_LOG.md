@@ -595,6 +595,78 @@ Each entry includes:
 
 ---
 
+## D-049 — The supplier network is a module, not a table inside matching
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | Add **M-48 Supplier & Merchant Directory** at L2, owning `module_supplier_directory`, rather than putting a supplier table inside M-07 Matching or extending M-04 Universal Listing. M-07 reads it through a port, as it already reads the catalogue. |
+| Context | The module map gave M-07 a five-rung ladder whose `known` and `verified` rungs read a supplier network, and gave no module that owns one. M-05 owns *what things are*, M-04 owns *what is for sale*; neither answers "who can supply this". The alternatives were: a table inside M-07, which would make the module that *decides* also the module that *holds the record*, so nothing else could read the directory without importing the matcher; or supplier facts on M-04 listings, which would mean a supplier with nothing published does not exist — and a directory whose purpose is to find suppliers *before* anybody has listed anything cannot be keyed on listings. |
+| Consequences | L2 is deliberate: M-07 at L3 must be able to read it, and M-48 imports nothing above K-03. The directory holds **claims**, never facts other modules own — no verification column (M-02) and no reliability column (M-11), refused by name in `FOREIGN_FIELDS`, because a stale copy of either is the answer somebody would source against. Registration starts `pending`, so signing up does not put a party into the market. `findSuppliers` refuses an ungated query, because "every supplier on the platform" is the commercial map and it would leave through a sourcing endpoint. **Recorded as a gap**: the `known` and `verified` rungs are not yet wired to it, so M-07 still escalates every unmatched Need. |
+| Status | active |
+
+---
+
+## D-050 — A facet value is a code, not an opaque identifier
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | The categories, brands, capabilities and districts a supplier declares are held to a **code** rule — lower case, 2 to 64 characters, at least one letter, no long run of digits — rather than to the platform's opaque-identifier rule. The same rule exists in the database as `module_supplier_directory.is_facet_code`. |
+| Context | Every identifier in this platform must be at least eight characters and unguessable, because an identity space anybody can enumerate lets them count the platform's parties and address one they were never given. Applied to a shared vocabulary that rule is exactly backwards: `cement` and `matale` are *meant* to be enumerable, since a buyer picks one from a list, and enforcing it would have meant inventing padded nonsense for the words the product actually uses. |
+| Consequences | The rule that still applies is the one that matters here: a facet code travels into every invitation the supplier receives, so a value with no letters, or one carrying a long run of digits, is refused as the telephone number it almost certainly is. Two rules now exist where one did before, and a reader has to know which applies where — `assertCode` and `assertDirectoryIdentifier` sit next to each other in `registry.ts` with the reasoning written between them. |
+| Status | active |
+
+---
+
+## D-051 — Admitting a party to the market is its own verb, held by no trading role
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | Add the K-04 action `admit` and the resource type `supplier-directory-entry`. A party holds `create`, `read` and `update` over their own entry; `admit` — activate, suspend, close — is granted only to `OPERATIONS`, whose entry in the V1 policy holds `admit`, `read` and nothing else. |
+| Context | M-48 starts every entry `pending`, and the whole point of that state is that signing up is not being in the market. Expressed as `update`, the rule would have been a comment: the party who may change their display name would be the party who may activate themselves, and the first tender would go to whoever registered fastest. The alternatives were to give admission to `ADMIN`, which would put market admission next to authority over authority so the person onboarding a hardware shop could also grant themselves anything; or to invent a new role, which the K-04 vocabulary is a closed set and rightly refuses. |
+| Consequences | `OPERATIONS` is a **staff role**, so every grant of it must declare a purpose — which is the right property, and which forced D-052. The role cannot read an order, a payment or a wallet: deciding whether a business may trade does not require seeing what anybody bought. **Recorded as a gap**: K-04's purpose vocabulary has no word for market admission, so the fixtures declare `safety-review`, which is the closest honest term. Adding one is a migration to 0009's CHECK and was not worth it for a naming nicety. |
+| Status | active |
+
+---
+
+## D-052 — A route may act on another party, if it says so and the caller says why
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | `GuardedRoute` gains `actsOnAnotherParty: { why }`. On such a route the guard skips the object-ownership check, **requires** an `x-access-purpose` header, and passes the purpose to K-04 — which checks it against the grant and records it on the decision. The handler still refuses the caller's own object. Exactly one route sets it: `POST /v1/suppliers/:supplierId/status`. |
+| Context | Every other route in this API is about the caller's own records, and the ownership check is what makes a legitimate grant read only your own. Admission is the first act that is *inherently about somebody else*, so ownership would refuse precisely the act the route exists for. Two shapes were rejected: dropping `resourceId`, which would silently skip the check with nothing in the table saying so and would quietly do the same to any route later added under that resource type; and a global exemption for staff roles, which would turn one deliberate hole into a policy. |
+| Consequences | The exemption is per **route**, not per resource type — asserted by a test that an operator who has just admitted a party still cannot read their entry. K-04 refuses a purpose on a non-staff grant, so the purpose is sent only on these routes; sending it everywhere would deny every trading caller. A staff request with no declared purpose is a 400 rather than a default, because defaulting one would be the API inventing somebody's reason for them. |
+| Status | active |
+
+---
+
+## D-053 — An organisation is an account of its own, and a membership is what lets a person act for it
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | Add **M-49 Organisations** at L1. An organisation is a K-01 subject of kind `organisation` with its own K-03 account; an `organisation_membership` says one person may act for one organisation in named roles. Business resources continue to reference an **account** — they now reference the organisation's. Nothing above M-49 changes. |
+| Context | Every commercial record in this platform names an account, and until now that account was always a person's: true of a sole trader, false of every business with two people in it. Three shapes were considered. **Let one personal account act as another** — rejected: it makes impersonation the mechanism and destroys the answer to "who actually did this". **Put an `organisationId` on every commercial table** — rejected: it means editing M-04, M-11, M-13, M-48 and everything after them, and it leaves two ownership columns whose disagreement nobody would notice. **Make the organisation an account** — chosen, because every module already references accounts, so the change is additive: a listing, an order and a wallet belong to the business without any of their modules knowing organisations exist. |
+| Consequences | K-04's rule that grants are scoped to `(subject, account)` pairs turns out to be exactly organisation-scoping — a FINANCE grant in organisation A's account confers nothing in B's, by construction rather than by a rule anybody has to remember. The cost is that `authorize` must accept a request naming an account that is not the subject's own, which is D-054. Six rules are enforced in the module and, where they span rows, in the database: creation is atomic with the owner; creating is not being admitted; joining is agreed to; nobody confers what they do not hold; nobody decides their own place except by leaving; and an organisation always has an active owner (a **deferred** constraint trigger, deferred precisely so founding a business — one transaction, two rows — is not refused halfway). **Recorded as a gap**: transferring sole ownership is done by making a second owner and then leaving, rather than by a single transfer operation. |
+| Status | active |
+
+---
+
+## D-054 — K-04 evaluates authority in an account the subject holds a grant in, not only their own
+
+| Field | Value |
+|---|---|
+| Date | 2026-09-02 |
+| Decision | `authorize` no longer refuses every request naming an account other than the subject's own. It refuses one where the subject holds **no grant** in the named account — the same `cross-account-access` code, and the same refusal for everybody who is not a member. A request says which account it is acting in; the grants there decide whether it may. |
+| Context | The original rule — "authority never spans accounts", checked before any grant is read — was right while one subject meant one account, and it is what stops a caller authorising itself as anybody by naming their account. Under D-053 it also makes organisations impossible: a person acting for a business is by definition acting in an account that is not their own. The alternative was to keep K-04 strict and put organisation authority somewhere else, which would mean authority evaluated outside the component whose whole job is evaluating authority. |
+| Consequences | The check moves from "is this your account" to "do you hold anything here", which is a real relaxation and is why it is a numbered decision rather than a refactor. What has **not** changed: the account is still resolved from the session for the caller's own case, a grant is still made only by a named administrator, and a grant still names exactly one account. What a caller can now learn by probing is whether they hold a grant in an account they name — which they already knew. The API surfaces this as an explicit `x-acting-for` header rather than an inferred default, so a request that means "as myself" cannot silently become "as the business". |
+| Status | active |
+
+---
+
 ## Decision Status Legend
 
 | Status | Meaning |

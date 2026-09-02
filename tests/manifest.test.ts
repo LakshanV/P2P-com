@@ -17,9 +17,9 @@ import {
   isProviderPackage,
 } from '../platform/architecture/manifest.ts';
 
-test('the manifest carries all 15 kernel components and 47 business modules', () => {
+test('the manifest carries all 15 kernel components and 48 business modules', () => {
   assert.equal(KERNEL_COMPONENTS.length, 15);
-  assert.equal(BUSINESS_MODULES.length, 47);
+  assert.equal(BUSINESS_MODULES.length, 49);
 });
 
 test('identifiers and directory slugs are unique and well formed', () => {

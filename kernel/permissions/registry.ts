@@ -83,6 +83,11 @@ export const ACTIONS: Readonly<Record<string, string>> = Object.freeze({
   quote: 'offer against a tender, which is a supplier’s act and never the buyer’s',
   withdraw: 'take back an offer you made, which is the offering supplier’s act alone',
   decide: 'choose between offers — accept one, reject another — which is the buyer’s act alone',
+  // Admitting a party to the market, suspending them, or shutting their entry. Separate from
+  // `update` because the party themselves holds `update` over their own entry — their name, what
+  // they deal in, whether they are open this week — and a party who could also admit themselves
+  // would make "registration is not activation" a comment rather than a rule.
+  admit: 'let a registered party trade, suspend them, or close their entry — never their own act',
   export: 'take a copy of data out of the platform',
   impersonate: 'act as another party, which nothing currently grants',
   'grant-permission': 'change who may do what — the authority over authority itself',
@@ -102,6 +107,8 @@ export const RESOURCE_TYPES: Readonly<Record<string, string>> = Object.freeze({
     'a Need: what somebody asked for, in their own words, before it is anything else',
   'sourcing-run':
     'one attempt to solve a Need without publishing it: which rungs were tried, and what each found',
+  'supplier-directory-entry':
+    'a party registered to trade, and what they declare they deal in. Registration is not admission',
   rfq: 'a tender: what a buyer asked the market for, once the sourcing ladder could not answer it',
   quote: "a supplier's offer against a tender. Binding until it expires, and never edited",
   order: 'a commerce transaction record',

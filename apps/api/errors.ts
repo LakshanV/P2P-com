@@ -26,6 +26,7 @@ import { FinancialLedgerError } from '../../modules/financial-ledger/index.ts';
 import { MatchingError } from '../../modules/matching/index.ts';
 import { OrderError } from '../../modules/orders/index.ts';
 import { QuoteError } from '../../modules/quotes/index.ts';
+import { DirectoryError } from '../../modules/supplier-directory/index.ts';
 import { RfqError } from '../../modules/rfq/index.ts';
 import { PaymentError } from '../../modules/payments/index.ts';
 import { UserCockpitError } from '../../modules/user-cockpit/index.ts';
@@ -230,6 +231,38 @@ const QUOTES: Readonly<Record<string, number>> = Object.freeze({
 });
 
 /**
+ * M-48 Supplier & Merchant Directory.
+ *
+ * `ungated-query` is 400 rather than 403: the caller is permitted to search the directory, and what
+ * is wrong is the search. A query with no category asks for every supplier on the platform, which is
+ * the platform's commercial map — who trades here, how many, and how to reach each one — and it
+ * would leave through an endpoint built for sourcing. Telling the caller to name a category is the
+ * whole answer.
+ *
+ * `already-registered` is 409 because the conflict is with a fact rather than with the request: this
+ * account already trades. A caller told 400 would edit their payload and try again forever.
+ */
+const DIRECTORY: Readonly<Record<string, number>> = Object.freeze({
+  ...SHARED,
+  'duplicate-supplier-id': 409,
+  'duplicate-facet-id': 409,
+  'duplicate-location-id': 409,
+  'already-registered': 409,
+  'primary-location-exists': 409,
+  'supplier-not-found': 404,
+  'facet-not-found': 404,
+  'location-not-found': 404,
+  'unknown-kind': 400,
+  'unknown-facet-kind': 400,
+  'malformed-name': 400,
+  'malformed-capacity': 400,
+  'ungated-query': 400,
+  // States the entry is in that make the request impossible. Well formed, and refused.
+  'illegal-transition': 422,
+  'supplier-closed': 422,
+});
+
+/**
  * Classify a refusal.
  *
  * Returns null for anything unrecognised, which the pipeline turns into a 500 and hands to the
@@ -252,7 +285,9 @@ export const describeError: DescribeError = (error) => {
                 ? RFQ
                 : error instanceof QuoteError
                   ? QUOTES
-                  : null;
+                  : error instanceof DirectoryError
+                    ? DIRECTORY
+                    : null;
 
   if (table === null) return null;
 
@@ -272,6 +307,7 @@ export const CLASSIFIED_CODES: Readonly<Record<string, readonly string[]>> = Obj
   matching: Object.freeze(Object.keys(MATCHING)),
   rfq: Object.freeze(Object.keys(RFQ)),
   quotes: Object.freeze(Object.keys(QUOTES)),
+  'supplier-directory': Object.freeze(Object.keys(DIRECTORY)),
 });
 
 /**

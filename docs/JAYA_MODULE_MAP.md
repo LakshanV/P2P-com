@@ -287,6 +287,26 @@ These components are shared by every business module. No kernel component depend
 | Depends On | K-01, K-03, K-04 |
 | Status | **NOT STARTED** |
 
+#### M-49 — Organisations
+
+| Field | Value |
+|---|---|
+| Brief # | added after delivery — see the note below |
+| Purpose | The business as a K-03 account of its own, and the memberships that let people act for it |
+| Owner | Organisations |
+| Owned Data | `module_organisations.organisation`, `.organisation_membership`, `.membership_event`, `.organisation_event`, `.outbox` |
+| Public API | `createOrganisation(...)`, `activateOrganisation(...)`, `suspendOrganisation(...)`, `closeOrganisation(...)`, `inviteMember(...)`, `acceptMembership(...)`, `changeRoles(...)`, `suspendMembership(...)`, `reinstateMembership(...)`, `revokeMembership(...)`, `leaveOrganisation(...)`, `findActingMembership(...)` |
+| Emits | `organisation.created/activated/suspended/closed`, `organisation.member_invited/joined/suspended/removed` — and **never** the roles a member holds |
+| Consumes | nothing |
+| Depends On | K-03, K-08, K-09 |
+| Status | **DELIVERED** — 27 unit tests, 9 live-PostgreSQL tests, migrations 0058 and 0059. No HTTP routes yet |
+
+> **Why this module was not in the original map.** The map assumed a commercial record belongs to an
+> account, and that an account belongs to a person. The first is right and the second is only true of
+> a sole trader. Rather than adding an `organisationId` to every commercial table — which would mean
+> editing M-04, M-11, M-13 and M-48, and leaving two ownership columns whose disagreement nobody
+> would notice — an organisation **is** an account. Nothing above L1 changed (D-053).
+
 ### L2 — Commerce Primitives
 
 #### M-03 — Need / Request Engine
@@ -330,6 +350,27 @@ These components are shared by every business module. No kernel component depend
 | Consumes | `ai.task_executed` |
 | Depends On | K-11, M-02 |
 | Status | **NOT STARTED** |
+
+#### M-48 — Supplier & Merchant Directory
+
+| Field | Value |
+|---|---|
+| Brief # | added after delivery — see the note below |
+| Purpose | The trading network M-07 searches: entries, declared categories/brands/capabilities/districts, branches, status and availability |
+| Owner | Supplier Directory |
+| Owned Data | `module_supplier_directory.directory_entry`, `.supplier_facet`, `.supplier_location`, `.directory_event`, `.outbox` |
+| Public API | `registerSupplier(...)`, `activateSupplier(...)`, `suspendSupplier(...)`, `closeSupplier(...)`, `setAvailability(...)`, `declareFacet(...)`, `withdrawFacet(...)`, `addLocation(...)`, `closeLocation(...)`, `getProfile(...)`, `findSuppliers(...)` |
+| Emits | `supplier.registered`, `supplier.activated`, `supplier.suspended`, `supplier.closed` — and **never** what the supplier declared |
+| Consumes | nothing |
+| Depends On | K-03, K-08, K-09 |
+| Status | **DELIVERED** — fourteen HTTP routes, and the `known` and `verified` sourcing rungs read it through `apps/api/supplier-source.ts`. 25 unit tests, 20 route tests, 10 adapter tests, 12 live-PostgreSQL tests, migration 0057. No UI, no notification, no reliability figure |
+
+> **Why this module was not in the original map.** The map gave M-07 a five-rung sourcing ladder
+> whose second and third rungs read a supplier network, and gave no module that owns one. M-05
+> Product Catalogue owns *what things are*; M-04 owns *what is for sale*; neither answers "who can
+> supply this". The gap only became visible once the ladder was built and both rungs had to return
+> `unavailable`, which escalated every unmatched Need to a tender. M-48 is that missing owner. It
+> sits at L2 because M-07 at L3 must be able to read it, and it imports nothing above K-03.
 
 ### L3 — Discovery
 

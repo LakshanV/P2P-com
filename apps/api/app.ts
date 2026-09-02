@@ -29,6 +29,8 @@ import type { FinancialLedgerService } from '../../modules/financial-ledger/inde
 import type { OrderService } from '../../modules/orders/index.ts';
 import type { CommerceRequestService } from '../../modules/commerce-request/index.ts';
 import type { MatchingService } from '../../modules/matching/index.ts';
+import type { DirectoryService } from '../../modules/supplier-directory/index.ts';
+import type { OrganisationService } from '../../modules/organisations/index.ts';
 import type { QuoteService } from '../../modules/quotes/index.ts';
 import type { RfqService } from '../../modules/rfq/index.ts';
 import type { PaymentService } from '../../modules/payments/index.ts';
@@ -49,6 +51,12 @@ import { ApiError, describeApiError } from './errors.ts';
 import { buildThrottle, type ThrottleOptions } from './throttle.ts';
 import { NO_WEBHOOK_SECRETS, type WebhookSecrets } from './webhook-signature.ts';
 import { addCockpitRoutes } from './routes/cockpit.ts';
+import { addDirectoryRoutes } from './routes/directory.ts';
+import {
+  addParticipantRoutes,
+  addUnavailableParticipantRoutes,
+  type ParticipantRoutesOptions,
+} from './routes/participants.ts';
 import { addLedgerRoutes } from './routes/ledger.ts';
 import { addNeedRoutes } from './routes/needs.ts';
 import { addOrderRoutes } from './routes/orders.ts';
@@ -72,6 +80,10 @@ export interface ApiServices {
   readonly tenders: RfqService;
   /** M-10: what the market offered back, and the comparison a customer decides on. */
   readonly quotes: QuoteService;
+  /** M-48: the supplier and merchant network the sourcing rungs search. */
+  readonly directory: DirectoryService;
+  /** M-49: businesses, and who may act for each. Read by the guard on every acting-for request. */
+  readonly organisations: OrganisationService;
 }
 
 /**
@@ -99,6 +111,18 @@ export interface ApiOptions {
    * Optional, and the default refuses every delivery. Optional is safe *here* — unlike `access` —
    * because leaving it out closes the route rather than opening it.
    */
+  /**
+   * What self-service registration needs: the identity stack, M-01, and an injected grantor.
+   *
+   * **Optional, and leaving it out closes the routes rather than opening them** — the same shape as
+   * `webhookSecrets`, for the same reason. K-04 has no bootstrap path for a grant, so a deployment
+   * that has not named an administrator willing to stand behind registration cannot offer it, and
+   * saying so with a 503 is better than creating people who hold nothing.
+   */
+  readonly registration?: Omit<
+    ParticipantRoutesOptions,
+    'contextFor' | 'accountFor' | 'subjectFor'
+  >;
   readonly webhookSecrets?: WebhookSecrets;
   /**
    * Rate limiting. Omitted means **no limit at all**, which is right only for a suite.
@@ -195,6 +219,19 @@ export function buildApi(options: ApiOptions): PipelineOptions {
     return principal.accountId;
   };
 
+  /** The caller's K-01 subject, for the one route that grants authority to a person. */
+  const subjectFor = (request: HttpRequest): string => {
+    const principal = principals.get(request);
+    if (principal === undefined) {
+      throw new ApiError(
+        500,
+        'no-principal',
+        'This route asked which subject is calling, and it was reached without authentication.',
+      );
+    }
+    return principal.subjectId;
+  };
+
   const router = new Router();
 
   router.add({
@@ -231,6 +268,21 @@ export function buildApi(options: ApiOptions): PipelineOptions {
     contextFor,
     accountFor,
   });
+  addDirectoryRoutes(router, {
+    directory: options.services.directory,
+    contextFor,
+    accountFor,
+  });
+  if (options.registration === undefined) {
+    addUnavailableParticipantRoutes(
+      router,
+      'No administrator stands behind it: K-04 has no bootstrap path for a grant, so a deployment ' +
+        'that wants people to join by themselves has to name the administrator whose authority ' +
+        'every registration is made under.',
+    );
+  } else {
+    addParticipantRoutes(router, { ...options.registration, contextFor, accountFor, subjectFor });
+  }
   addCockpitRoutes(router, { cockpit: options.services.cockpit, contextFor });
 
   router.add({

@@ -118,6 +118,25 @@ import {
   CAPABILITY_DEACTIVATED_EVENT,
 } from '../../modules/universal-account/index.ts';
 import {
+  MEMBERSHIP_ACTION,
+  MEMBER_INVITED_EVENT,
+  MEMBER_JOINED_EVENT,
+  MEMBER_REMOVED_EVENT,
+  MEMBER_SUSPENDED_EVENT,
+  ORGANISATION_ACTION,
+  ORGANISATION_ACTIVATED_EVENT,
+  ORGANISATION_CLOSED_EVENT,
+  ORGANISATION_CREATED_EVENT,
+  ORGANISATION_SUSPENDED_EVENT,
+} from '../../modules/organisations/index.ts';
+import {
+  SUPPLIER_ACTION,
+  SUPPLIER_ACTIVATED_EVENT,
+  SUPPLIER_CLOSED_EVENT,
+  SUPPLIER_REGISTERED_EVENT,
+  SUPPLIER_SUSPENDED_EVENT,
+} from '../../modules/supplier-directory/index.ts';
+import {
   INVENTORY_ADJUSTED_ACTION,
   INVENTORY_ADJUSTED_EVENT,
   INVENTORY_COMMITTED_ACTION,
@@ -167,6 +186,22 @@ export const PLATFORM_EVENT_TYPES: readonly EventTypeDefinition[] = Object.freez
   INVENTORY_RESERVED_EVENT,
   INVENTORY_RELEASED_EVENT,
   INVENTORY_COMMITTED_EVENT,
+
+  // M-49 Organisations
+  ORGANISATION_CREATED_EVENT,
+  ORGANISATION_ACTIVATED_EVENT,
+  ORGANISATION_SUSPENDED_EVENT,
+  ORGANISATION_CLOSED_EVENT,
+  MEMBER_INVITED_EVENT,
+  MEMBER_JOINED_EVENT,
+  MEMBER_SUSPENDED_EVENT,
+  MEMBER_REMOVED_EVENT,
+
+  // M-48 Supplier & Merchant Directory
+  SUPPLIER_REGISTERED_EVENT,
+  SUPPLIER_ACTIVATED_EVENT,
+  SUPPLIER_SUSPENDED_EVENT,
+  SUPPLIER_CLOSED_EVENT,
 
   // M-07 Matching
   MATCH_FOUND_EVENT,
@@ -239,6 +274,11 @@ export const PLATFORM_AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.f
   INVENTORY_RELEASED_ACTION,
   INVENTORY_COMMITTED_ACTION,
 
+  ORGANISATION_ACTION,
+  MEMBERSHIP_ACTION,
+
+  SUPPLIER_ACTION,
+
   MATCH_RUN_ACTION,
 
   RFQ_ACTION,
@@ -283,6 +323,8 @@ export const PLATFORM_OUTBOX_SCHEMAS: readonly string[] = Object.freeze([
   'module_capability_verification',
   'module_commerce_request',
   'module_universal_listing',
+  'module_organisations',
+  'module_supplier_directory',
   'module_matching',
   'module_rfq',
   'module_quotes',

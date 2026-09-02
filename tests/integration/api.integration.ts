@@ -53,6 +53,14 @@ import { PostgresRfqRepository, RfqService } from '../../modules/rfq/index.ts';
 import { tenderSourceFor } from '../../apps/api/tender-source.ts';
 import { catalogueSourceFor } from '../../apps/api/catalogue-source.ts';
 import {
+  DirectoryService,
+  PostgresDirectoryRepository,
+} from '../../modules/supplier-directory/index.ts';
+import {
+  OrganisationService,
+  PostgresOrganisationRepository,
+} from '../../modules/organisations/index.ts';
+import {
   MatchingService,
   PostgresMatchingRepository,
   catalogueRung,
@@ -165,12 +173,17 @@ async function withServer(
     catalogue: catalogueRung({ source: catalogueSourceFor({ listings }), listings }),
   });
 
+  const directory = new DirectoryService(new PostgresDirectoryRepository(database));
+  const organisations = new OrganisationService(new PostgresOrganisationRepository(database));
+
   const api = buildApi({
     services: {
       orders,
       payments,
       ledger,
       listings,
+      directory,
+      organisations,
       needs: new CommerceRequestService(new PostgresCommerceRequestRepository(database)),
       tenders,
       quotes,

@@ -543,14 +543,33 @@ export class PermissionService {
         'the account lookup returned an account belonging to another subject',
       );
     }
-    if (account.accountId !== accountId) {
-      // Before any grant is read. Reading another account's grants is already the wrong shape,
-      // whatever the answer would have been.
-      throw new PermissionError(
-        'cross-account-access',
-        `the session's subject holds account ${account.accountId}, and the request names ` +
-          `${accountId}. Authority never spans accounts, so this is refused rather than evaluated`,
+    // **Acting in an account that is not your own** (D-054).
+    //
+    // The original rule refused this outright, before reading any grant, and it was right while one
+    // subject meant one account. Organisations changed that: a person acting for a business is by
+    // definition acting in an account that is not theirs, and refusing it here would mean putting
+    // business authority somewhere other than the component whose job is authority.
+    //
+    // So the question moves from "is this your account" to "do you hold anything here". A grant in
+    // another account exists only because a named administrator made it, which for a business is
+    // what a membership produces; somebody who holds none is refused exactly as before, with the
+    // same code. What is **not** relaxed: the account is still resolved from the session, a grant
+    // is still made only by an administrator, and a grant still names exactly one account — so a
+    // caller naming an account they are not a member of learns nothing they did not already know.
+    const actingForAnother = account.accountId !== accountId;
+    if (actingForAnother) {
+      const held = await this.#repository.withTransaction((tx) =>
+        tx.listGrantsForSubject(session.subjectId, accountId),
       );
+      if (held.length === 0) {
+        throw new PermissionError(
+          'cross-account-access',
+          `the session's subject holds account ${account.accountId} and the request names ` +
+            `${accountId}, in which they hold nothing. Authority in another account exists only ` +
+            'where somebody granted it — for a business, by a membership — so this is refused ' +
+            'rather than evaluated',
+        );
+      }
     }
 
     // Everything the answer depends on, in a canonical form. The session and the ABAC context are

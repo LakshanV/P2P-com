@@ -66,6 +66,24 @@ export interface SignedIn {
 export interface IdentityStack extends ApiAccess {
   readonly identity: IdentityService;
   readonly authentication: AuthenticationService;
+  /**
+   * The same object as `accounts`, at its concrete type.
+   *
+   * `ApiAccess` needs only K-04's `AccountLookup`; registration needs to *open* an account, which
+   * is a wider surface. Exposed rather than re-created so a suite cannot end up with two account
+   * services that disagree about who exists.
+   */
+  readonly accountService: AccountService;
+  /** Enrolling a password. Registration sets one; the verifier only ever checks them. */
+  readonly passwords: PasswordVerifier;
+  /**
+   * The administrator's session secret.
+   *
+   * K-04 has no bootstrap path for a grant, so self-service registration is made under somebody's
+   * authority. In a suite that somebody is this fixture's administrator; in production it is a
+   * credential the deployment configures.
+   */
+  readonly administratorToken: string;
   readonly permissionRepository: PermissionRepository;
   readonly clock: MovableClock;
   readonly policyVersionId: string;
@@ -333,6 +351,9 @@ export async function identityStack(
     permissionRepository,
     clock,
     policyVersionId: POLICY_VERSION,
+    accountService: accounts,
+    passwords,
+    administratorToken: adminToken,
 
     async register(options): Promise<SignedIn> {
       const password = options.password ?? DEFAULT_PASSWORD;
@@ -381,6 +402,11 @@ export async function identityStack(
             action: capability.action,
             resourceType: capability.resourceType,
             presentedToken: adminToken,
+            // A staff role reaches another party's records, so K-04 refuses a grant of one with no
+            // purpose, and is right to. `safety-review` is the closest declared word for deciding
+            // whether a business may trade; the vocabulary has no term for market admission, which
+            // is recorded as a gap rather than worked around by leaving the field off.
+            ...(STAFF_PURPOSE[role] === undefined ? {} : { purpose: STAFF_PURPOSE[role] }),
             administrationPurpose: 'system-maintenance',
             idempotencyKey: nextKey(),
           });
@@ -395,6 +421,18 @@ export async function identityStack(
     },
   };
 }
+
+/**
+ * Why a staff role is granted, per role.
+ *
+ * K-04 refuses a grant of a staff role with no purpose (v3 §5.3), and refuses a purpose on a
+ * non-staff one — so this is keyed by role rather than applied to everybody. Only the roles the
+ * suites actually grant are listed; a suite that grants another staff role will fail loudly here
+ * rather than silently granting unpurposed authority.
+ */
+const STAFF_PURPOSE: Readonly<Record<string, string | undefined>> = Object.freeze({
+  OPERATIONS: 'safety-review',
+});
 
 function capabilitiesOf(
   role: string,

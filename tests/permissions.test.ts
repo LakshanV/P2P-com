@@ -345,9 +345,39 @@ test('the role vocabulary is the guide’s, and confers nothing by itself', () =
       'ADMIN',
       'SUPER_ADMIN',
       'AI_AGENT',
+
+      // A second namespace, added when organisations arrived (D-053). What somebody does *for a
+      // business*, inside that business's own account. Prefixed and separate on purpose: `FINANCE`
+      // is a platform finance operator reaching other parties' records, and `ORG_FINANCE` is a
+      // shop's bookkeeper reaching their own employer's. Reusing the first name for the second
+      // would make the bookkeeper platform staff — and, since `FINANCE` is a staff role, would
+      // demand a declared purpose every time they opened their own company's books.
+      'ORG_OWNER',
+      'ORG_ADMIN',
+      'ORG_MANAGER',
+      'ORG_SALES',
+      'ORG_PROCUREMENT',
+      'ORG_INVENTORY',
+      'ORG_FINANCE',
+      'ORG_FULFILMENT',
+      'ORG_DRIVER_MANAGER',
+      'ORG_READ_ONLY',
     ],
-    'the initial role list is v1.0 guide §52, in its declared order',
+    'the role list is v1.0 guide §52 in its declared order, plus the organisation namespace. ' +
+      'Both halves are a security decision: changing either should require changing this line',
   );
+
+  // The two namespaces do not overlap, and no organisation role is a staff role — a member of a
+  // business acts within that business's own account, which is what a membership confers.
+  for (const role of ROLES) {
+    if (!role.startsWith('ORG_')) continue;
+    assert.equal(
+      isStaffRole(role),
+      false,
+      `${role} is marked as staff. A staff role reaches another party's records and must declare ` +
+        'a purpose; a shop’s own bookkeeper is not reaching another party',
+    );
+  }
 
   // No role-to-authority mapping anywhere in the source. What a role may do is data — a published
   // policy version — and a hardcoded map would make policy unversioned and unauditable.

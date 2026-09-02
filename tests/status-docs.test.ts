@@ -304,7 +304,10 @@ function tally(): { readonly byStatus: Map<string, number>; readonly total: numb
 
 test('the §K status counts are the counts in the file', () => {
   const { byStatus, total } = tally();
-  assert.equal(total, 474, 'the tracked-item total moved; §K and this counter must agree on why');
+  // 478 since M-49 Organisations added a §C row too. Each new unit row carries two markers: its
+  // contract and its implementation. A total that moved without somebody saying why is a row that
+  // was added or dropped unnoticed, which is the whole reason this number is pinned here.
+  assert.equal(total, 478, 'the tracked-item total moved; §K and this counter must agree on why');
 
   const labels: ReadonlyArray<readonly [string, string]> = [
     ['[ ]', 'NOT STARTED'],
@@ -1149,6 +1152,11 @@ test('the trigger inventory in §1 is the triggers on disk, not the count when i
     'fifty-eight',
     'fifty-nine',
     'sixty',
+    'sixty-one',
+    'sixty-two',
+    'sixty-three',
+    'sixty-four',
+    'sixty-five',
   ];
 
   const migrations = path.join(REPO_ROOT, 'db', 'migrations');

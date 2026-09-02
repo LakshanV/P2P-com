@@ -524,6 +524,7 @@ test('every refusal code a module can raise has a status', () => {
     matching: 'matching',
     rfq: 'rfq',
     quotes: 'quotes',
+    'supplier-directory': 'supplier-directory',
   };
 
   for (const [key, dir] of Object.entries(modules)) {
@@ -951,6 +952,8 @@ test('an unclassified failure tells the caller nothing and the observer everythi
       needs: {} as unknown as ApiServices['needs'],
       tenders: {} as unknown as ApiServices['tenders'],
       quotes: {} as unknown as ApiServices['quotes'],
+      directory: {} as unknown as ApiServices['directory'],
+      organisations: {} as unknown as ApiServices['organisations'],
       matching: {} as unknown as ApiServices['matching'],
     },
     access: identity,

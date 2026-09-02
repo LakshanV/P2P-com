@@ -29,6 +29,8 @@
 import type { CommerceRequestService } from '../../modules/commerce-request/index.ts';
 import type { MatchingService } from '../../modules/matching/index.ts';
 import type { QuoteService } from '../../modules/quotes/index.ts';
+import type { DirectoryService } from '../../modules/supplier-directory/index.ts';
+import type { OrganisationService } from '../../modules/organisations/index.ts';
 import type { RfqService } from '../../modules/rfq/index.ts';
 import type { FinancialLedgerService } from '../../modules/financial-ledger/index.ts';
 import type { OrderService } from '../../modules/orders/index.ts';
@@ -46,6 +48,14 @@ import { ApiError } from './errors.ts';
 /** What the caller turned out to be, after the session was validated and authority evaluated. */
 export interface Principal {
   readonly subjectId: string;
+  /**
+   * The business this request is being made for, when it is being made for one.
+   *
+   * Null for somebody acting as themselves. Present, the account below is the **organisation's**,
+   * which is what every ownership check then compares against — so a member of one business reaches
+   * that business's records and nobody else's, by the same rule that has always applied.
+   */
+  readonly actingForOrganisationId: string | null;
   /** The K-03 account authority is scoped to. Resolved from the session, never from the request. */
   readonly accountId: string;
   readonly sessionId: string;
@@ -81,6 +91,27 @@ export interface GuardedRoute {
    * ownership — which is exactly the sort of disagreement that becomes a hole in one of them.
    */
   readonly resourceId?: (request: HttpRequest) => string | null;
+  /**
+   * This route acts on **another party's** object, deliberately.
+   *
+   * Almost nothing does, and the default is the opposite: an object that is not yours is answered
+   * 404. A few acts are inherently about somebody else — admitting a business to the market is the
+   * first — and for those the ownership check is not a safety net but a contradiction, because the
+   * whole point of the verb is that the object belongs to the party being decided about.
+   *
+   * Setting it does **not** loosen authority; it moves where the authority comes from:
+   *
+   *   * The action must be one no trading role holds, so K-04 refuses an ordinary caller by verb.
+   *   * The caller must declare a **purpose** (`x-access-purpose`), because a role that reaches
+   *     another party's records is a staff role, and K-04 refuses a staff grant whose purpose the
+   *     caller did not declare (v3 §5.3). The declared purpose is recorded on the decision, so
+   *     "why did somebody look at this" has an answer afterwards.
+   *   * The handler still refuses the caller's **own** object, which is the case K-04 cannot see: a
+   *     legitimate holder of the verb deciding about themselves.
+   *
+   * `why` is required, and is read by the next person wondering whether this should be here.
+   */
+  readonly actsOnAnotherParty?: { readonly why: string };
 }
 
 export interface OwnershipServices {
@@ -91,6 +122,9 @@ export interface OwnershipServices {
   readonly tenders: RfqService;
   readonly quotes: QuoteService;
   readonly matching: MatchingService;
+  readonly directory: DirectoryService;
+  /** M-49: which business a person may act for, read live on every request that says it is. */
+  readonly organisations: OrganisationService;
 }
 
 const param =
@@ -214,6 +248,18 @@ const OWNERS: Readonly<Record<string, OwnerResolver>> = Object.freeze({
     return run === null ? [] : [run.accountId];
   },
 
+  /**
+   * A directory entry belongs to the one account that trades under it.
+   *
+   * One account, one entry — M-48 says so with a UNIQUE — so this is a single owner rather than a
+   * pair. An operator reaching it holds `admit`, which is a different verb and is not an ownership
+   * claim: the guard answers 'not yours', and the handler answers 'not your decision'.
+   */
+  'supplier-directory-entry': async (services, id) => {
+    const entry = await services.directory.getSupplier(id);
+    return entry === null ? [] : [entry.accountId];
+  },
+
   /** An account addresses itself. The object *is* the account. */
   account: (_services, id) => Promise.resolve([id]),
 });
@@ -235,6 +281,30 @@ export const ACCESS_POLICY: Readonly<Record<string, RouteAccess>> = Object.freez
   // The route inventory describes the shape of the API, not anybody's data. It still needs a
   // session: an unauthenticated map of every endpoint is free reconnaissance.
   'GET /v1/routes': { action: 'read', resourceType: 'configuration' },
+
+  // Joining, and signing in. Both are necessarily anonymous — a route that required a session in
+  // order to acquire one would close the platform to everybody who is not already inside it.
+  'POST /v1/participants': {
+    anonymous: true,
+    why:
+      'Somebody who has not joined has no session, so requiring one would mean nobody could ever ' +
+      'join. It creates only the caller’s own subject, account and password, collects no personal ' +
+      'data at all, and grants only what the published policy gives CUSTOMER. What stops abuse is ' +
+      'the rate limiter in front of it, not a session it is impossible to have.',
+  },
+  'POST /v1/sessions': {
+    anonymous: true,
+    why:
+      'This is where a session comes from. K-02 answers every failure identically — unknown ' +
+      'reference and wrong password are one refusal, hashed against a decoy either way — so it ' +
+      'tells an unauthenticated caller nothing they did not already supply.',
+  },
+
+  'GET /v1/participants/me': { action: 'read', resourceType: 'account' },
+  // Taking on a role changes what the caller's own account may do, which is an update to the
+  // account. There is no identifier: it is always the caller's, and the handler refuses every role
+  // that is not self-assumable.
+  'POST /v1/participants/me/roles': { action: 'update', resourceType: 'account' },
 
   // Orders.
   'POST /v1/orders': { action: 'create', resourceType: 'order' },
@@ -585,6 +655,74 @@ export const ACCESS_POLICY: Readonly<Record<string, RouteAccess>> = Object.freez
     resourceType: 'order',
     resourceId: param('orderId'),
   },
+
+  // The directory. Everything that names an entry resolves to the one account that trades under
+  // it, so a party reaches their own and no other; the handlers check ownership a second time,
+  // because for a route that may also be reached by an operator "is this yours?" and "may you do
+  // this?" are different questions.
+  //
+  // `POST /v1/suppliers/:supplierId/status` is `admit` rather than `update`, and that one word is
+  // what stops a supplier admitting themselves: no trading role holds it.
+  'POST /v1/suppliers': { action: 'create', resourceType: 'supplier-directory-entry' },
+  'GET /v1/suppliers': { action: 'read', resourceType: 'supplier-directory-entry' },
+  'GET /v1/suppliers/me': { action: 'read', resourceType: 'supplier-directory-entry' },
+  'GET /v1/suppliers/:supplierId': {
+    action: 'read',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'PUT /v1/suppliers/:supplierId/availability': {
+    action: 'update',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'GET /v1/suppliers/:supplierId/facets': {
+    action: 'read',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'POST /v1/suppliers/:supplierId/facets': {
+    action: 'update',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'DELETE /v1/suppliers/:supplierId/facets/:facetKind/:value': {
+    action: 'update',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'GET /v1/suppliers/:supplierId/locations': {
+    action: 'read',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'POST /v1/suppliers/:supplierId/locations': {
+    action: 'update',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'DELETE /v1/suppliers/:supplierId/locations/:locationId': {
+    action: 'update',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'GET /v1/suppliers/:supplierId/history': {
+    action: 'read',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+  },
+  'POST /v1/suppliers/:supplierId/status': {
+    action: 'admit',
+    resourceType: 'supplier-directory-entry',
+    resourceId: param('supplierId'),
+    actsOnAnotherParty: {
+      why:
+        'Admitting a business to the market is a decision *about* somebody else, so the ownership ' +
+        'check would refuse exactly the act this route exists for. `admit` is held by no trading ' +
+        'role, the caller must declare a purpose K-04 records on the decision, and the handler ' +
+        'refuses an operator deciding their own entry.',
+    },
+  },
 });
 
 export interface GuardOptions {
@@ -628,6 +766,75 @@ export function bearerToken(request: HttpRequest): string {
   return match[1];
 }
 
+/**
+ * Which business this request is being made for, if any.
+ *
+ * Returns null when the caller sent no `x-acting-for` header, which is the ordinary case: somebody
+ * acting as themselves. When they did send one, **three** things must hold, and each refusal is the
+ * same answer so that a stranger cannot use this to discover which organisations exist:
+ *
+ *   1. the organisation exists,
+ *   2. the caller holds a membership in it,
+ *   3. that membership is in a status that can act — so a suspended member stops on their next
+ *      request rather than when their session happens to expire.
+ *
+ * What this function does **not** do is authorise anything. It only decides which account the
+ * request is being made in; K-04 then evaluates whether the caller may do this action there, and
+ * refuses an account they hold no grant in. Two independent checks, and the second is the one that
+ * would still hold if this one were wrong.
+ */
+async function resolveActingFor(
+  options: GuardOptions,
+  request: HttpRequest,
+  subjectId: string,
+): Promise<{ readonly organisationId: string; readonly accountId: string } | null> {
+  const header = request.headers['x-acting-for'];
+  if (header === undefined || header.trim() === '') return null;
+  const organisationId = header.trim();
+
+  function refuse(): never {
+    throw new ApiError(
+      403,
+      'not-acting-for',
+      'You are not acting for that business. Either it does not exist, or you hold no place in ' +
+        'it, or the place you hold is suspended — answered identically, because which of the ' +
+        'three it is would tell a stranger about a company that did not ask them to know.',
+    );
+  }
+
+  const membership = await options.services.organisations
+    .findActingMembership(organisationId, subjectId)
+    .catch(() => null);
+  if (membership === null) refuse();
+
+  const organisation = await options.services.organisations.getOrganisation(organisationId);
+  if (organisation === null) refuse();
+
+  return { organisationId, accountId: organisation.accountId };
+}
+
+/**
+ * The purpose a staff caller declares, from `x-access-purpose`.
+ *
+ * Required on the few routes that act on another party. K-04 checks it against the vocabulary and
+ * against the grant, so this only has to insist that one was sent: a staff request with no stated
+ * reason is exactly the unpurposed staff access v3 §5.3 forbids, and defaulting one here would be
+ * this file inventing somebody's reason for them.
+ */
+function declaredPurpose(request: HttpRequest): string {
+  const value = request.headers['x-access-purpose'];
+  if (value === undefined || value.trim() === '') {
+    throw new ApiError(
+      400,
+      'purpose-required',
+      'This route acts on another party’s record, so it needs a declared purpose. Send ' +
+        '"x-access-purpose". Staff access is role-based, purpose-based and audited, and a request ' +
+        'with no stated reason is one nobody can review afterwards.',
+    );
+  }
+  return value.trim();
+}
+
 /** The policy for a route, by method and registered path. */
 export function accessFor(method: string, routePath: string): RouteAccess | undefined {
   return ACCESS_POLICY[`${method} ${routePath}`];
@@ -648,8 +855,21 @@ export async function guard(
 ): Promise<Principal> {
   const presentedToken = bearerToken(request);
   const resourceId = access.resourceId?.(request) ?? null;
+  const purpose = access.actsOnAnotherParty === undefined ? null : declaredPurpose(request);
 
   const session = await resolveSession(options, presentedToken);
+
+  // **Acting for a business** (D-053, D-054).
+  //
+  // Explicit, never inferred. A request that meant "as myself" must not silently become "as the
+  // company" because the caller happens to work somewhere — the two produce different records, and
+  // an order placed in a business's name by somebody who thought they were buying a kettle is a
+  // mistake nobody can see afterwards.
+  //
+  // The membership is what confers this, and it is read live: a suspended or revoked member stops
+  // acting on the next request rather than when a token expires.
+  const acting = await resolveActingFor(options, request, session.subjectId);
+  const accountId = acting?.accountId ?? session.accountId;
 
   // Both identifiers are derived from the session that is making the request, and from the question
   // being asked. Deriving them from the correlation id **alone** would be a mistake: a client
@@ -657,7 +877,7 @@ export async function guard(
   // the key a victim's request would use and have the victim's request refused as a fingerprint
   // mismatch. A session id is not guessable, and including it makes the key unforgeable by anyone
   // but the session holder.
-  const key = `${session.sessionId}:${correlationId}:${request.method}:${access.action}:${access.resourceType}:${resourceId ?? '-'}`;
+  const key = `${session.sessionId}:${accountId}:${correlationId}:${request.method}:${access.action}:${access.resourceType}:${resourceId ?? '-'}`;
 
   // K-04 validates the session, resolves the account from the subject, and refuses the request if
   // the two disagree. `accountId` is passed as what the caller's session must resolve to — it is
@@ -667,12 +887,17 @@ export async function guard(
     decision = await options.permissions.authorize({
       decisionId: deriveId('dec', 'authz-decision', key),
       presentedToken,
-      // Resolved by K-04 from the session. Supplying the session's own account here is the only
-      // value that can pass, which is the point.
-      accountId: session.accountId,
+      // The session's own account, or the business the caller declared they are acting for and
+      // holds an active membership in. K-04 checks the second case again, independently: it
+      // refuses an account the subject holds no grant in, so a membership without grants — or a
+      // membership this file misread — authorises nothing.
+      accountId,
       action: access.action,
       resourceType: access.resourceType,
       resourceId,
+      // Null for every ordinary route. K-04 refuses a purpose on a non-staff grant, so sending one
+      // everywhere would deny every trading caller.
+      ...(purpose === null ? {} : { purpose }),
       idempotencyKey: deriveId('idem', 'authz-request', key),
     });
   } catch (error) {
@@ -689,13 +914,21 @@ export async function guard(
 
   const principal: Principal = {
     subjectId: decision.decision.subjectId,
+    actingForOrganisationId: acting?.organisationId ?? null,
     accountId: decision.decision.accountId,
     sessionId: decision.decision.sessionId,
   };
 
   // The second check. K-04 said the caller may read orders; this says whether *this* order is one
   // of theirs. Without it a legitimate grant reads everybody's.
-  const resolve = resourceId === null ? undefined : OWNERS[access.resourceType];
+  //
+  // Skipped only where the route says in so many words that it acts on another party — and there
+  // the authority is a purposed staff grant K-04 has just evaluated and recorded, and the handler
+  // refuses the caller's own object. Applying it there would refuse the act the route exists for.
+  const resolve =
+    resourceId === null || access.actsOnAnotherParty !== undefined
+      ? undefined
+      : OWNERS[access.resourceType];
   if (resourceId !== null && resolve !== undefined) {
     const permitted = await resolve(options.services, resourceId);
     if (!permitted.includes(principal.accountId)) {
@@ -722,7 +955,7 @@ export async function guard(
 async function resolveSession(
   options: GuardOptions,
   presentedToken: string,
-): Promise<{ readonly sessionId: string; readonly accountId: string }> {
+): Promise<{ readonly sessionId: string; readonly subjectId: string; readonly accountId: string }> {
   let sessionId: string;
   let subjectId: string;
   try {
@@ -744,7 +977,7 @@ async function resolveSession(
         'scope authority to.',
     );
   }
-  return { sessionId, accountId: account.accountId };
+  return { sessionId, subjectId, accountId: account.accountId };
 }
 
 /**

@@ -52,6 +52,30 @@ export const ROLES = [
   'ADMIN',
   'SUPER_ADMIN',
   'AI_AGENT',
+
+  // ---------------------------------------------------------------------------
+  // Organisation roles: what somebody does **for a business**, in that business's account.
+  //
+  // A separate namespace, prefixed, and deliberately not folded into the roles above. The two
+  // answer different questions: `FINANCE` is a platform finance operator who reaches other
+  // parties' records, and `ORG_FINANCE` is a shop's bookkeeper who reaches their own employer's.
+  // Reusing the first name for the second would make a shop's bookkeeper a member of the
+  // platform's finance staff — and, because `FINANCE` is a staff role, would demand a declared
+  // purpose every time they looked at their own company's books.
+  //
+  // None of these is a staff role for that reason: they act within one business's own account,
+  // which a membership in that business is what confers.
+  // ---------------------------------------------------------------------------
+  'ORG_OWNER',
+  'ORG_ADMIN',
+  'ORG_MANAGER',
+  'ORG_SALES',
+  'ORG_PROCUREMENT',
+  'ORG_INVENTORY',
+  'ORG_FINANCE',
+  'ORG_FULFILMENT',
+  'ORG_DRIVER_MANAGER',
+  'ORG_READ_ONLY',
 ] as const;
 export type Role = (typeof ROLES)[number];
 

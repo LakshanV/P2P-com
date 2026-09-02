@@ -160,14 +160,23 @@ export function verifiedSupplierRung(options: SupplierRungOptions): SourcingRung
 }
 
 /** What a Need asks of a supplier, as much of it as these rungs understand. */
-interface Wanted {
+export interface Wanted {
   readonly categories: readonly string[];
   readonly capabilities: readonly string[];
   readonly district: string | null;
   readonly brand: string | null;
 }
 
-function readNeed(structured: Readonly<Record<string, unknown>>): Wanted {
+/**
+ * Read a Need the way these rungs read it.
+ *
+ * **Exported because the directory adapter has to gate its query on the same categories the rung
+ * scores against.** A second implementation of "which categories is this Need about" would drift —
+ * the adapter would ask the directory for `cement` while the rung scored against `commodity` — and
+ * the symptom would be a rung that returned suppliers and then excluded all of them, which reads
+ * from outside as an empty market rather than as a bug.
+ */
+export function readNeed(structured: Readonly<Record<string, unknown>>): Wanted {
   return {
     categories: readList(structured.category ?? structured.categories ?? structured.commodity),
     capabilities: readList(structured.capability ?? structured.capabilities),

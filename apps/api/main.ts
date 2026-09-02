@@ -56,6 +56,10 @@ import {
 } from '../../modules/universal-listing/index.ts';
 import { UserCockpitService } from '../../modules/user-cockpit/index.ts';
 import {
+  PostgresUniversalAccountRepository,
+  UniversalAccountService,
+} from '../../modules/universal-account/index.ts';
+import {
   PaymentService,
   PostgresPaymentRepository,
   resolveMockProvider,
@@ -65,7 +69,21 @@ import {
   MatchingService,
   PostgresMatchingRepository,
   catalogueRung,
+  knownSupplierRung,
+  verifiedSupplierRung,
 } from '../../modules/matching/index.ts';
+import {
+  CapabilityVerificationService,
+  PostgresCapabilityVerificationRepository,
+} from '../../modules/capability-verification/index.ts';
+import {
+  DirectoryService,
+  PostgresDirectoryRepository,
+} from '../../modules/supplier-directory/index.ts';
+import {
+  OrganisationService,
+  PostgresOrganisationRepository,
+} from '../../modules/organisations/index.ts';
 import { PostgresQuoteRepository, QuoteService } from '../../modules/quotes/index.ts';
 import { PostgresRfqRepository, RfqService } from '../../modules/rfq/index.ts';
 
@@ -88,6 +106,8 @@ import {
   type QuoteOrderOutcome,
 } from './consumers/quote-order.ts';
 import { catalogueSourceFor } from './catalogue-source.ts';
+import { permissionGrantor } from './registrar.ts';
+import { supplierDirectoryFor } from './supplier-source.ts';
 import { tenderBuyerSourceFor, tenderSourceFor } from './tender-source.ts';
 import { webhookSecrets, type WebhookSecrets } from './webhook-signature.ts';
 
@@ -152,7 +172,14 @@ export interface StartOptions {
  * every password is forgotten on restart. That is survivable in a staging environment and
  * indefensible in a live one, so `start` refuses rather than letting somebody discover it.
  */
-export function accessFor(database: PostgresDatabase, clock: () => string): ApiAccess {
+export interface AccessStack extends ApiAccess {
+  readonly identity: IdentityService;
+  readonly accountService: AccountService;
+  readonly authentication: AuthenticationService;
+  readonly passwords: PasswordVerifier;
+}
+
+export function accessFor(database: PostgresDatabase, clock: () => string): AccessStack {
   const identity = new IdentityService(new PostgresIdentityRepository(database));
   const accounts = new AccountService(new PostgresAccountRepository(database), identity);
 
@@ -186,7 +213,15 @@ export function accessFor(database: PostgresDatabase, clock: () => string): ApiA
     // not something an HTTP process may do to itself on startup.
   });
 
-  return { permissions, sessions: authentication, accounts };
+  return {
+    permissions,
+    sessions: authentication,
+    accounts,
+    identity,
+    accountService: accounts,
+    authentication,
+    passwords,
+  };
 }
 
 /**
@@ -226,6 +261,41 @@ function webhookSecretsFromEnvironment(): WebhookSecrets {
     found[name.slice(prefix.length).toLowerCase()] = value;
   }
   return webhookSecrets(found);
+}
+
+/**
+ * Whether this deployment offers self-service registration, and under whose authority.
+ *
+ * K-04 has **no bootstrap path for a grant**: every grant is made by an administrator presenting
+ * their own session. So a platform that lets people join by themselves has to name that
+ * administrator, and `JAYA_REGISTRAR_TOKEN` is where it does. Absent, the participant routes exist
+ * and answer 503 with the reason — which is better than a 404 that says "no such endpoint" when the
+ * truth is "not configured here", and much better than creating people who hold no authority at all
+ * and cannot be told why.
+ *
+ * Returned as a spread so the option is genuinely absent rather than present-and-undefined, which
+ * is what `exactOptionalPropertyTypes` is for.
+ */
+function registrationFor(
+  database: PostgresDatabase,
+  access: AccessStack,
+): Pick<Parameters<typeof buildApi>[0], 'registration'> {
+  const token = process.env.JAYA_REGISTRAR_TOKEN;
+  if (token === undefined || token.trim() === '') return {};
+
+  return {
+    registration: {
+      identity: access.identity,
+      accounts: access.accountService,
+      authentication: access.authentication,
+      passwords: access.passwords,
+      capabilities: new UniversalAccountService(new PostgresUniversalAccountRepository(database)),
+      grantor: permissionGrantor({
+        permissions: access.permissions,
+        administratorToken: token.trim(),
+      }),
+    },
+  };
 }
 
 /** The current instant, in the microsecond-width form every validator in this repository accepts. */
@@ -323,16 +393,40 @@ export function servicesFor(databaseUrl: string): ApiServices {
   const tenders = new RfqService(new PostgresRfqRepository(database));
   const quotes = new QuoteService(new PostgresQuoteRepository(database), tenderSourceFor(tenders));
 
-  // The ladder, with the one rung this deployment can actually wire. The supplier rungs need a
-  // directory nothing implements yet and external discovery needs an adapter that does not ship, so
-  // both are left unwired — and M-07 records `unavailable` for them rather than `empty`. That is the
-  // difference between a configuration choice and an outage, and it is why a Need that reaches a
-  // tender here can say honestly that nothing looked rather than that nothing was found.
+  // M-48 holds what a party claims and M-02 decides whether they are verified. Both are built here
+  // because the supplier rungs need the join between them and M-11, and that join belongs to the
+  // application: the three modules may not import one another.
+  const directory = new DirectoryService(new PostgresDirectoryRepository(database));
+  const organisations = new OrganisationService(new PostgresOrganisationRepository(database));
+  const verification = new CapabilityVerificationService(
+    new PostgresCapabilityVerificationRepository(database),
+  );
+  const supplierDirectory = supplierDirectoryFor({ directory, verification, orders });
+
+  // The ladder, with three of its four rungs wired. External discovery still needs an adapter that
+  // does not ship, so it is left unwired — and M-07 records `unavailable` for it rather than
+  // `empty`. That is the difference between a configuration choice and an outage, and it is why a
+  // Need that reaches a tender here can say honestly that nothing looked rather than that nothing
+  // was found.
   const matching = new MatchingService(new PostgresMatchingRepository(database), {
     catalogue: catalogueRung({ source: catalogueSourceFor({ listings }), listings }),
+    known: knownSupplierRung({ directory: supplierDirectory }),
+    verified: verifiedSupplierRung({ directory: supplierDirectory }),
   });
 
-  return { orders, payments, ledger, cockpit, listings, needs, tenders, quotes, matching };
+  return {
+    orders,
+    payments,
+    ledger,
+    cockpit,
+    listings,
+    needs,
+    tenders,
+    quotes,
+    matching,
+    directory,
+    organisations,
+  };
 }
 
 export function start(options: StartOptions): ReturnType<typeof createHttpServer> {
@@ -356,9 +450,11 @@ export function start(options: StartOptions): ReturnType<typeof createHttpServer
   }
 
   const database = new PostgresDatabase(options.databaseUrl);
+  const access = accessFor(database, nowMicros);
   const api = buildApi({
     services: servicesFor(options.databaseUrl),
-    access: accessFor(database, nowMicros),
+    access,
+    ...registrationFor(database, access),
     webhookSecrets: webhookSecretsFromEnvironment(),
     throttle: {
       // In memory, which is correct for one process and honestly wrong for two: each instance would
