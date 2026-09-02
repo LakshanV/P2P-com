@@ -45,3 +45,13 @@ export {
   QUOTE_SUBMITTED_EVENT,
   QUOTE_WITHDRAWN_EVENT,
 } from './outbox.ts';
+
+export {
+  EnlistedQuoteRepository,
+  OUTBOX_TABLE,
+  PostgresQuoteRepository,
+  QUOTES_SCHEMA,
+  QUOTE_TABLE,
+  enlistedClient,
+  toQuote,
+} from './postgres-repository.ts';

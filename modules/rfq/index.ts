@@ -80,3 +80,14 @@ export {
   RFQ_CREATED_EVENT,
   SUPPLIER_INVITED_EVENT,
 } from './outbox.ts';
+
+export {
+  EnlistedRfqRepository,
+  INVITATION_TABLE,
+  PostgresRfqRepository,
+  RFQ_SCHEMA,
+  RFQ_TABLE,
+  toInvitation,
+  toRfq,
+  toRfqEvent,
+} from './postgres-repository.ts';

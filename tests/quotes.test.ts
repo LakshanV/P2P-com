@@ -340,6 +340,38 @@ test('a retry of the same submission converges rather than creating a second off
   assert.equal((await harness.service.listQuotesForRfq(RFQ)).length, 1);
 });
 
+test('a different offer under the same key is refused, not answered with somebody else’s', async () => {
+  // The dangerous half of idempotency. Converging here would hand this supplier the offer that key
+  // belongs to and a 200, and they would believe they had quoted when they had not.
+  const harness = build();
+  await anOffer(harness, { tag: '0029', supplierAccountId: SUPPLIER_A });
+
+  await assert.rejects(
+    harness.service.submitQuote({
+      quoteId: 'quo_01HR0QUOTE0030',
+      rfqId: RFQ,
+      supplierAccountId: SUPPLIER_B,
+      kind: 'full',
+      quantity: 20n,
+      unitPriceMinor: 1_000_000n,
+      totalMinor: 20_000_000n,
+      currency: 'LKR',
+      leadTimeDays: 3,
+      deliveryTerms: 'delivered',
+      validUntil: VALID_UNTIL,
+      evidenceReferences: [],
+      submittedAt: NOW,
+      correlationId: 'corr_01HR0QUOTE0030',
+      // The key already belongs to supplier A's offer.
+      idempotencyKey: 'idem_01HR0QUOTE0029',
+    }),
+    (error: unknown) => error instanceof QuoteError && error.code === 'idempotency-key-reuse',
+  );
+
+  const offers = await harness.service.listQuotesForRfq(RFQ);
+  assert.equal(offers.length, 1, 'and nothing was written');
+});
+
 test('a retried withdrawal converges on the withdrawal already recorded', async () => {
   const harness = build();
   await anOffer(harness, { tag: '0016' });

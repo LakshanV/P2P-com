@@ -215,7 +215,17 @@ export class QuoteService {
     return this.#converge(
       async (tx) => {
         const byKey = await tx.findQuoteByIdempotencyKey(candidate.idempotencyKey);
-        if (byKey !== null) return { quote: sealQuote(byKey), replayed: true };
+        if (byKey !== null) {
+          if (!quoteEquals(byKey, candidate)) {
+            throw new QuoteError(
+              'idempotency-key-reuse',
+              `idempotency key "${candidate.idempotencyKey}" has already been used for a ` +
+                'different offer. Answering with the offer that key belongs to would tell this ' +
+                'supplier they had quoted when they had not',
+            );
+          }
+          return { quote: sealQuote(byKey), replayed: true };
+        }
 
         await tx.insertQuote(candidate);
         await tx.insertOutbox(makeQuoteEvent(candidate));
@@ -224,7 +234,8 @@ export class QuoteService {
       },
       async (tx) => {
         const byKey = await tx.findQuoteByIdempotencyKey(candidate.idempotencyKey);
-        return byKey === null ? null : { quote: sealQuote(byKey), replayed: true };
+        if (byKey === null || !quoteEquals(byKey, candidate)) return null;
+        return { quote: sealQuote(byKey), replayed: true };
       },
     );
   }
@@ -385,6 +396,38 @@ export class QuoteService {
       return recovered;
     }
   }
+}
+
+/**
+ * Is this the same offer, arriving twice?
+ *
+ * **Neither `correlationId` nor `submittedAt` is compared**, and that is not an oversight. A retry
+ * arrives later and carries a fresh correlation id by definition, so comparing either would report
+ * every honest retry as key reuse — and a supplier following that advice sends a new key and offers
+ * twice. M-11, M-12, M-13 and M-04 each shipped a version of this mistake once.
+ *
+ * Everything a buyer would actually decide on **is** compared. A different offer under the same key
+ * is refused rather than converged, because answering with the offer the key belongs to would tell
+ * this supplier they had quoted when they had not.
+ */
+function quoteEquals(a: Quote, b: Quote): boolean {
+  return (
+    a.quoteId === b.quoteId &&
+    a.rfqId === b.rfqId &&
+    a.supplierAccountId === b.supplierAccountId &&
+    a.kind === b.kind &&
+    a.quantity === b.quantity &&
+    a.unitPriceMinor === b.unitPriceMinor &&
+    a.totalMinor === b.totalMinor &&
+    a.currency === b.currency &&
+    a.leadTimeDays === b.leadTimeDays &&
+    a.deliveryTerms === b.deliveryTerms &&
+    parseInstant(a.validUntil).epochMicros === parseInstant(b.validUntil).epochMicros &&
+    a.substitutionNote === b.substitutionNote &&
+    a.evidenceReferences.length === b.evidenceReferences.length &&
+    a.evidenceReferences.every((one, index) => one === b.evidenceReferences[index]) &&
+    a.idempotencyKey === b.idempotencyKey
+  );
 }
 
 function assertNoForeignConcerns(
