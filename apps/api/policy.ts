@@ -111,6 +111,11 @@ export const JAYA_V1_ROLES: readonly RoleCapabilities[] = Object.freeze([
       { action: 'read', resourceType: 'payment' },
       { action: 'capture', resourceType: 'payment' },
       { action: 'refund', resourceType: 'payment' },
+      // A supplier holds earnings, so a supplier opens the wallet that holds them. Nobody else
+      // can: the owner of a wallet is now the caller, so a wallet a supplier does not open is a
+      // wallet that does not exist -- and a settlement with nowhere to land fails at the moment the
+      // money should arrive.
+      { action: 'create', resourceType: 'wallet' },
       { action: 'read', resourceType: 'wallet' },
       { action: 'read', resourceType: 'value-plan' },
       ...READS_THE_API,

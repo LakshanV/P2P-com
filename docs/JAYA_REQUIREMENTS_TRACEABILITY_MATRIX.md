@@ -614,17 +614,17 @@ working software is not, and the two are scored separately so the first cannot f
 | **Contracts** | **47%** | 23 of 62 units have a written contract. Those that exist are precise and executable |
 | **Backend implementation** | **26%** | 11 of 47 business modules; 14 of 15 kernel components. The transaction spine (M-04, M-11, M-12, M-13) and now the sourcing path (M-03, M-07, M-09, M-10) both exist. 36 modules have no code |
 | **Integration testing** | **40%** | 59 live-PostgreSQL tests covering everything that exists, thoroughly. Nothing covering what does not |
-| **E2E functionality** | **22%** | `tests/e2e/` exists and runs two journeys against a live server: a matched purchase and a tendered one. Both go over a real socket, as a real signed-in person, and — the part no API test reaches — **through the outbox, K-08 and a consumer**, so an accepted offer really does open an order by the machinery that would open it in production. Four journeys, 0 of the remaining flows (mixed-value, split supplier, logistics, returns), and no UI |
+| **E2E functionality** | **30%** | `tests/e2e/` runs three flows and seven journeys against a live server: a matched purchase, a tendered one, and a mixed-value settlement of LKR 10,000 as 1,500 reward points + 500 merchant credit + 8,000 on a card. All go over a real socket, as a real signed-in person, and — the part no API test reaches — **through the outbox, K-08 and a consumer**. Remaining: split supplier, logistics, returns, disputes, and no UI |
 | **AI functionality** | **6%** | Gateway, authority ceiling and kill switch are real and tested. Zero live adapters, zero of sixteen agents, nothing has ever called a model |
-| **Financial functionality** | **58%** | The strongest area. Multi-value ledger, three positions, double entry, mixed-value routing with no rounding, payments with timeout discipline, database-enforced invariants. Missing: settlement, payout, commission, receivable/payable, restriction enforcement |
+| **Financial functionality** | **64%** | The strongest area. Multi-value ledger, three positions, double entry, mixed-value routing with no rounding, payments with timeout discipline, database-enforced invariants. Missing: settlement, payout, commission, receivable/payable, restriction enforcement |
 | **Logistics** | **0%** | Nothing |
 | **Cockpit backend** | **12%** | 3 of 8 sections, buyer only, no role adaptation |
 | **Final UI/UX** | **0%** | Nothing. One README |
 | **Security** | **66%** | Was not scored separately before, and should have been — it is the dimension that decides whether anything else may be deployed. Authentication, authorisation, object-level access, account isolation, IDOR and webhook verification are all real and tested at the HTTP edge. Rate limits, secret management, backups and consent are not |
 | **Deployment readiness** | **22%** | Migrations, health and now a closed front door are real. No CI, no rate limits, no monitoring, no backups, no staging, and passwords are not yet durable |
-| **Overall original JAYA vision** | **≈ 28%** | See below |
+| **Overall original JAYA vision** | **≈ 31%** | See below |
 
-### Why 28% and not 40%
+### Why 31% and not 40%
 
 A naive average of the rows above gives something near 35%. That would be dishonest, for three
 reasons:
@@ -640,7 +640,7 @@ reasons:
 3. **Contracts and architecture were weighted down deliberately.** They are 85% and 47% complete and
    they are worth having, but a customer cannot buy anything with a boundary check.
 
-**The movement from 15% to 28% is thirteen points across three revisions, and this is what earns them.**
+**The movement from 15% to 31% is sixteen points across four revisions, and this is what earns them.**
 An earlier revision said the bulk of the original vision is the Need → sourcing → RFQ → quote path
 and that none of it existed. That is no longer true, in two steps.
 
@@ -661,11 +661,13 @@ reaches. Building it found four defects that had been latent for weeks, three of
 platform's event traffic could never have been published at all, and one of which let a caller open
 an order in somebody else's name.
 
-Thirteen points and not thirty, because **the market is empty and nobody can see any of it**. Two of
+And then the money: LKR 10,000 settled three ways at once, proved end to end — the two internal legs posting at commit, the plan sitting honestly at `committed` while the card is outstanding, and the capture settling it through the event log rather than through a call. A reward point cannot leave through a card rail, a plan whose legs do not add up is refused before anything moves, and a rate that does not divide evenly is refused rather than rounded.
+
+Sixteen points and not thirty-five, because **the market is empty and nobody can see any of it**. Two of
 the four sourcing rungs cannot be wired at all, there is no interface in front of any of it, and an
 invited supplier learns they were invited by polling an endpoint.
 
-What *is* worth stating plainly: the 28% that exists is unusually solid. The financial core has
+What *is* worth stating plainly: the 31% that exists is unusually solid. The financial core has
 invariants enforced in the database, not just in code; an offer's terms are immutable at three
 layers; the concurrency cases are proven against a real server; and several defects — the webhook
 that trusted its caller, and the quote convergence that would have told a supplier they had quoted

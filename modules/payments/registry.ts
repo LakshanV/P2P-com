@@ -129,7 +129,15 @@ export function assertSettlementAsset(value: unknown, field: string): string {
   // one would refuse them all as malformed and this refusal would never reach a caller. The
   // difference matters: "malformed-asset-code" tells somebody to fix their string, where what they
   // have actually done is try to settle a restricted credit through a bank.
-  if (typeof value === 'string' && (INTERNAL_VALUE_CODES as readonly string[]).includes(value)) {
+  // Case-insensitively, because the realistic mistake is a caller sending K-10's asset **type id**
+  // — `jaya_reward` — where M-12 wants a settlement **code**. Those are two vocabularies for the
+  // same thing, and somebody who confuses them has made precisely the error this refusal exists to
+  // explain. Matching only the uppercase form would answer "fix your string" to the one caller who
+  // most needs to be told what they actually did.
+  if (
+    typeof value === 'string' &&
+    (INTERNAL_VALUE_CODES as readonly string[]).includes(value.toUpperCase())
+  ) {
     throw new PaymentError(
       'internal-value-not-settleable',
       `${field} is "${value}", which is value JAYA issues itself. No external provider can settle ` +

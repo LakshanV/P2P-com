@@ -86,6 +86,12 @@ import {
   orderInventoryHandler,
 } from '../../apps/api/consumers/order-inventory.ts';
 import {
+  PAYMENT_SETTLEMENT_SUBSCRIPTION,
+  PAYMENT_SETTLEMENT_SUBSCRIPTION_DEFINITION,
+  paymentSettlementHandler,
+  settlementAssets,
+} from '../../apps/api/consumers/payment-settlement.ts';
+import {
   QUOTE_ORDER_SUBSCRIPTION,
   QUOTE_ORDER_SUBSCRIPTION_DEFINITION,
   quoteOrderHandler,
@@ -131,7 +137,30 @@ export interface Journey {
   /** Sign somebody in. Every journey names its own people. */
   readonly signUp: (handle: string, roles: readonly string[]) => Promise<SignedIn>;
   readonly listings: UniversalListingService;
+  /** K-10's journal, for registering the asset types a deployment issues. There is no route for it. */
   readonly ledger: LedgerService;
+  /**
+   * Put value into a wallet, the way the platform would issue it.
+   *
+   * A balanced K-10 transaction from the platform's own issuance position, not a number written into
+   * a balance — there is no balance to write into, because K-10 derives every one from the journal.
+   * A journey that skipped this would prove the arithmetic of a plan while proving nothing about
+   * whether the buyer had the value they spent.
+   */
+  readonly fund: (
+    walletId: string,
+    assetTypeId: string,
+    amount: bigint,
+    reason: string,
+  ) => Promise<void>;
+  /**
+   * What each consumer decided, in order.
+   *
+   * A settlement that silently does nothing is indistinguishable from one that silently fails, so
+   * the consumers report through `observe` and a journey can assert on what they actually did
+   * rather than on the absence of an exception.
+   */
+  readonly observed: readonly unknown[];
   readonly database: Database;
   /** The instant every request is served at. Journeys move it forward by hand. */
   readonly at: (instant: string) => void;
@@ -149,7 +178,17 @@ const START = '2026-07-01T09:00:00.000000Z';
 const SUBSCRIPTIONS = [
   ORDER_INVENTORY_SUBSCRIPTION_DEFINITION,
   QUOTE_ORDER_SUBSCRIPTION_DEFINITION,
+  PAYMENT_SETTLEMENT_SUBSCRIPTION_DEFINITION,
 ];
+
+/**
+ * Which K-10 asset type a payment in a given asset settles into.
+ *
+ * A deployment fact, declared rather than inferred: M-12 speaks `LKR` and M-13 speaks a K-10 asset
+ * type, and matching them by string equality would work for LKR and quietly do the wrong thing for
+ * everything else.
+ */
+const SETTLEMENT_ASSETS = settlementAssets({ 'LKR:2': 'lkr_cash' });
 
 let namespace = 0;
 
@@ -194,8 +233,21 @@ export async function journey(body: (context: Journey) => Promise<void>): Promis
 
     events.register(ORDER_INVENTORY_SUBSCRIPTION, orderInventoryHandler({ orders, listings }));
     events.register(
+      PAYMENT_SETTLEMENT_SUBSCRIPTION,
+      paymentSettlementHandler({
+        ledger,
+        assets: SETTLEMENT_ASSETS,
+        observe: (outcome) => observed.push(outcome),
+      }),
+    );
+    events.register(
       QUOTE_ORDER_SUBSCRIPTION,
-      quoteOrderHandler({ orders, quotes, tenders: tenderBuyerSourceFor(tenders) }),
+      quoteOrderHandler({
+        orders,
+        quotes,
+        tenders: tenderBuyerSourceFor(tenders),
+        observe: (outcome) => observed.push(outcome),
+      }),
     );
 
     let now = START;
@@ -235,7 +287,9 @@ export async function journey(body: (context: Journey) => Promise<void>): Promis
       (schema) => new PostgresOutboxSource({ name: schema, schema, database }),
     );
 
+    const observed: unknown[] = [];
     let sequence = 0;
+    let issuance = 0;
     let signedIn: SignedIn | null = null;
 
     const call: Journey['call'] = async (method, path, payload, options = {}) => {
@@ -304,6 +358,35 @@ export async function journey(body: (context: Journey) => Promise<void>): Promis
         },
         listings,
         ledger: journal,
+        observed,
+        fund: async (walletId, assetTypeId, amount, reason) => {
+          const wallet = await ledger.getWallet(walletId);
+
+          // The platform's own issuance position in this asset: debit-normal, because what a holder
+          // has is a liability of the platform and the two sides of that have to exist.
+          issuance += 1;
+          const issuanceAccount = `lac_e2e_issue${String(issuance).padStart(6, '0')}`;
+          await journal.createAccount({
+            accountId: issuanceAccount,
+            assetTypeId,
+            ownerId: 'iss_e2e_jayaplatform',
+            normalBalance: 'debit',
+            createdAt: now,
+            idempotencyKey: `idem_e2e_issue_acct_${String(issuance)}`,
+          });
+
+          await journal.postTransaction({
+            transactionId: `ltx_e2e_issue${String(issuance).padStart(6, '0')}`,
+            idempotencyKey: `idem_e2e_issue_txn_${String(issuance)}`,
+            postedAt: now,
+            assetTypeId,
+            entries: [
+              { accountId: issuanceAccount, side: 'debit', amount },
+              { accountId: wallet.ledgerAccountId, side: 'credit', amount },
+            ],
+          });
+          void reason;
+        },
         database,
         at: (instant) => {
           now = instant;
